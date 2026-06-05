@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Terraform Plan Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan
           path: OSC-IS-Infra/terraform/tfplan
