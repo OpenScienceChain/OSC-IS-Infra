@@ -1,0 +1,97 @@
+name: Ephemeral Fabric EKS infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan, create, or destroy the disposable cluster
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply, destroy]
+      confirmation:
+        description: Enter CREATE for apply or DESTROY for destroy
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: osc-fabric-test-infrastructure
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.operation == 'plan' && 'fabric-test-plan' || 'fabric-test' }}
+    defaults:
+      run:
+        working-directory: terraform/fabric-test
+    steps:
+      - uses: actions/checkout@v6
+      - name: Confirm billable operation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.operation }}" == "apply" && "${{ inputs.confirmation }}" != "CREATE" ]]; then
+            echo "Enter CREATE to provision the billable EKS test cluster."
+            exit 1
+          fi
+          if [[ "${{ inputs.operation }}" == "destroy" && "${{ inputs.confirmation }}" != "DESTROY" ]]; then
+            echo "Enter DESTROY to remove the EKS test cluster."
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_FABRIC_TEST_ROLE_ARN }}
+          aws-region: us-west-2
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+      - name: Restore non-secret environment inputs
+        env:
+          TFVARS_B64: ${{ secrets.FABRIC_TEST_TFVARS_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TFVARS_B64"
+          printf '%s' "$TFVARS_B64" | base64 --decode > environment.auto.tfvars
+      - run: terraform init -input=false
+      - name: Determine temporary operator boundary
+        id: boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner_cidr=$(curl --fail --silent https://checkip.amazonaws.com)/32" >> "$GITHUB_OUTPUT"
+          echo "expires_at=$(date -u -d '+8 hours' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+      - name: Create plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            -input=false
+            -out=tfplan
+            -var='operator_role_arn=${{ vars.AWS_FABRIC_TEST_ROLE_ARN }}'
+            -var='cluster_public_access_cidrs=["${{ steps.boundary.outputs.runner_cidr }}"]'
+            -var='expires_at=${{ steps.boundary.outputs.expires_at }}'
+          )
+          if [[ "${{ inputs.operation }}" == "destroy" ]]; then
+            args=(-destroy "${args[@]}")
+          fi
+          terraform plan "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fabric-test-${{ inputs.operation }}-${{ github.sha }}
+          path: terraform/fabric-test/tfplan
+          retention-days: 7
+      - name: Apply reviewed plan
+        if: inputs.operation != 'plan'
+        run: terraform apply -input=false -auto-approve tfplan
+      - name: Verify created cluster
+        if: inputs.operation == 'apply'
+        run: |
+          aws eks update-kubeconfig --name osc-fabric-test --region us-west-2
+          kubectl wait --for=condition=Ready nodes --all --timeout=15m
+          kubectl get nodes -o wide

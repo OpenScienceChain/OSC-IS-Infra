@@ -1,0 +1,118 @@
+name: osc-ui-tests
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: osc_local
+      POSTGRES_USER: osc_local
+      POSTGRES_PASSWORD: local_test_only
+    ports:
+      - "55432:5432"
+    volumes:
+      - ui_test_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osc_local -d osc_local"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: osc_local
+      RABBITMQ_DEFAULT_PASS: local_test_only
+    ports:
+      - "55672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  simulator:
+    build:
+      context: ./simulator
+    ports:
+      - "3310:3100"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api-gateway:
+    build:
+      context: ../../OSC-APIGateway
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: osc_local
+      DB_USER: osc_local
+      DB_PASSWORD: local_test_only
+      DB_SSL: "false"
+      DB_SYNCHRONIZE: "true"
+      DB_MIGRATIONS_RUN: "false"
+      JWT_SECRET: local_test_secret_not_for_deployment
+      JWT_EXPIRES_IN: 30m
+      ADMIN1_USERNAME: localadmin
+      ADMIN1_EMAIL: localadmin@example.test
+      ADMIN1_PASSWORD: local_test_only
+      ADMIN1_ROLES: admin
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: osc_local
+      RABBITMQ_PASS: local_test_only
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+    ports:
+      - "3300:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  webapp:
+    build:
+      context: ../../OSC-WebApp
+      dockerfile: Dockerfile
+    environment:
+      API_UPSTREAM: http://simulator:3100
+    ports:
+      - "8080:80"
+    depends_on:
+      simulator:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ui_test_postgres:

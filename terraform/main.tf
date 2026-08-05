@@ -35,13 +35,24 @@ locals {
   # Hibernation note: when infra_mode=hibernated the RDS/NLB/Route53 resources
   # are destroyed; try() falls back to "". Task defs keep prior values via
   # ignore_changes=all and services run at desired_count=0, so no impact.
-  infra_overrides = {
+  base_infra_overrides = {
     db_host                = try(aws_route53_record.rds_private[0].fqdn, "")
     db_ssl_servername      = try(aws_db_instance.this[0].address, "")
     db_password_secret_arn = try("${aws_secretsmanager_secret.db_master[0].arn}:password::", "")
     db_user_secret_arn     = try("${aws_secretsmanager_secret.db_master[0].arn}:username::", "")
-    rabbitmq_host          = try(aws_route53_record.rabbitmq_private[0].fqdn, "")
+    rabbitmq_host = local.amazon_mq_active ? trimprefix(
+      split(":", aws_mq_broker.rabbitmq[0].instances[0].endpoints[0])[1],
+      "//"
+    ) : try(aws_route53_record.rabbitmq_private[0].fqdn, "")
   }
+
+  amazon_mq_overrides = local.amazon_mq_active ? {
+    rabbitmq_port            = "5671"
+    rabbitmq_user_secret_arn = "${aws_secretsmanager_secret.rabbitmq[0].arn}:username::"
+    rabbitmq_pass_secret_arn = "${aws_secretsmanager_secret.rabbitmq[0].arn}:password::"
+  } : {}
+
+  infra_overrides = merge(local.base_infra_overrides, local.amazon_mq_overrides)
 
   service_defs = {
     for name, cfg in var.services :

@@ -1,0 +1,28 @@
+name: Docker system tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 10 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  asynchronous-submission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out infrastructure harness
+        uses: actions/checkout@v6
+        with:
+          path: OSC-IS-Infra
+      - name: Check out submission services
+        uses: actions/checkout@v6
+        with:
+          repository: OpenScienceChain/OSC-Artifact-Submission
+          ref: feature/integration
+          path: OSC-Artifact-Submission
+      - name: Run failure and recovery scenarios
+        working-directory: OSC-IS-Infra/system-tests
+        run: ./run.sh

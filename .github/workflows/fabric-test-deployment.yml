@@ -1,0 +1,70 @@
+name: Deploy and test Fabric on EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      chaincode_ref:
+        description: OSC-Chaincode branch, tag, or SHA
+        required: true
+        default: feature/integration
+        type: string
+      retain_network:
+        description: Keep Fabric workloads after testing
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: osc-fabric-test-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: fabric-test
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: OSC-IS-Infra
+      - uses: actions/checkout@v6
+        with:
+          repository: OpenScienceChain/OSC-Chaincode
+          ref: ${{ inputs.chaincode_ref }}
+          path: OSC-Chaincode
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_FABRIC_TEST_ROLE_ARN }}
+          aws-region: us-west-2
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+      - name: Install script dependencies
+        run: sudo apt-get update && sudo apt-get install --yes gettext-base jq
+      - name: Connect to the test cluster
+        run: aws eks update-kubeconfig --name osc-fabric-test --region us-west-2
+      - name: Deploy Fabric 2.5 and OSC chaincode
+        env:
+          OSC_CHAINCODE_DIR: ${{ github.workspace }}/OSC-Chaincode/chaincode-go
+          FABRIC_TEST_EVIDENCE_DIR: ${{ github.workspace }}/evidence
+        working-directory: OSC-IS-Infra
+        run: ./fabric-test/deploy.sh
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p evidence
+          kubectl get events -A --sort-by=.lastTimestamp > evidence/events.txt 2>&1 || true
+          kubectl get pods -A -o wide > evidence/final-pods.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fabric-test-evidence-${{ github.run_id }}
+          path: evidence
+          retention-days: 30
+      - name: Remove Fabric workloads
+        if: always() && !inputs.retain_network
+        working-directory: OSC-IS-Infra
+        run: ./fabric-test/destroy-network.sh

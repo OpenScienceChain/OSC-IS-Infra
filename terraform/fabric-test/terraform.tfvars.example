@@ -1,0 +1,14 @@
+vpc_id             = "<existing-vpc-id>"
+private_subnet_ids = ["<private-subnet-2a>", "<private-subnet-2b>"]
+operator_role_arn  = "arn:aws:iam::269624229733:role/<github-oidc-deployment-role>"
+
+# The workflow replaces this with its temporary public IP /32.
+cluster_public_access_cidrs = ["203.0.113.10/32"]
+expires_at                  = "2026-08-01T04:00:00Z"
+
+kubernetes_version = "1.35"
+node_instance_types = ["t3.large"]
+node_capacity_type  = "ON_DEMAND"
+node_desired_size   = 3
+node_max_size       = 3
+node_disk_size_gib  = 40
