@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: terraform/fabric-test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Confirm billable operation
         shell: bash
         run: |
@@ -44,11 +44,12 @@ jobs:
             echo "Enter DESTROY to remove the EKS test cluster."
             exit 1
           fi
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
         with:
           role-to-assume: ${{ vars.AWS_FABRIC_TEST_ROLE_ARN }}
           aws-region: us-west-2
-      - uses: hashicorp/setup-terraform@v3
+          role-duration-seconds: 900
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "1.10.5"
       - name: Restore non-secret environment inputs
@@ -58,7 +59,7 @@ jobs:
           set -euo pipefail
           test -n "$TFVARS_B64"
           printf '%s' "$TFVARS_B64" | base64 --decode > environment.auto.tfvars
-      - run: terraform init -input=false
+      - run: terraform init -input=false -lockfile=readonly
       - name: Determine temporary operator boundary
         id: boundary
         shell: bash
@@ -81,7 +82,7 @@ jobs:
             args=(-destroy "${args[@]}")
           fi
           terraform plan "${args[@]}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fabric-test-${{ inputs.operation }}-${{ github.sha }}
           path: terraform/fabric-test/tfplan

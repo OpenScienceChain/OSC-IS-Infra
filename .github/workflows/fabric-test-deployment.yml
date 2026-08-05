@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       chaincode_ref:
-        description: OSC-Chaincode branch, tag, or SHA
+        description: Full 40-character OSC-Chaincode commit SHA
         required: true
-        default: feature/integration
+        default: ''
         type: string
       retain_network:
         description: Keep Fabric workloads after testing
@@ -28,22 +28,30 @@ jobs:
     timeout-minutes: 75
     environment: fabric-test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           path: OSC-IS-Infra
-      - uses: actions/checkout@v6
+      - name: Require an immutable chaincode revision
+        shell: bash
+        run: |
+          [[ "${{ inputs.chaincode_ref }}" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "chaincode_ref must be a full 40-character commit SHA" >&2
+            exit 1
+          }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: OpenScienceChain/OSC-Chaincode
           ref: ${{ inputs.chaincode_ref }}
           path: OSC-Chaincode
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
+      - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+      - name: Install script dependencies
+        run: sudo apt-get update && sudo apt-get install --yes gettext-base jq
+      - uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
         with:
           role-to-assume: ${{ vars.AWS_FABRIC_TEST_ROLE_ARN }}
           aws-region: us-west-2
-      - uses: azure/setup-kubectl@v4
-      - uses: azure/setup-helm@v4
-      - name: Install script dependencies
-        run: sudo apt-get update && sudo apt-get install --yes gettext-base jq
+          role-duration-seconds: 900
       - name: Connect to the test cluster
         run: aws eks update-kubeconfig --name osc-fabric-test --region us-west-2
       - name: Deploy Fabric 2.5 and OSC chaincode
@@ -58,7 +66,7 @@ jobs:
           mkdir -p evidence
           kubectl get events -A --sort-by=.lastTimestamp > evidence/events.txt 2>&1 || true
           kubectl get pods -A -o wide > evidence/final-pods.txt 2>&1 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: fabric-test-evidence-${{ github.run_id }}

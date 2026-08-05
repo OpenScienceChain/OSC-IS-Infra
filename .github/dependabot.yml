@@ -3,6 +3,20 @@ updates:
   - package-ecosystem: terraform
     directory: /terraform
     schedule: { interval: weekly }
+    cooldown:
+      default-days: 5
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 5
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    cooldown:
+      default-days: 5
+  - package-ecosystem: docker
+    directories:
+      - /system-tests/probe
+      - /ui-tests/simulator
+    schedule: { interval: weekly }
+    cooldown:
+      default-days: 5
