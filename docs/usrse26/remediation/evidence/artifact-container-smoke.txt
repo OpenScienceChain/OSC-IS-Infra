@@ -1,0 +1,2 @@
+{"status":"healthy","service":"ledger-gateway","organizationId":"nsg","mspId":"NSGMSP","fabricMode":"simulation"}
+image=sha256:396e9c9be3b95ff40a035e10317304e5ae249aef4787242df934724be056fd41 user=10001:10001 readonly=true capdrop=["ALL"] no-new-privileges=["no-new-privileges"]

@@ -1,0 +1,77 @@
+npm warn Unknown cli config "--coverage". This will stop working in the next major version of npm.
+npm warn Unknown cli config "--runInBand". This will stop working in the next major version of npm.
+
+> fabric-bridge@0.1.0 test
+> jest --passWithNoTests
+
+PASS test/fabricClient.test.ts (19.742 s)
+  Fabric Gateway client
+    √ refuses a connection without a TLS server name (37 ms)
+    √ maps an artifact create to the namespaced provenance transaction (7 ms)
+    √ fails an unsuccessful Fabric commit (2 ms)
+    √ preserves peer diagnostics when an endorsement fails (2 ms)
+    √ evaluates workflow history and parses JSON (2 ms)
+    √ adds operation context to history evaluation failures (1 ms)
+
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:52 +0000] "GET /health HTTP/1.1" 200 113 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:52 +0000] "POST /submit HTTP/1.1" 401 26 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:52 +0000] "POST /submit HTTP/1.1" 401 26 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:52 +0000] "POST /submit HTTP/1.1" 200 291 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 200 291 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 403 78 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 403 61 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 403 59 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /update HTTP/1.1" 400 76 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 400 93 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 400 78 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /update HTTP/1.1" 200 298 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /workflow/submit HTTP/1.1" 200 300 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /workflow/update HTTP/1.1" 200 307 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /history/00000000-0000-4000-8000-000000000001 HTTP/1.1" 401 26 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /history/not-a-uuid HTTP/1.1" 400 30 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /history/00000000-0000-4000-8000-000000000001 HTTP/1.1" 200 2 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /workflow/history/00000000-0000-4000-8000-000000000002 HTTP/1.1" 200 2 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 400 71 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 502 88 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /submit HTTP/1.1" 200 158 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "POST /update HTTP/1.1" 200 166 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /history/00000000-0000-4000-8000-000000000001 HTTP/1.1" 200 42 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:53 +0000] "GET /history/00000000-0000-4000-8000-000000000001 HTTP/1.1" 502 69 "-" "-"
+::ffff:127.0.0.1 - - [02/Sep/2026:17:16:54 +0000] "GET /history/00000000-0000-4000-8000-000000000001 HTTP/1.1" 403 106 "-" "-"
+PASS test/server.test.ts (23.439 s)
+  organization-bound ledger gateway
+    √ reports a sanitized healthy configuration (101 ms)
+    √ requires internal authentication (426 ms)
+    √ accepts a valid NSG artifact create command (21 ms)
+    √ accepts empty strings in optional artifact fields from develop (13 ms)
+    √ rejects commands intended for another organization (10 ms)
+    √ rejects mismatched correlation IDs (10 ms)
+    √ rejects an envelope whose request names a different organization (10 ms)
+    √ rejects a caller-supplied reserved identity field (12 ms)
+    √ rejects operation substitution and old contract versions (18 ms)
+    √ accepts an artifact update with a bounded patch (7 ms)
+    √ accepts workflow create and update commands (17 ms)
+    √ validates history IDs and authenticates history reads (31 ms)
+    √ rejects malformed create commands before any Fabric call (9 ms)
+  Fabric failure handling
+    √ returns a retryable 502 without exposing credentials (214 ms)
+    √ submits create and update payloads and closes the Fabric connection (215 ms)
+    √ returns Fabric history and closes the connection (197 ms)
+    √ returns a retryable error when a history evaluation fails (178 ms)
+    √ maps a chaincode organization denial to a non-retryable 403 (188 ms)
+
+-----------|---------|----------|---------|---------|-------------------
+File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------|---------|----------|---------|---------|-------------------
+All files  |   90.57 |    72.28 |    90.9 |   94.61 |                   
+ server.ts |   90.57 |    72.28 |    90.9 |   94.61 | 44,47,275,372-376 
+-----------|---------|----------|---------|---------|-------------------
+Test Suites: 2 passed, 2 total
+Tests:       24 passed, 24 total
+Snapshots:   0 total
+Time:        28.882 s, estimated 32 s
+Ran all test suites.
+
+> fabric-bridge@0.1.0 build
+> tsc -p tsconfig.json
+

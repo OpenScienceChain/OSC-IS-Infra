@@ -1,0 +1,84 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.41kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+#2 DONE 1.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 288B 0.0s done
+#3 DONE 0.0s
+
+#4 [build  1/10] FROM docker.io/library/node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+#4 resolve docker.io/library/node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 293.39kB 0.0s done
+#5 DONE 0.0s
+
+#6 [build  6/10] COPY security/npm-malware-blocklist.csv security/npm-lifecycle-allowlist.json ./security/
+#6 CACHED
+
+#7 [build  2/10] WORKDIR /app
+#7 CACHED
+
+#8 [build  4/10] COPY package.json package-lock.json .npmrc ./
+#8 CACHED
+
+#9 [build  7/10] RUN python3 scripts/security/check_npm_supply_chain.py --repo . --offline-reviewed --skip-installed     && npm ci --ignore-scripts --no-audit --fund=false     && npm audit signatures     && npm rebuild pkcs11js@2.1.7 protobufjs@7.6.5 --ignore-scripts=false     && python3 scripts/security/check_npm_supply_chain.py --repo . --offline-reviewed
+#9 CACHED
+
+#10 [build  3/10] RUN apk add --no-cache python3 make g++
+#10 CACHED
+
+#11 [build  5/10] COPY scripts/security/check_npm_supply_chain.py ./scripts/security/check_npm_supply_chain.py
+#11 CACHED
+
+#12 [build  8/10] COPY tsconfig.json ./
+#12 CACHED
+
+#13 [build  9/10] COPY src ./src
+#13 DONE 0.0s
+
+#14 [build 10/10] RUN npm run build && npm prune --omit=dev --ignore-scripts
+#14 0.887 
+#14 0.887 > fabric-bridge@0.1.0 build
+#14 0.887 > tsc -p tsconfig.json
+#14 0.887 
+#14 20.21 
+#14 20.21 removed 336 packages, and audited 126 packages in 16s
+#14 20.21 
+#14 20.21 3 moderate severity vulnerabilities
+#14 20.21 
+#14 20.21 To address all issues (including breaking changes), run:
+#14 20.21   npm audit fix --force
+#14 20.21 
+#14 20.21 Run `npm audit` for details.
+#14 DONE 20.3s
+
+#15 [runtime 3/6] RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0     && rm -rf /usr/local/lib/node_modules/npm       /usr/local/bin/npm       /usr/local/bin/npx
+#15 CACHED
+
+#16 [runtime 4/6] COPY package.json package-lock.json ./
+#16 CACHED
+
+#17 [runtime 5/6] COPY --from=build /app/node_modules ./node_modules
+#17 CACHED
+
+#18 [runtime 6/6] COPY --from=build /app/dist ./dist
+#18 DONE 0.0s
+
+#19 exporting to image
+#19 exporting layers 0.1s done
+#19 exporting manifest sha256:ba93a31db4b1e4bef3a90b7f281f78e4164b6dc89b08350378dc0c4a5631001e 0.0s done
+#19 exporting config sha256:6c3fee9c2693c02f5e28ae86ffe646187d252f6a5eae5cf7ce8d2eaf0aa38573 0.0s done
+#19 exporting attestation manifest sha256:1805d9645460b5087414e17c070b7796fbc046f121bbbbd5b07ef3957ec3fde4 0.0s done
+#19 exporting manifest list sha256:396e9c9be3b95ff40a035e10317304e5ae249aef4787242df934724be056fd41 0.0s done
+#19 naming to docker.io/library/osc-remediation-fabric-bridge:9f167ef
+#19 naming to docker.io/library/osc-remediation-fabric-bridge:9f167ef done
+#19 unpacking to docker.io/library/osc-remediation-fabric-bridge:9f167ef
+#19 unpacking to docker.io/library/osc-remediation-fabric-bridge:9f167ef 0.8s done
+#19 DONE 1.1s
