@@ -44,18 +44,18 @@
 #13 DONE 0.0s
 
 #14 [build 10/10] RUN npm run build && npm prune --omit=dev --ignore-scripts
-#14 0.887 
+#14 0.887
 #14 0.887 > fabric-bridge@0.1.0 build
 #14 0.887 > tsc -p tsconfig.json
-#14 0.887 
-#14 20.21 
+#14 0.887
+#14 20.21
 #14 20.21 removed 336 packages, and audited 126 packages in 16s
-#14 20.21 
+#14 20.21
 #14 20.21 3 moderate severity vulnerabilities
-#14 20.21 
+#14 20.21
 #14 20.21 To address all issues (including breaking changes), run:
 #14 20.21   npm audit fix --force
-#14 20.21 
+#14 20.21
 #14 20.21 Run `npm audit` for details.
 #14 DONE 20.3s
 

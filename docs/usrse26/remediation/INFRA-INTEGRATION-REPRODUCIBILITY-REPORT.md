@@ -1,7 +1,7 @@
 # Infrastructure Integration and Reproducibility Remediation
 
-Date: 2026-09-02  
-Scope: OSC-Artifact-Submission integration and OSC-IS-Infra clean-checkout behavior  
+Date: 2026-09-02
+Scope: OSC-Artifact-Submission integration and OSC-IS-Infra clean-checkout behavior
 Disposition: locally implemented and verified; not pushed, deployed, or merged
 
 ## Executive result

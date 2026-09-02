@@ -61,10 +61,10 @@ PASS test/server.test.ts (23.439 s)
     √ maps a chaincode organization denial to a non-retryable 403 (188 ms)
 
 -----------|---------|----------|---------|---------|-------------------
-File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
 -----------|---------|----------|---------|---------|-------------------
-All files  |   90.57 |    72.28 |    90.9 |   94.61 |                   
- server.ts |   90.57 |    72.28 |    90.9 |   94.61 | 44,47,275,372-376 
+All files  |   90.57 |    72.28 |    90.9 |   94.61 |
+ server.ts |   90.57 |    72.28 |    90.9 |   94.61 | 44,47,275,372-376
 -----------|---------|----------|---------|---------|-------------------
 Test Suites: 2 passed, 2 total
 Tests:       24 passed, 24 total
@@ -74,4 +74,3 @@ Ran all test suites.
 
 > fabric-bridge@0.1.0 build
 > tsc -p tsconfig.json
-
