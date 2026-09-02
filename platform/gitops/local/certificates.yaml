@@ -1,0 +1,61 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: osc-selfsigned
+  namespace: osc-apps
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: osc-local-ca
+  namespace: osc-apps
+spec:
+  isCA: true
+  commonName: osc-usrse26-local-ca
+  secretName: osc-local-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: osc-selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: osc-local-ca
+  namespace: osc-apps
+spec:
+  ca:
+    secretName: osc-local-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: postgres-tls
+  namespace: osc-apps
+spec:
+  secretName: postgres-tls
+  dnsNames:
+    - postgres
+    - postgres.osc-apps
+    - postgres.osc-apps.svc
+    - postgres.osc-apps.svc.cluster.local
+  issuerRef:
+    name: osc-local-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rabbitmq-tls
+  namespace: osc-apps
+spec:
+  secretName: rabbitmq-tls
+  dnsNames:
+    - rabbitmq
+    - rabbitmq.osc-apps
+    - rabbitmq.osc-apps.svc
+    - rabbitmq.osc-apps.svc.cluster.local
+  issuerRef:
+    name: osc-local-ca

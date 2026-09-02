@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: submission-worker
+  namespace: osc-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: submission-worker}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: submission-worker, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: submission-worker
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: submission-worker
+          image: localhost:5017/osc-submission-worker:usrse26-local@sha256:77c8276506edf0be5c1f2619a0bee11128277b0425abf120da7cb49d2f1b2360
+          env:
+            - {name: ENVIRONMENT, value: staging}
+            - {name: RABBITMQ_HOST, value: rabbitmq.osc-apps.svc.cluster.local}
+            - {name: RABBITMQ_PORT, value: "5671"}
+            - {name: RABBITMQ_TLS, value: "true"}
+            - {name: RABBITMQ_CA_PATH, value: /var/run/osc/rabbitmq/ca.crt}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: username}
+            - name: RABBITMQ_PASS
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: password}
+            - {name: LEDGER_GATEWAY_NSG_URL, value: http://ledger-gateway-nsg:4000}
+            - {name: LEDGER_GATEWAY_CITIZEN_SCIENCE_URL, value: http://ledger-gateway-citizen-science:4000}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - name: LEDGER_GATEWAY_NSG_TOKEN
+              valueFrom:
+                secretKeyRef: {name: ledger-gateway-nsg-auth, key: token}
+            - name: LEDGER_GATEWAY_CITIZEN_SCIENCE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: ledger-gateway-citizen-science-auth, key: token}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: rabbitmq-ca, mountPath: /var/run/osc/rabbitmq, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: rabbitmq-ca
+          secret:
+            secretName: rabbitmq-tls
+            items: [{key: ca.crt, path: ca.crt}]
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: submission-listener
+  namespace: osc-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: submission-listener}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: submission-listener, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: submission-listener
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: submission-listener
+          image: localhost:5017/osc-submission-listener:usrse26-local@sha256:a5c5eda42ac9bc15810198208887ea012973d45bddb79ce08286bd2efbaddcb4
+          env:
+            - {name: ENVIRONMENT, value: staging}
+            - {name: RABBITMQ_HOST, value: rabbitmq.osc-apps.svc.cluster.local}
+            - {name: RABBITMQ_PORT, value: "5671"}
+            - {name: RABBITMQ_TLS, value: "true"}
+            - {name: RABBITMQ_CA_PATH, value: /var/run/osc/rabbitmq/ca.crt}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: username}
+            - name: RABBITMQ_PASS
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: password}
+            - {name: API_GATEWAY_BASE_URL, value: http://api-gateway:3000/api/v1}
+            - name: SUBMISSION_LISTENER_API_KEY
+              valueFrom:
+                secretKeyRef: {name: listener-api-auth, key: api-key}
+            - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: rabbitmq-ca, mountPath: /var/run/osc/rabbitmq, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: rabbitmq-ca
+          secret:
+            secretName: rabbitmq-tls
+            items: [{key: ca.crt, path: ca.crt}]
+        - {name: tmp, emptyDir: {}}
