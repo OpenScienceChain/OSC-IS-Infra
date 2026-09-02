@@ -1,0 +1,14 @@
+{
+  "request": {
+    "correlationId": "usrse26-e2e-20260902-local-003",
+    "artifactId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+    "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  },
+  "finalApi": {
+    "id": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+    "organizationId": null,
+    "submissionState": "SUCCESS",
+    "blockchainTxId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+    "peerId": null
+  }
+}

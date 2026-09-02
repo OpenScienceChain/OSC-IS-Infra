@@ -1,0 +1,24 @@
+{
+  "result": "PASS",
+  "tests": [
+    {"name": "clean checkout and transient-secret lifecycle", "result": "PASS"},
+    {"name": "secure dependency and immutable image builds", "result": "PASS"},
+    {"name": "application deployment reconciliation twice", "result": "PASS"},
+    {"name": "seven credential Secret hashes unchanged", "result": "PASS"},
+    {"name": "single-revision correlated provenance trace", "result": "PASS"},
+    {"name": "NSG API and Fabric provenance", "result": "PASS"},
+    {"name": "Citizen Science cross-organization denial", "result": "PASS"},
+    {"name": "direct Fabric provenance and organization isolation", "result": "PASS"},
+    {"name": "complete local API, RabbitMQ, worker, listener, and Fabric stack", "result": "PASS"},
+    {"name": "ledger gateway, RabbitMQ, and peer failure recovery", "result": "PASS"},
+    {"name": "Argo CD drift detection, rollout, and rollback", "result": "PASS"}
+  ],
+  "retainedTrace": {
+    "correlationId": "usrse26-e2e-20260902-local-003",
+    "artifactId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+    "transactionId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+    "ledgerRevisions": 1,
+    "duplicateLedgerWritesObserved": false
+  },
+  "credentialsRetained": false
+}

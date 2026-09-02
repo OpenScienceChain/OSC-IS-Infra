@@ -1,0 +1,17 @@
+{
+  "sourceRevisions": {
+    "OSC-IS-Infra": "4d735abc3665dc1fb8e03f2b8f5aab7d54ce4574",
+    "OSC-Artifact-Submission": "9f167efdc95767f2fa16673923b28980a63adc43",
+    "OSC-WebApp": "16b18d31360104198021be7e619069f8d334da1b",
+    "OSC-APIGateway": "b66cf12430fb086a83957950aeed5aa435fab42e",
+    "OSC-Chaincode": "743df2d41a1ac845dc4600317aedf21cc0b0024e"
+  },
+  "localIntegrationCommit": "83bda3b",
+  "images": {
+    "apiGateway": "localhost:5017/osc-api-gateway@sha256:a24064caa9d530253b669b397b7a8cd804d0cffe0cfecc424de3948a984eb6b8",
+    "ledgerGateway": "localhost:5017/osc-ledger-gateway@sha256:e08f05eef4343108d5b3d97b0694113b5dda48650af0731450fae07cc964d4e2",
+    "submissionWorker": "localhost:5017/osc-submission-worker@sha256:cf1da86cef33dbda17f7f13ad2d7f159a7174fdda5071b82c79ff8354bedb856",
+    "submissionListener": "localhost:5017/osc-submission-listener@sha256:39bc3f63edf3df9e8cd58cd57be883f42899c657e8410234469536f2a0a89912",
+    "chaincode": "localhost:5017/osc-provenance@sha256:00e12d682c9691eee9fa2fb05e78dceb94b2a2c83191a80b237e8989ee30d716"
+  }
+}

@@ -1,0 +1,1 @@
+Error: endorsement failure during query. response: status:500 message:"artifact belongs to a different organization" 
