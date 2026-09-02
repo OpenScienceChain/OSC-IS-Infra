@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SECRET_DIR="${PLATFORM_DIR}/.generated/runtime-secrets"
 PASSWORD_FILE="${SECRET_DIR}/e2e-password"
-API_IMAGE=localhost:5017/osc-api-gateway@sha256:917bd71bd7c1906ae4af22c90468ddd2ac00008dfeb9c5241a7ddf7b8308603d
+API_IMAGE=${API_IMAGE:-localhost:5017/osc-api-gateway@sha256:917bd71bd7c1906ae4af22c90468ddd2ac00008dfeb9c5241a7ddf7b8308603d}
 
 umask 077
 if [[ -s "${PASSWORD_FILE}" ]]; then

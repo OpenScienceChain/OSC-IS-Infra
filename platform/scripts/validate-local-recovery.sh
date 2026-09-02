@@ -3,7 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-EVIDENCE_DIR="${PLATFORM_DIR}/.generated/evidence/local-recovery"
+EVIDENCE_DIR="${EVIDENCE_DIR:-${PLATFORM_DIR}/.generated/evidence/local-recovery}"
+EXPECTED_CONTEXT="${EXPECTED_CONTEXT:-kind-osc-usrse26-infra}"
+RECOVERY_MODE="${RECOVERY_MODE:-local}"
+APPLICATION="${APPLICATION:-osc-is-local}"
 API_URL=http://127.0.0.1:13000/api/v1
 LEDGER_URL=http://127.0.0.1:14001
 NSG_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
@@ -12,7 +15,14 @@ PORT_FORWARD_PIDS=()
 
 restore_stack() {
   kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas=1 >/dev/null 2>&1 || true
-  kubectl -n osc-apps scale statefulset/rabbitmq --replicas=1 >/dev/null 2>&1 || true
+  kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=1 >/dev/null 2>&1 || true
+  if [[ "${RECOVERY_MODE}" == "aws" ]]; then
+    [[ -z "${AWS_NETWORK_POLICIES:-}" ]] || kubectl apply -f "${AWS_NETWORK_POLICIES}" >/dev/null 2>&1 || true
+    kubectl -n argocd patch application "${APPLICATION}" --type=merge \
+      -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}' >/dev/null 2>&1 || true
+  else
+    kubectl -n osc-apps scale statefulset/rabbitmq --replicas=1 >/dev/null 2>&1 || true
+  fi
 }
 
 cleanup() {
@@ -26,8 +36,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! kubectl config current-context | grep -Fxq kind-osc-usrse26-infra; then
-  echo "Refusing to validate outside kind-osc-usrse26-infra"
+if ! kubectl config current-context | grep -Fxq "${EXPECTED_CONTEXT}"; then
+  echo "Refusing to validate outside ${EXPECTED_CONTEXT}"
+  exit 1
+fi
+if [[ "${RECOVERY_MODE}" == "aws" && ! -f "${AWS_NETWORK_POLICIES:-}" ]]; then
+  echo "AWS_NETWORK_POLICIES is required for the controlled Amazon MQ outage" >&2
   exit 1
 fi
 mkdir -p "${EVIDENCE_DIR}"
@@ -131,10 +145,21 @@ GATEWAY_HISTORY=$(curl --fail-with-body --silent --show-error \
 gateway_revision_count=$(jq -er 'length' <<<"${GATEWAY_HISTORY}")
 [[ "${gateway_revision_count}" == 1 ]]
 
-# Scenario 2: RabbitMQ disappears after the API transaction is committed.
+# Scenario 2: RabbitMQ becomes unreachable after the API transaction is committed.
 rabbit_started=$(date +%s)
-kubectl -n osc-apps scale statefulset/rabbitmq --replicas=0 >/dev/null
-kubectl -n osc-apps wait --for=delete pod/rabbitmq-0 --timeout=90s >/dev/null
+worker_restarted=false
+if [[ "${RECOVERY_MODE}" == "aws" ]]; then
+  kubectl -n argocd patch application "${APPLICATION}" --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}' >/dev/null
+  kubectl -n osc-apps patch networkpolicy rabbitmq-amqps --type=merge \
+    -p '{"spec":{"egress":[]}}' >/dev/null
+  kubectl -n osc-apps delete pod -l app.kubernetes.io/name=api-gateway --wait=true >/dev/null
+  kubectl -n osc-apps rollout status deployment/api-gateway --timeout=180s >/dev/null
+  sleep 10
+else
+  kubectl -n osc-apps scale statefulset/rabbitmq --replicas=0 >/dev/null
+  kubectl -n osc-apps wait --for=delete pod/rabbitmq-0 --timeout=90s >/dev/null
+fi
 RABBIT_ARTIFACT_ID=$(create_artifact rabbitmq "${RUN_ID}")
 sleep 2
 rabbit_pending_state=$(artifact_state "${RABBIT_ARTIFACT_ID}" | jq -r '.submissionState')
@@ -142,8 +167,18 @@ rabbit_pending_state=$(artifact_state "${RABBIT_ARTIFACT_ID}" | jq -r '.submissi
 rabbit_outbox_before=$(outbox_status "${RABBIT_ARTIFACT_ID}")
 [[ "${rabbit_outbox_before}" == pending ]]
 
-kubectl -n osc-apps scale statefulset/rabbitmq --replicas=1 >/dev/null
-kubectl -n osc-apps rollout status statefulset/rabbitmq --timeout=180s >/dev/null
+if [[ "${RECOVERY_MODE}" == "aws" ]]; then
+  kubectl -n osc-apps delete pod -l app.kubernetes.io/name=submission-worker --wait=true >/dev/null
+  kubectl -n osc-apps rollout status deployment/submission-worker --timeout=180s >/dev/null
+  worker_restarted=true
+  kubectl apply -f "${AWS_NETWORK_POLICIES}" >/dev/null
+  kubectl -n argocd patch application "${APPLICATION}" --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}' >/dev/null
+  kubectl -n argocd annotate application "${APPLICATION}" argocd.argoproj.io/refresh=hard --overwrite >/dev/null
+else
+  kubectl -n osc-apps scale statefulset/rabbitmq --replicas=1 >/dev/null
+  kubectl -n osc-apps rollout status statefulset/rabbitmq --timeout=180s >/dev/null
+fi
 kubectl -n osc-apps rollout status deployment/submission-worker --timeout=180s >/dev/null
 kubectl -n osc-apps rollout status deployment/submission-listener --timeout=180s >/dev/null
 RABBIT_TX=$(wait_for_success "${RABBIT_ARTIFACT_ID}")
@@ -155,6 +190,21 @@ RABBIT_HISTORY=$(curl --fail-with-body --silent --show-error \
   "${LEDGER_URL}/history/${RABBIT_ARTIFACT_ID}")
 rabbit_revision_count=$(jq -er 'length' <<<"${RABBIT_HISTORY}")
 [[ "${rabbit_revision_count}" == 1 ]]
+
+# Scenario 3: one NSG peer disappears while the organization gateway uses peer2.
+peer_started=$(date +%s)
+kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=0 >/dev/null
+kubectl -n osc-fabric wait --for=delete pod -l app=org1-peer1 --timeout=90s >/dev/null
+PEER_ARTIFACT_ID=$(create_artifact peer "${RUN_ID}")
+PEER_TX=$(wait_for_success "${PEER_ARTIFACT_ID}")
+peer_recovery_seconds=$(( $(date +%s) - peer_started ))
+PEER_HISTORY=$(curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer ${LEDGER_TOKEN}" \
+  "${LEDGER_URL}/history/${PEER_ARTIFACT_ID}")
+peer_revision_count=$(jq -er 'length' <<<"${PEER_HISTORY}")
+[[ "${peer_revision_count}" == 1 ]]
+kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=1 >/dev/null
+kubectl -n osc-fabric rollout status deployment/org1-peer1 --timeout=180s >/dev/null
 
 jq -n \
   --arg runId "${RUN_ID}" \
@@ -168,6 +218,11 @@ jq -n \
   --argjson rabbitRevisions "${rabbit_revision_count}" \
   --arg outboxBefore "${rabbit_outbox_before}" \
   --arg outboxAfter "${rabbit_outbox_after}" \
+  --argjson workerRestarted "${worker_restarted}" \
+  --arg peerArtifactId "${PEER_ARTIFACT_ID}" \
+  --arg peerTransactionId "${PEER_TX}" \
+  --argjson peerRecoverySeconds "${peer_recovery_seconds}" \
+  --argjson peerRevisions "${peer_revision_count}" \
   '{
     testRun: $runId,
     ledgerGatewayRecovery: {
@@ -179,7 +234,13 @@ jq -n \
       acceptedState: "PENDING", recoveredState: "SUCCESS",
       artifactId: $rabbitArtifactId, transactionId: $rabbitTransactionId,
       outboxBeforeRecovery: $outboxBefore, outboxAfterRecovery: $outboxAfter,
-      recoverySeconds: $rabbitRecoverySeconds, ledgerRevisions: $rabbitRevisions
+      recoverySeconds: $rabbitRecoverySeconds, ledgerRevisions: $rabbitRevisions,
+      workerRestartedDuringOutage: $workerRestarted
+    },
+    peerFailure: {
+      alternatePeerAcceptedTransaction: true,
+      artifactId: $peerArtifactId, transactionId: $peerTransactionId,
+      recoverySeconds: $peerRecoverySeconds, ledgerRevisions: $peerRevisions
     },
     duplicateLedgerWritesObserved: false,
     credentialsRetained: false

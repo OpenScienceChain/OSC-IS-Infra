@@ -3,9 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-EVIDENCE_DIR="${PLATFORM_DIR}/.generated/evidence/local-stack"
+EVIDENCE_DIR="${EVIDENCE_DIR:-${PLATFORM_DIR}/.generated/evidence/local-stack}"
+EXPECTED_CONTEXT="${EXPECTED_CONTEXT:-kind-osc-usrse26-infra}"
 API_URL=http://127.0.0.1:13000/api/v1
 LEDGER_URL=http://127.0.0.1:14001
+CITIZEN_LEDGER_URL=http://127.0.0.1:14002
 NSG_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 CITIZEN_ID=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
 TMP_DIR=$(mktemp -d)
@@ -30,8 +32,8 @@ cleanup() {
 trap 'on_error ${LINENO}' ERR
 trap cleanup EXIT
 
-if ! kubectl config current-context | grep -Fxq kind-osc-usrse26-infra; then
-  echo "Refusing to validate outside kind-osc-usrse26-infra"
+if ! kubectl config current-context | grep -Fxq "${EXPECTED_CONTEXT}"; then
+  echo "Refusing to validate outside ${EXPECTED_CONTEXT}"
   exit 1
 fi
 for command in curl jq base64; do
@@ -43,9 +45,14 @@ PASSWORD=$(kubectl -n osc-apps get secret e2e-user-credentials \
   -o jsonpath='{.data.password}' | base64 -d)
 LEDGER_TOKEN=$(kubectl -n osc-apps get secret ledger-gateway-nsg-auth \
   -o jsonpath='{.data.token}' | base64 -d)
+CITIZEN_LEDGER_TOKEN=$(kubectl -n osc-apps get secret ledger-gateway-citizen-science-auth \
+  -o jsonpath='{.data.token}' | base64 -d)
 
 kubectl -n osc-apps port-forward service/api-gateway 13000:3000 \
   --address 127.0.0.1 >"${TMP_DIR}/api-forward.log" 2>&1 &
+PORT_FORWARD_PIDS+=("$!")
+kubectl -n osc-apps port-forward service/ledger-gateway-citizen-science 14002:4000 \
+  --address 127.0.0.1 >"${TMP_DIR}/citizen-ledger-forward.log" 2>&1 &
 PORT_FORWARD_PIDS+=("$!")
 kubectl -n osc-apps port-forward service/ledger-gateway-nsg 14001:4000 \
   --address 127.0.0.1 >"${TMP_DIR}/ledger-forward.log" 2>&1 &
@@ -53,13 +60,15 @@ PORT_FORWARD_PIDS+=("$!")
 
 for _ in $(seq 1 30); do
   if curl --fail --silent "${API_URL}/health" >/dev/null \
-    && curl --fail --silent "${LEDGER_URL}/health" >/dev/null; then
+    && curl --fail --silent "${LEDGER_URL}/health" >/dev/null \
+    && curl --fail --silent "${CITIZEN_LEDGER_URL}/health" >/dev/null; then
     break
   fi
   sleep 1
 done
 curl --fail --silent "${API_URL}/health" >/dev/null
 curl --fail --silent "${LEDGER_URL}/health" >/dev/null
+curl --fail --silent "${CITIZEN_LEDGER_URL}/health" >/dev/null
 
 login() {
   local username=$1 organization_id=$2 response
@@ -198,6 +207,10 @@ jq -e 'length == 2 and .[0].record.revision == 1 and .[1].record.revision == 2' 
   <<<"${ARTIFACT_HISTORY}" >/dev/null
 jq -e 'length == 1 and .[0].record.revision == 1' <<<"${WORKFLOW_HISTORY}" >/dev/null
 
+# The wrong Fabric organization identity is denied by chaincode itself.
+fabric_cross_org_status=$(expect_status '^4[0-9][0-9]$' GET \
+  "${CITIZEN_LEDGER_URL}/history/${ARTIFACT_ID}" "${CITIZEN_LEDGER_TOKEN}")
+
 # Decode only non-secret JWT claims, proving that a token carries one active org.
 jwt_claims() {
   local payload padding
@@ -224,6 +237,7 @@ jq -n \
   --arg crossOrgRead "${cross_org_read_status}" \
   --arg crossOrgWrite "${cross_org_write_status}" \
   --arg collaboratorAdmin "${collaborator_admin_status}" \
+  --arg fabricCrossOrg "${fabric_cross_org_status}" \
   '{
     testRun: $runId,
     organizations: [
@@ -238,6 +252,7 @@ jq -n \
       crossOrgReadDenied: ($crossOrgRead | startswith("4")),
       crossOrgWriteDenied: ($crossOrgWrite | startswith("4")),
       collaboratorAdminDenied: ($collaboratorAdmin == "403"),
+      fabricCrossOrganizationIdentityDenied: ($fabricCrossOrg | startswith("4")),
       activeOrganizationClaimsVerified: true
     },
     credentialsRetained: false

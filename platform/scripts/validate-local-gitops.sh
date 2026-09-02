@@ -4,16 +4,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 GENERATED_DIR="${PLATFORM_DIR}/.generated/gitops"
-EVIDENCE_DIR="${PLATFORM_DIR}/.generated/evidence/local-gitops"
-APPLICATION="osc-is-local"
+EVIDENCE_DIR="${EVIDENCE_DIR:-${PLATFORM_DIR}/.generated/evidence/local-gitops}"
+APPLICATION="${APPLICATION:-osc-is-local}"
+EXPECTED_CONTEXT="${EXPECTED_CONTEXT:-kind-osc-usrse26-infra}"
 ROLLOUT_ANNOTATION="usrse26.osc.example/rollout-id"
 
-if [[ ! -f "${GENERATED_DIR}/run.env" ]]; then
-  echo "Run deploy-local-gitops.sh first." >&2
+if [[ -f "${GENERATED_DIR}/run.env" && -z "${BASELINE_REVISION:-}" ]]; then
+  # shellcheck source=/dev/null
+  source "${GENERATED_DIR}/run.env"
+fi
+: "${RUN_ID:?RUN_ID or local run.env is required}"
+: "${BASELINE_REVISION:?BASELINE_REVISION or local run.env is required}"
+: "${ROLLOUT_REVISION:?ROLLOUT_REVISION or local run.env is required}"
+: "${REPOSITORY_IMAGE:?REPOSITORY_IMAGE or local run.env is required}"
+if ! kubectl config current-context | grep -Fxq "${EXPECTED_CONTEXT}"; then
+  echo "Refusing to validate outside ${EXPECTED_CONTEXT}" >&2
   exit 1
 fi
-# shellcheck source=/dev/null
-source "${GENERATED_DIR}/run.env"
 mkdir -p "${EVIDENCE_DIR}"
 
 wait_for_application() {

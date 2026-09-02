@@ -1,0 +1,16 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-osc
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  tagSpecification_1: Project=OSC-IS
+  tagSpecification_2: Purpose=USRSE26-Evidence
+  tagSpecification_3: Environment=ephemeral
+  tagSpecification_4: ManagedBy=EKS-EBS-CSI
+  tagSpecification_5: RunId=__RUN_ID__
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

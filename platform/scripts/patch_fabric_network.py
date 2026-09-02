@@ -48,6 +48,7 @@ def main() -> None:
     parser.add_argument("--fabric-bin", type=Path, required=True)
     parser.add_argument("--vendor", type=Path, required=True)
     parser.add_argument("--versions", type=Path, required=True)
+    parser.add_argument("--runtime", choices=("kind", "eks"), default="kind")
     args = parser.parse_args()
 
     versions = parse_versions(args.versions)
@@ -67,10 +68,8 @@ def main() -> None:
             path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
 
     shutil.copy2(args.vendor / "cert-manager-v1.21.1.yaml", args.destination / "kube" / "cert-manager.yaml")
-    shutil.copy2(
-        args.vendor / "ingress-nginx-kind-v1.15.1.yaml",
-        args.destination / "kube" / "ingress-nginx-kind.yaml",
-    )
+    ingress = args.destination / "kube" / f"ingress-nginx-{args.runtime}.yaml"
+    shutil.copy2(args.vendor / "ingress-nginx-kind-v1.15.1.yaml", ingress)
 
     for path in args.destination.rglob("*"):
         if path.is_file() and (path.suffix in TEXT_SUFFIXES or path.name == "network"):
@@ -92,19 +91,23 @@ def main() -> None:
         1,
     )
 
-    ingress = args.destination / "kube" / "ingress-nginx-kind.yaml"
     replace_required(
         ingress,
         "        - --ingress-class=nginx\n",
         "        - --ingress-class=nginx\n        - --enable-ssl-passthrough\n",
         1,
     )
-    replace_required(
-        ingress,
-        "      nodeSelector:\n        kubernetes.io/os: linux\n      serviceAccountName: ingress-nginx\n",
-        "      nodeSelector:\n        ingress-ready: \"true\"\n        kubernetes.io/os: linux\n      serviceAccountName: ingress-nginx\n",
-        1,
-    )
+    if args.runtime == "kind":
+        replace_required(
+            ingress,
+            "      nodeSelector:\n        kubernetes.io/os: linux\n      serviceAccountName: ingress-nginx\n",
+            "      nodeSelector:\n        ingress-ready: \"true\"\n        kubernetes.io/os: linux\n      serviceAccountName: ingress-nginx\n",
+            1,
+        )
+    else:
+        replace_required(ingress, "  type: LoadBalancer\n", "  type: ClusterIP\n", 1)
+        replace_required(ingress, "          hostPort: 80\n", "", 1)
+        replace_required(ingress, "          hostPort: 443\n", "", 1)
 
     prereqs = args.destination / "scripts" / "prereqs.sh"
     regex_replace_required(
@@ -132,7 +135,120 @@ def main() -> None:
             text = text.replace(old, new)
         path.write_text(text, encoding="utf-8", newline="\n")
 
+    fabric_config = args.destination / "scripts" / "fabric_config.sh"
+    if args.runtime == "eks":
+        replace_required(
+            fabric_config,
+            """  elif [ "${CLUSTER_RUNTIME}" == "k3s" ]; then
+    export STORAGE_CLASS="local-path"
+
+  else
+""",
+            """  elif [ "${CLUSTER_RUNTIME}" == "k3s" ]; then
+    export STORAGE_CLASS="local-path"
+
+  elif [ "${CLUSTER_RUNTIME}" == "eks" ]; then
+    export STORAGE_CLASS="gp3-osc"
+
+  else
+""",
+            1,
+        )
+
+        chaincode_tls = args.destination / "kube" / "chaincode-tls.yaml"
+        chaincode_tls.write_text(
+            """apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: osc-chaincode-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: osc-chaincode-ca
+spec:
+  isCA: true
+  commonName: osc-usrse26-chaincode-ca
+  secretName: osc-chaincode-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: osc-chaincode-selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: osc-chaincode-ca
+spec:
+  ca:
+    secretName: osc-chaincode-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: osc-chaincode-server-tls
+spec:
+  secretName: osc-chaincode-server-tls
+  dnsNames:
+    - '*.osc-fabric.svc'
+    - '*.osc-fabric.svc.cluster.local'
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: osc-chaincode-ca
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+        test_network = args.destination / "scripts" / "test_network.sh"
+        replace_required(
+            test_network,
+            """  # Network TLS CAs
+  init_tls_cert_issuers
+
+  # Network ECert CAs
+""",
+            """  # Network TLS CAs
+  init_tls_cert_issuers
+
+  if [ "${CLUSTER_RUNTIME}" == "eks" ]; then
+    kubectl -n ${ORG1_NS} apply -f kube/chaincode-tls.yaml
+    kubectl -n ${ORG1_NS} wait --for=condition=Ready certificate/osc-chaincode-ca --timeout=120s
+    kubectl -n ${ORG1_NS} wait --for=condition=Ready certificate/osc-chaincode-server-tls --timeout=120s
+  fi
+
+  # Network ECert CAs
+""",
+            1,
+        )
+
     chaincode = args.destination / "scripts" / "chaincode.sh"
+    replace_required(
+        chaincode,
+        """  build_chaincode_image ${cc_folder} ${cc_name}
+
+  if [ "${CLUSTER_RUNTIME}" == "k3s" ]; then
+""",
+        """  if [ -n "${EXTERNAL_CHAINCODE_IMAGE:-}" ]; then
+    if [[ "${EXTERNAL_CHAINCODE_IMAGE}" != *@sha256:* ]]; then
+      echo "EXTERNAL_CHAINCODE_IMAGE must be an immutable image digest"
+      exit 1
+    fi
+    export CHAINCODE_IMAGE=${EXTERNAL_CHAINCODE_IMAGE}
+    return
+  fi
+
+  build_chaincode_image ${cc_folder} ${cc_name}
+
+  if [ "${CLUSTER_RUNTIME}" == "k3s" ]; then
+""",
+        1,
+    )
     replace_required(
         chaincode,
         "    publish_chaincode_image ${cc_name} ${CHAINCODE_IMAGE}\n",
@@ -228,6 +344,58 @@ function approve_chaincode() {
 # commit the named chaincode for an org""",
     )
 
+    regex_replace_required(
+        chaincode,
+        r"function package_ccaas_chaincode\(\) \{.*?\n\}\n\nfunction launch_chaincode_service\(\)",
+        """function package_ccaas_chaincode() {
+  local cc_name=$1
+  local cc_label=$2
+  local cc_archive=$3
+  local cc_folder=$(dirname $cc_archive)
+  local cc_default_address="{{.peername}}-ccaas-${cc_name}:9999"
+  local tls_required=false
+
+  if [ "${CLUSTER_RUNTIME}" == "eks" ]; then
+    cc_default_address="{{.peername}}-ccaas-${cc_name}.${ORG1_NS}.svc:9999"
+    tls_required=true
+  fi
+  local cc_address=${TEST_NETWORK_CHAINCODE_ADDRESS:-$cc_default_address}
+
+  push_fn "Packaging ccaas chaincode ${cc_label}"
+  mkdir -p ${cc_folder}
+
+  if [ "${tls_required}" == "true" ]; then
+    kubectl -n ${ORG1_NS} get secret osc-chaincode-ca -o jsonpath='{.data.tls\\.crt}' \\
+      | base64 --decode > ${cc_folder}/chaincode-ca.pem
+    jq -n \\
+      --arg address "${cc_address}" \\
+      --rawfile root_cert ${cc_folder}/chaincode-ca.pem \\
+      '{address: $address, dial_timeout: "10s", tls_required: true, root_cert: $root_cert}' \\
+      > ${cc_folder}/connection.json
+    rm ${cc_folder}/chaincode-ca.pem
+  else
+    jq -n \\
+      --arg address "${cc_address}" \\
+      '{address: $address, dial_timeout: "10s", tls_required: false}' \\
+      > ${cc_folder}/connection.json
+  fi
+
+  cat << EOF > ${cc_folder}/metadata.json
+{
+  "type": "ccaas",
+  "label": "${cc_label}"
+}
+EOF
+
+  tar -C ${cc_folder} -zcf ${cc_folder}/code.tar.gz connection.json
+  tar -C ${cc_folder} -zcf ${cc_archive} code.tar.gz metadata.json
+  rm ${cc_folder}/code.tar.gz
+  pop_fn
+}
+
+function launch_chaincode_service()""",
+    )
+
     for template in (
         args.destination / "kube" / "org1" / "org1-cc-template.yaml",
         args.destination / "kube" / "org2" / "org2-cc-template.yaml",
@@ -246,6 +414,45 @@ function approve_chaincode() {
 """,
             1,
         )
+        if args.runtime == "eks":
+            replace_required(
+                template,
+                """            - name: CHAINCODE_TLS_REQUIRED
+              value: "false"
+          ports:
+""",
+                """            - name: CHAINCODE_TLS_REQUIRED
+              value: "true"
+            - name: CHAINCODE_TLS_CERT_FILE
+              value: /var/run/osc/chaincode-tls/tls.crt
+            - name: CHAINCODE_TLS_KEY_FILE
+              value: /var/run/osc/chaincode-tls/tls.key
+          ports:
+""",
+                1,
+            )
+            replace_required(
+                template,
+                """          ports:
+            - containerPort: 9999
+
+---
+""",
+                """          ports:
+            - containerPort: 9999
+          volumeMounts:
+            - name: chaincode-tls
+              mountPath: /var/run/osc/chaincode-tls
+              readOnly: true
+      volumes:
+        - name: chaincode-tls
+          secret:
+            secretName: osc-chaincode-server-tls
+
+---
+""",
+                1,
+            )
         replace_required(
             template,
             """    spec:
