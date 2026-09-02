@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scanner": "Trivy",
+  "severityGate": [
+    "HIGH",
+    "CRITICAL"
+  ],
+  "images": [
+    {
+      "name": "api-gateway",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "ledger-gateway-original",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "submission-worker",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "submission-listener",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "chaincode",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "gitops-repository-original",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "ledger-gateway-authz1",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    },
+    {
+      "name": "gitops-repository-authz1",
+      "highCriticalFindings": 0,
+      "sbomPresent": true
+    }
+  ]
+}

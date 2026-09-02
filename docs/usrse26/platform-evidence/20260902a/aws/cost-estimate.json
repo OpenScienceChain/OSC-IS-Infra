@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "currency": "USD",
+  "hours": 8.0,
+  "componentsHourly": {
+    "EKS control plane": 0.1,
+    "3 x m7i.large nodes": 0.3024,
+    "Amazon MQ mq.m7g.medium": 0.1367,
+    "NAT gateway": 0.045,
+    "NAT public IPv4": 0.005,
+    "EBS, logs, ECR, and data transfer allowance": 0.04
+  },
+  "estimatedHourly": 0.6291,
+  "estimatedRun": 5.03,
+  "maximumWith25PercentContingency": 6.29,
+  "perRunCeiling": 15.0,
+  "campaignCeiling": 75.0,
+  "approved": true
+}

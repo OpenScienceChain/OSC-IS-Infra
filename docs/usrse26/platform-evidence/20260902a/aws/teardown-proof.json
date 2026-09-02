@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260902a",
+  "account": "269624229733",
+  "region": "us-west-2",
+  "startedAt": "2026-09-02T02:30:36.7694522Z",
+  "destroyedAndVerifiedAt": "2026-09-02T04:45:30.8066138Z",
+  "durationHours": 2.25,
+  "terraformResourcesDestroyed": 73,
+  "amazonMqResidualLogGroupsDeleted": 3,
+  "inventoryParity": true,
+  "addedSinceBaseline": {},
+  "runRemnants": {},
+  "estimatedHourlyUsd": 0.6291,
+  "estimatedUpperBoundUsd": 1.41,
+  "providerBillingAvailableAtTeardown": false,
+  "agentCreatedAwsResourcesRemaining": 0,
+  "notes": [
+    "Resource Groups tag results were cross-checked against authoritative EC2 inventories to exclude eventual-consistency entries for already deleted instances, volumes, and NAT gateways.",
+    "Unknown tagged resource types remain fail-closed in the parity gate."
+  ]
+}
