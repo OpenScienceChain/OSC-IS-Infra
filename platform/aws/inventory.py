@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -30,6 +31,30 @@ def active_stacks(payload: dict[str, Any]) -> list[dict[str, Any]]:
         for stack in payload.get("StackSummaries", [])
         if stack.get("StackStatus") != "DELETE_COMPLETE"
     ]
+
+
+EC2_TAG_INDEX_TYPES = {
+    "instance": "ec2_instances",
+    "volume": "ebs_volumes",
+    "snapshot": "ebs_snapshots_owned",
+    "natgateway": "nat_gateways",
+    "elastic-ip": "elastic_ips",
+}
+
+
+def tag_index_entry_is_active(arn: str, resources: dict[str, list[str]]) -> bool:
+    """Ignore Resource Groups entries that EC2 already reports as deleted."""
+    match = re.fullmatch(
+        rf"arn:aws:ec2:{re.escape(AUTHORIZED_REGION)}:{AUTHORIZED_ACCOUNT}:([^/]+)/(.+)",
+        arn,
+    )
+    if not match:
+        return True
+    resource_type, resource_id = match.groups()
+    authoritative_inventory = EC2_TAG_INDEX_TYPES.get(resource_type)
+    if authoritative_inventory is None:
+        return True
+    return resource_id in resources[authoritative_inventory]
 
 
 def collect() -> dict[str, Any]:
@@ -62,8 +87,9 @@ def collect() -> dict[str, Any]:
         "--tag-filters",
         "Key=Project,Values=OSC-IS",
     )
+    tagged_arns = [item.get("ResourceARN", "") for item in tagged.get("ResourceTagMappingList", [])]
     resources["osc_is_tagged_arns"] = sorted_unique(
-        [item.get("ResourceARN", "") for item in tagged.get("ResourceTagMappingList", [])]
+        [arn for arn in tagged_arns if tag_index_entry_is_active(arn, resources)]
     )
 
     return {
