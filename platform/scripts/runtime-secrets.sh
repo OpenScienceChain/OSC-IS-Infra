@@ -29,6 +29,7 @@ runtime_secrets_restrict_path() {
     windows_path=$(wslpath -w "${path}")
     windows_user=$(whoami.exe | tr -d '\r\n')
     [[ -n "${windows_user}" ]]
+    icacls.exe "${windows_path}" /reset >/dev/null
     icacls.exe "${windows_path}" \
       /inheritance:r \
       /grant:r "${windows_user}:${windows_grant}" >/dev/null
