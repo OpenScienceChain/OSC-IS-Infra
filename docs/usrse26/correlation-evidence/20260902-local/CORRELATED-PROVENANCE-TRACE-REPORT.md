@@ -8,15 +8,15 @@ The retained trace uses correlation ID `usrse26-e2e-20260902-local-003`, artifac
 
 ## Trace Evidence
 
-| Boundary | Direct evidence | Correlated value |
+| Boundary | Evidence and link quality | Correlated value |
 | --- | --- | --- |
-| Authenticated NSG API request | `api-boundaries.json` | Correlation and artifact IDs |
-| PostgreSQL artifact plus transactional outbox | `database-outbox.json` | Artifact, outbox, correlation, published state, zero retries |
-| RabbitMQ `artifact.submit` | `rabbitmq-boundaries.json` | Audit-queue copy of the real command |
-| Worker to NSG Ledger Gateway | `rabbitmq-boundaries.json` | Completion event carries the same correlation and returned transaction |
-| Fabric commit and chaincode state | `fabric-history.json` | Transaction, artifact, NSG MSP, correlation, revision 1 |
-| RabbitMQ `artifact.submitted` | `rabbitmq-boundaries.json` | Audit-queue copy of the real completion |
-| Listener and final API state | `api-boundaries.json`, `queue-depths-after.json` | Final success/transaction and drained completion queue |
+| Authenticated NSG API request | Direct: `api-boundaries.json` | Correlation and artifact IDs |
+| PostgreSQL artifact plus transactional outbox | Direct: `database-outbox.json` | Artifact, outbox, correlation, published state, zero retries |
+| RabbitMQ `artifact.submit` | Direct: `rabbitmq-boundaries.json` | Audit-queue copy of the real command |
+| Worker to NSG Ledger Gateway | Bounded inference: `rabbitmq-boundaries.json` | Correlated completion event carries the Fabric transaction returned by the organization path |
+| Fabric commit and chaincode state | Direct: `fabric-history.json` | Transaction, artifact, NSG MSP, correlation, revision 1 |
+| RabbitMQ `artifact.submitted` | Direct: `rabbitmq-boundaries.json` | Audit-queue copy of the real completion |
+| Listener and final API state | Bounded inference: `api-boundaries.json`, `queue-depths-after.json` | Final API success/transaction state plus an empty completion queue |
 
 `trace-manifest.json` is the machine-readable index. `checksums.sha256` covers the seven primary trace files. The RabbitMQ observer used an exclusive, auto-delete queue and retained only identifiers and routing metadata; it did not alter production queues or message acknowledgement.
 

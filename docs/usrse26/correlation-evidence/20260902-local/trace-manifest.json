@@ -31,7 +31,7 @@
       "order": 4,
       "name": "submission worker to organization ledger gateway",
       "evidence": "rabbitmq-boundaries.json",
-      "link": "direct result event carrying the same correlation and returned transaction",
+      "link": "bounded inference: correlated completion event carries the Fabric transaction returned by the organization path",
       "id": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25"
     },
     {
@@ -52,7 +52,7 @@
       "order": 7,
       "name": "listener-applied final API state",
       "evidence": "api-boundaries.json",
-      "link": "direct final state; listener consumption corroborated by empty completion queue",
+      "link": "bounded inference: final API success/transaction state plus an empty completion queue",
       "id": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25"
     }
   ],
