@@ -57,7 +57,7 @@ spec:
             readOnlyRootFilesystem: true
       containers:
         - name: api-gateway
-          image: localhost:5017/osc-api-gateway:usrse26-local@sha256:917bd71bd7c1906ae4af22c90468ddd2ac00008dfeb9c5241a7ddf7b8308603d
+          image: localhost:5017/osc-api-gateway:correlation-20260902@sha256:a24064caa9d530253b669b397b7a8cd804d0cffe0cfecc424de3948a984eb6b8
           env:
             - {name: NODE_ENV, value: production}
             - {name: PORT, value: "3000"}

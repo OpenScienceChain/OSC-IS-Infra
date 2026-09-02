@@ -20,7 +20,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: submission-worker
-          image: localhost:5017/osc-submission-worker:usrse26-local@sha256:77c8276506edf0be5c1f2619a0bee11128277b0425abf120da7cb49d2f1b2360
+          image: localhost:5017/osc-submission-worker:correlation-20260902@sha256:cf1da86cef33dbda17f7f13ad2d7f159a7174fdda5071b82c79ff8354bedb856
           env:
             - {name: ENVIRONMENT, value: staging}
             - {name: RABBITMQ_HOST, value: rabbitmq.osc-apps.svc.cluster.local}
@@ -84,7 +84,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: submission-listener
-          image: localhost:5017/osc-submission-listener:usrse26-local@sha256:a5c5eda42ac9bc15810198208887ea012973d45bddb79ce08286bd2efbaddcb4
+          image: localhost:5017/osc-submission-listener:correlation-20260902@sha256:39bc3f63edf3df9e8cd58cd57be883f42899c657e8410234469536f2a0a89912
           env:
             - {name: ENVIRONMENT, value: staging}
             - {name: RABBITMQ_HOST, value: rabbitmq.osc-apps.svc.cluster.local}

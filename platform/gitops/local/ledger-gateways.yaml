@@ -29,7 +29,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: ledger-gateway
-          image: localhost:5017/osc-ledger-gateway:usrse26-local@sha256:c3e22092b6bf73148796f5121701acd079baa8e56c2416883b1da9791848b732
+          image: localhost:5017/osc-ledger-gateway:correlation-20260902@sha256:e08f05eef4343108d5b3d97b0694113b5dda48650af0731450fae07cc964d4e2
           env:
             - {name: FABRIC_REAL_MODE, value: "true"}
             - {name: FABRIC_CHANNEL, value: osc-channel}
@@ -94,7 +94,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: ledger-gateway
-          image: localhost:5017/osc-ledger-gateway:usrse26-local@sha256:c3e22092b6bf73148796f5121701acd079baa8e56c2416883b1da9791848b732
+          image: localhost:5017/osc-ledger-gateway:correlation-20260902@sha256:e08f05eef4343108d5b3d97b0694113b5dda48650af0731450fae07cc964d4e2
           env:
             - {name: FABRIC_REAL_MODE, value: "true"}
             - {name: FABRIC_CHANNEL, value: osc-channel}
