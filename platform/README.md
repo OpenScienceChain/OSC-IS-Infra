@@ -24,6 +24,12 @@ Run these through Ubuntu WSL from the infrastructure repository:
 ```bash
 bash platform/scripts/prepare-local.sh
 bash platform/scripts/fabric-up.sh
+bash platform/scripts/deploy-local-apps.sh
+bash platform/scripts/seed-local-data.sh
+bash platform/scripts/validate-local-stack.sh
+bash platform/scripts/validate-local-recovery.sh
+bash platform/scripts/deploy-local-gitops.sh
+bash platform/scripts/validate-local-gitops.sh
 bash platform/scripts/fabric-down.sh
 ```
 
@@ -35,3 +41,9 @@ The chaincode CCAAS connection is deliberately plaintext only inside this
 isolated local cluster and requires an explicit environment override. The AWS
 overlay will use TLS for CCAAS as well as for the externally consumed Fabric
 Gateway endpoint.
+
+The GitOps scripts install the vendored Argo CD release and create a disposable
+Git repository containing two local-only commits. The repository is served by
+an unprivileged, digest-pinned image inside the cluster. The validation records
+self-healing of manually injected drift, a controlled rollout, and restoration
+of the known-good revision without pushing a branch or exposing credentials.

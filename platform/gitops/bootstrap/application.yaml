@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: osc-is-local
+  namespace: argocd
+  annotations:
+    usrse26.osc.example/baseline-revision: __BASELINE_REVISION__
+    usrse26.osc.example/rollout-revision: __ROLLOUT_REVISION__
+spec:
+  project: default
+  source:
+    repoURL: http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git
+    targetRevision: __BASELINE_REVISION__
+    path: manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: osc-apps
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
