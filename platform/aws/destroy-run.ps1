@@ -28,7 +28,7 @@ try {
     Push-Location $terraformRoot
     try {
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
-        terraform destroy -input=false -auto-approve -state=$statePath -var-file=$tfvarsPath
+        terraform destroy -input=false -auto-approve "-state=$statePath" "-var-file=$tfvarsPath"
         if ($LASTEXITCODE -ne 0) { throw 'Terraform destroy failed; do not leave this session.' }
     }
     finally {

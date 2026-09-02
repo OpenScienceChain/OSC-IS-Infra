@@ -33,9 +33,9 @@ try {
     Push-Location $terraformRoot
     try {
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
-        terraform apply -input=false -auto-approve -state=$statePath $planPath
+        terraform apply -input=false -auto-approve "-state=$statePath" $planPath
         if ($LASTEXITCODE -ne 0) { throw 'Terraform apply failed.' }
-        terraform output -state=$statePath -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
+        terraform output "-state=$statePath" -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
     }
     finally {
         Pop-Location

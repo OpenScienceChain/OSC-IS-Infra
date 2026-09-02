@@ -36,7 +36,8 @@ resource "terraform_data" "populate_initial_secrets" {
   ]
 
   provisioner "local-exec" {
-    command = "python \"${path.module}/scripts/populate_initial_secrets.py\""
+    command     = "${path.module}/scripts/populate_initial_secrets.py"
+    interpreter = ["python"]
     environment = {
       AWS_PROFILE         = var.aws_profile
       AWS_REGION          = var.aws_region

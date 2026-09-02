@@ -35,7 +35,8 @@ def aws(*args: str) -> str:
 
 
 def password(length: int = 40) -> str:
-    alphabet = string.ascii_letters + string.digits + "!%+-.:_"
+    # Amazon MQ rejects commas, colons, and equals signs in broker passwords.
+    alphabet = string.ascii_letters + string.digits + "!%+-._"
     while True:
         value = "".join(secrets.choice(alphabet) for _ in range(length))
         if len(set(value)) >= 12:

@@ -5,6 +5,16 @@ param(
     [string]$RunId
 )
 
+function ConvertTo-WslPath {
+    param([Parameter(Mandatory = $true)][string]$WindowsPath)
+
+    $fullPath = [IO.Path]::GetFullPath($WindowsPath)
+    if ($fullPath -notmatch '^[A-Za-z]:\\') { throw "Unsupported WSL path: $fullPath" }
+    $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
+    $remainder = $fullPath.Substring(2).Replace('\', '/')
+    return "/mnt/$drive$remainder"
+}
+
 $ErrorActionPreference = 'Stop'
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
@@ -16,9 +26,13 @@ $bootstrapOutput = Join-Path $runRoot 'gitops-bootstrap'
 $network = Join-Path $infraRoot 'platform\.generated\fabric-network-eks'
 $context = "osc-usrse26-$RunId"
 $cluster = "osc-usrse26-$RunId-eks"
-$gitBash = 'C:\Program Files\Git\bin\bash.exe'
+$wsl = (Get-Command wsl.exe).Source
+$wslDistribution = 'Ubuntu-24.04'
+$windowsKubeConfig = Join-Path $env:USERPROFILE '.kube\config'
+$wslTools = Join-Path $runRoot 'wsl-bin'
+$wslAwsWrapper = Join-Path $wslTools 'aws'
 
-foreach ($required in @($statePath, $artifactManifestPath, $deploymentPath, $gitBash, (Join-Path $network 'network'))) {
+foreach ($required in @($statePath, $artifactManifestPath, $deploymentPath, $wsl, (Join-Path $network 'network'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing deployment input: $required" }
 }
 
@@ -36,6 +50,26 @@ try {
     kubectl get nodes | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'EKS nodes are unavailable.' }
 
+    New-Item -ItemType Directory -Path $wslTools -Force | Out-Null
+    $awsExecutable = (Get-Command aws).Source
+    $wslAwsExecutable = ConvertTo-WslPath $awsExecutable
+    $wslToolsPath = ConvertTo-WslPath $wslTools
+    $wslAwsWrapperPath = ConvertTo-WslPath $wslAwsWrapper
+    $wslKubeConfig = ConvertTo-WslPath $windowsKubeConfig
+    $wrapper = "#!/usr/bin/env bash`nexec `"$wslAwsExecutable`" `"`$@`"`n"
+    [IO.File]::WriteAllText($wslAwsWrapper, $wrapper, [Text.UTF8Encoding]::new($false))
+    & $wsl -d $wslDistribution -- chmod 700 $wslAwsWrapperPath
+    if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the WSL AWS token wrapper.' }
+    $wslPath = "${wslToolsPath}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    $fabricNodes = @(kubectl get nodes -o name | Sort-Object)
+    if ($fabricNodes.Count -lt 3) { throw 'Three schedulable nodes are required for Fabric organization storage.' }
+    foreach ($index in 0..2) {
+        $role = "org$index"
+        kubectl label $fabricNodes[$index] "osc-is/fabric-role=$role" --overwrite | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not assign Fabric role $role to an EKS node." }
+    }
+
     kubectl apply -f (Join-Path $gitSource 'manifests\storage-class.yaml') | Out-Null
     kubectl create namespace osc-fabric --dry-run=client -o yaml | kubectl apply -f - | Out-Null
     kubectl label namespace osc-fabric `
@@ -44,25 +78,27 @@ try {
         pod-security.kubernetes.io/warn=restricted `
         --overwrite | Out-Null
 
-    $env:TEST_NETWORK_CLUSTER_RUNTIME = 'eks'
-    $env:TEST_NETWORK_CLUSTER_NAME = $cluster
-    $env:TEST_NETWORK_KUBE_NAMESPACE = 'osc-fabric'
-    $env:TEST_NETWORK_DOMAIN = 'localho.st'
-    $env:TEST_NETWORK_NGINX_HTTPS_PORT = '18443'
-    Push-Location $network
-    try {
-        & $gitBash ./network cluster init
-        if ($LASTEXITCODE -ne 0) { throw 'Fabric cluster prerequisites failed.' }
-    }
-    finally {
-        Pop-Location
-    }
+    & $wsl -d $wslDistribution --cd $network -- env `
+        "KUBECONFIG=$wslKubeConfig" `
+        "PATH=$wslPath" `
+        'TEST_NETWORK_CLUSTER_RUNTIME=eks' `
+        "TEST_NETWORK_CLUSTER_NAME=$cluster" `
+        'TEST_NETWORK_KUBE_NAMESPACE=osc-fabric' `
+        'TEST_NETWORK_DOMAIN=localho.st' `
+        'TEST_NETWORK_NGINX_HTTPS_PORT=18443' `
+        ./network cluster init
+    if ($LASTEXITCODE -ne 0) { throw 'Fabric cluster prerequisites failed.' }
 
     $pfOut = Join-Path $runRoot 'fabric-port-forward.out.log'
     $pfErr = Join-Path $runRoot 'fabric-port-forward.err.log'
     $portForward = Start-Process `
-        -FilePath (Get-Command kubectl).Source `
-        -ArgumentList @('-n', 'ingress-nginx', 'port-forward', 'service/ingress-nginx-controller', '18443:443') `
+        -FilePath $wsl `
+        -ArgumentList @(
+            '-d', $wslDistribution, '--', 'env',
+            "KUBECONFIG=$wslKubeConfig", "PATH=$wslPath",
+            'kubectl', '-n', 'ingress-nginx', 'port-forward',
+            'service/ingress-nginx-controller', '18443:443'
+        ) `
         -PassThru `
         -WindowStyle Hidden `
         -RedirectStandardOutput $pfOut `
@@ -70,16 +106,19 @@ try {
     Start-Sleep -Seconds 5
     if ($portForward.HasExited) { throw "Fabric ingress port-forward exited early; inspect $pfErr" }
 
-    $env:RUN_ID = $RunId
-    $env:CHAINCODE_IMAGE = $deployed.references.chaincode
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/deploy_aws_fabric.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" `
+        "PATH=$wslPath" `
+        "RUN_ID=$RunId" `
+        "CHAINCODE_IMAGE=$($deployed.references.chaincode)" `
+        bash platform/scripts/deploy_aws_fabric.sh
     if ($LASTEXITCODE -ne 0) { throw 'Fabric deployment failed.' }
 
     python platform/aws/aws_guard.py | Out-Null
     python platform/aws/upload_fabric_identities.py --network $network --run-id $RunId
     if ($LASTEXITCODE -ne 0) { throw 'Fabric identity upload failed.' }
 
-    $rabbitEndpoint = terraform -chdir=terraform/usrse26-eks output -raw -state=$statePath rabbitmq_amqps_endpoint
+    $rabbitEndpoint = terraform -chdir=terraform/usrse26-eks output -raw "-state=$statePath" rabbitmq_amqps_endpoint
     if ($LASTEXITCODE -ne 0) { throw 'Could not read the private broker endpoint.' }
     $rabbitUri = [Uri]$rabbitEndpoint.Trim()
     if ($rabbitUri.Scheme -ne 'amqps' -or $rabbitUri.Port -ne 5671) { throw 'Terraform returned an unexpected broker endpoint.' }

@@ -5,22 +5,52 @@ param(
     [string]$RunId
 )
 
+function ConvertTo-WslPath {
+    param([Parameter(Mandatory = $true)][string]$WindowsPath)
+
+    $fullPath = [IO.Path]::GetFullPath($WindowsPath)
+    if ($fullPath -notmatch '^[A-Za-z]:\\') { throw "Unsupported WSL path: $fullPath" }
+    $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
+    $remainder = $fullPath.Substring(2).Replace('\', '/')
+    return "/mnt/$drive$remainder"
+}
+
 $ErrorActionPreference = 'Stop'
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
 $artifactManifestPath = Join-Path $runRoot 'artifacts\artifacts.json'
 $deploymentPath = Join-Path $runRoot 'artifacts\ecr-deployment.json'
+$hotfixManifestPath = Join-Path $runRoot 'artifacts\hotfix\hotfix.json'
 $evidenceRoot = Join-Path $runRoot 'evidence'
-$gitBash = 'C:\Program Files\Git\bin\bash.exe'
 $context = "osc-usrse26-$RunId"
+$wsl = (Get-Command wsl.exe).Source
+$wslDistribution = 'Ubuntu-24.04'
+$windowsKubeConfig = Join-Path $env:USERPROFILE '.kube\config'
+$wslAwsWrapper = Join-Path $runRoot 'wsl-bin\aws'
 
-foreach ($required in @($artifactManifestPath, $deploymentPath, $gitBash)) {
+foreach ($required in @($artifactManifestPath, $deploymentPath, $wsl, $wslAwsWrapper, $windowsKubeConfig)) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing validation input: $required" }
 }
 New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
 $artifacts = Get-Content -LiteralPath $artifactManifestPath -Raw | ConvertFrom-Json
 $deployed = Get-Content -LiteralPath $deploymentPath -Raw | ConvertFrom-Json
-$posixRunRoot = (& $gitBash -lc "cygpath -u '$runRoot'").Trim()
+$baselineRevision = [string]$artifacts.gitops.baselineRevision
+$rolloutRevision = [string]$artifacts.gitops.rolloutRevision
+$repositoryImage = [string]$deployed.references.'gitops-repository'
+if (Test-Path -LiteralPath $hotfixManifestPath) {
+    $hotfix = Get-Content -LiteralPath $hotfixManifestPath -Raw | ConvertFrom-Json
+    if ($hotfix.runId -ne $RunId) { throw 'The hotfix manifest belongs to a different run.' }
+    foreach ($reference in @($hotfix.images.'ledger-gateway'.reference, $hotfix.images.'gitops-repository'.reference)) {
+        if ($reference -notmatch '@sha256:[0-9a-f]{64}$') { throw "Mutable hotfix image reference: $reference" }
+    }
+    $baselineRevision = [string]$hotfix.gitops.baselineRevision
+    $rolloutRevision = [string]$hotfix.gitops.rolloutRevision
+    $repositoryImage = [string]$hotfix.images.'gitops-repository'.reference
+}
+$posixRunRoot = ConvertTo-WslPath $runRoot
+$wslKubeConfig = ConvertTo-WslPath $windowsKubeConfig
+$wslToolsPath = ConvertTo-WslPath (Split-Path -Parent $wslAwsWrapper)
+$wslPath = "${wslToolsPath}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 Push-Location $infraRoot
 try {
@@ -29,32 +59,43 @@ try {
     kubectl get nodes | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'EKS nodes are unavailable.' }
 
-    $env:API_IMAGE = $artifacts.images.'api-gateway'.localReference
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/seed-local-data.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "API_IMAGE=$($artifacts.images.'api-gateway'.localReference)" `
+        bash platform/scripts/seed-local-data.sh
     if ($LASTEXITCODE -ne 0) { throw 'Deterministic EKS test-data seeding failed.' }
 
-    $env:EXPECTED_CONTEXT = $context
-    $env:EVIDENCE_DIR = "$posixRunRoot/evidence/aws-stack"
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/validate-local-stack.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "EXPECTED_CONTEXT=$context" `
+        "EVIDENCE_DIR=$posixRunRoot/evidence/aws-stack" `
+        bash platform/scripts/validate-local-stack.sh
     if ($LASTEXITCODE -ne 0) { throw 'AWS provenance and authorization validation failed.' }
 
-    $env:RECOVERY_MODE = 'aws'
-    $env:APPLICATION = 'osc-is-aws'
-    $env:AWS_NETWORK_POLICIES = "$posixRunRoot/gitops-source/manifests/network-policies.yaml"
-    $env:EVIDENCE_DIR = "$posixRunRoot/evidence/aws-recovery"
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/validate-local-recovery.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        'RECOVERY_MODE=aws' 'APPLICATION=osc-is-aws' "EXPECTED_CONTEXT=$context" `
+        "AWS_NETWORK_POLICIES=$posixRunRoot/gitops-source/manifests/network-policies.yaml" `
+        "EVIDENCE_DIR=$posixRunRoot/evidence/aws-recovery" `
+        bash platform/scripts/validate-local-recovery.sh
     if ($LASTEXITCODE -ne 0) { throw 'AWS recovery validation failed.' }
 
-    $env:RUN_ID = $RunId
-    $env:BASELINE_REVISION = $artifacts.gitops.baselineRevision
-    $env:ROLLOUT_REVISION = $artifacts.gitops.rolloutRevision
-    $env:REPOSITORY_IMAGE = $deployed.references.'gitops-repository'
-    $env:EVIDENCE_DIR = "$posixRunRoot/evidence/aws-gitops"
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/validate-local-gitops.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "EXPECTED_CONTEXT=$context" 'APPLICATION=osc-is-aws' `
+        "RUN_ID=$RunId" `
+        "BASELINE_REVISION=$baselineRevision" `
+        "ROLLOUT_REVISION=$rolloutRevision" `
+        "REPOSITORY_IMAGE=$repositoryImage" `
+        "EVIDENCE_DIR=$posixRunRoot/evidence/aws-gitops" `
+        bash platform/scripts/validate-local-gitops.sh
     if ($LASTEXITCODE -ne 0) { throw 'AWS GitOps validation failed.' }
 
-    $env:EVIDENCE_DIR = "$posixRunRoot/evidence/aws-post-rollback"
-    & $gitBash (Join-Path $infraRoot 'platform/scripts/validate-local-stack.sh')
+    & $wsl -d $wslDistribution --cd $infraRoot -- env `
+        "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "EXPECTED_CONTEXT=$context" `
+        "EVIDENCE_DIR=$posixRunRoot/evidence/aws-post-rollback" `
+        bash platform/scripts/validate-local-stack.sh
     if ($LASTEXITCODE -ne 0) { throw 'Post-rollback application validation failed.' }
 
     $loadBalancerServices = kubectl get services -A -o json | ConvertFrom-Json
@@ -62,15 +103,48 @@ try {
     if ($loadBalancerServices.Count -ne 0) { throw 'The experiment unexpectedly created a Kubernetes LoadBalancer service.' }
 
     $podInventory = kubectl get pods -A -o json | ConvertFrom-Json
+    $controlledNamespaces = @('argocd', 'cert-manager', 'ingress-nginx', 'osc-apps', 'osc-fabric')
+    $managedAddonNamespaces = @('aws-secrets-manager', 'kube-system')
+    $unexpectedNamespaces = @(
+        $podInventory.items.metadata.namespace |
+            Where-Object { $_ -notin $controlledNamespaces -and $_ -notin $managedAddonNamespaces } |
+            Sort-Object -Unique
+    )
+    if ($unexpectedNamespaces.Count -ne 0) {
+        throw "Pods detected in unclassified namespaces: $($unexpectedNamespaces -join ', ')"
+    }
     $mutableImages = @(
         $podInventory.items |
-            Where-Object { $_.metadata.namespace -ne 'kube-system' } |
+            Where-Object { $_.metadata.namespace -in $controlledNamespaces } |
             ForEach-Object { $_.spec.containers.image } |
             Where-Object { $_ -notmatch '@sha256:' }
     )
     if ($mutableImages.Count -ne 0) {
         throw "Mutable workload images detected: $($mutableImages -join ', ')"
     }
+    $managedAddonImages = @(
+        $podInventory.items |
+            Where-Object { $_.metadata.namespace -in $managedAddonNamespaces } |
+            ForEach-Object {
+                $pod = $_
+                foreach ($container in $pod.status.containerStatuses) {
+                    [ordered]@{
+                        namespace = $pod.metadata.namespace
+                        pod = $pod.metadata.name
+                        container = $container.name
+                        declaredImage = $container.image
+                        resolvedImageId = $container.imageID
+                        resolvedByDigest = $container.imageID -match '@sha256:[0-9a-f]{64}$'
+                    }
+                }
+            }
+    )
+    $unresolvedManagedImages = @($managedAddonImages | Where-Object { -not $_.resolvedByDigest })
+    if ($unresolvedManagedImages.Count -ne 0) { throw 'An AWS-managed add-on image did not resolve to a digest.' }
+    [IO.File]::WriteAllText(
+        (Join-Path $evidenceRoot 'managed-addon-images.json'),
+        ($managedAddonImages | ConvertTo-Json -Depth 4) + [Environment]::NewLine
+    )
 
     python platform/aws/aws_guard.py | Out-Null
     $brokerId = (aws mq list-brokers `

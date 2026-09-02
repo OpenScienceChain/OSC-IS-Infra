@@ -93,8 +93,8 @@ expect_status() {
   local status
   status=$(curl "${args[@]}")
   if [[ ! "${status}" =~ ${expected_pattern} ]]; then
-    echo "Expected HTTP ${expected_pattern}, got ${status} from ${method} ${url}"
-    jq . "${TMP_DIR}/response.json" 2>/dev/null || cat "${TMP_DIR}/response.json"
+    echo "Expected HTTP ${expected_pattern}, got ${status} from ${method} ${url}" >&2
+    jq . "${TMP_DIR}/response.json" >&2 2>/dev/null || cat "${TMP_DIR}/response.json" >&2
     exit 1
   fi
   printf '%s' "${status}"

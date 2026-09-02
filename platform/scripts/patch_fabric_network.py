@@ -493,6 +493,20 @@ function launch_chaincode_service()""",
             1,
         )
 
+    if args.runtime == "eks":
+        for org in ("org0", "org1", "org2"):
+            for manifest in (args.destination / "kube" / org).glob("*.yaml"):
+                text = manifest.read_text(encoding="utf-8")
+                selector = f"      nodeSelector:\n        osc-is/fabric-role: {org}\n"
+                updated = text.replace(
+                    "    spec:\n      containers:\n",
+                    f"    spec:\n{selector}      containers:\n",
+                ).replace(
+                    '    spec:\n      restartPolicy: "Never"\n',
+                    f'    spec:\n{selector}      restartPolicy: "Never"\n',
+                )
+                manifest.write_text(updated, encoding="utf-8", newline="\n")
+
     bin_dir = args.destination / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name in ("peer", "configtxgen", "configtxlator", "fabric-ca-client", "osnadmin"):

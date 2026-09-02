@@ -12,12 +12,19 @@ LEDGER_URL=http://127.0.0.1:14001
 NSG_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 TMP_DIR=$(mktemp -d)
 PORT_FORWARD_PIDS=()
+ORIGINAL_RABBIT_EGRESS=''
+
+restore_rabbitmq_egress() {
+  [[ -z "${ORIGINAL_RABBIT_EGRESS}" ]] && return 0
+  kubectl -n osc-apps patch networkpolicy rabbitmq-amqps --type=merge \
+    -p "$(jq -nc --argjson egress "${ORIGINAL_RABBIT_EGRESS}" '{spec: {egress: $egress}}')" >/dev/null
+}
 
 restore_stack() {
   kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas=1 >/dev/null 2>&1 || true
   kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=1 >/dev/null 2>&1 || true
   if [[ "${RECOVERY_MODE}" == "aws" ]]; then
-    [[ -z "${AWS_NETWORK_POLICIES:-}" ]] || kubectl apply -f "${AWS_NETWORK_POLICIES}" >/dev/null 2>&1 || true
+    restore_rabbitmq_egress >/dev/null 2>&1 || true
     kubectl -n argocd patch application "${APPLICATION}" --type=merge \
       -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}' >/dev/null 2>&1 || true
   else
@@ -43,6 +50,10 @@ fi
 if [[ "${RECOVERY_MODE}" == "aws" && ! -f "${AWS_NETWORK_POLICIES:-}" ]]; then
   echo "AWS_NETWORK_POLICIES is required for the controlled Amazon MQ outage" >&2
   exit 1
+fi
+if [[ "${RECOVERY_MODE}" == "aws" ]]; then
+  ORIGINAL_RABBIT_EGRESS=$(kubectl -n osc-apps get networkpolicy rabbitmq-amqps -o json | jq -c '.spec.egress')
+  [[ "${ORIGINAL_RABBIT_EGRESS}" != "null" ]]
 fi
 mkdir -p "${EVIDENCE_DIR}"
 
@@ -120,6 +131,11 @@ RUN_ID=$(date -u +%Y%m%d%H%M%S)
 
 # Scenario 1: the organization gateway disappears after the API accepts work.
 gateway_started=$(date +%s)
+if [[ "${RECOVERY_MODE}" == "aws" ]]; then
+  # Keep Argo from immediately undoing the deliberate outage under test.
+  kubectl -n argocd patch application "${APPLICATION}" --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}' >/dev/null
+fi
 kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas=0 >/dev/null
 kubectl -n osc-apps wait --for=delete pod \
   -l app.kubernetes.io/name=ledger-gateway-nsg --timeout=90s >/dev/null
@@ -149,13 +165,23 @@ gateway_revision_count=$(jq -er 'length' <<<"${GATEWAY_HISTORY}")
 rabbit_started=$(date +%s)
 worker_restarted=false
 if [[ "${RECOVERY_MODE}" == "aws" ]]; then
-  kubectl -n argocd patch application "${APPLICATION}" --type=merge \
-    -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}' >/dev/null
   kubectl -n osc-apps patch networkpolicy rabbitmq-amqps --type=merge \
     -p '{"spec":{"egress":[]}}' >/dev/null
+  # Restart to discard the established AMQP connection. The API must complete
+  # its bounded connection attempt, start in degraded mode, and retain work in
+  # the transactional outbox until RabbitMQ becomes reachable again.
   kubectl -n osc-apps delete pod -l app.kubernetes.io/name=api-gateway --wait=true >/dev/null
-  kubectl -n osc-apps rollout status deployment/api-gateway --timeout=180s >/dev/null
-  sleep 10
+  kubectl -n osc-apps rollout status deployment/api-gateway --timeout=300s >/dev/null
+  kill "${PORT_FORWARD_PIDS[0]}" 2>/dev/null || true
+  wait "${PORT_FORWARD_PIDS[0]}" 2>/dev/null || true
+  kubectl -n osc-apps port-forward service/api-gateway 13000:3000 \
+    --address 127.0.0.1 >"${TMP_DIR}/api-forward-recovered.log" 2>&1 &
+  PORT_FORWARD_PIDS+=("$!")
+  for _ in $(seq 1 30); do
+    curl --fail --silent "${API_URL}/health" >/dev/null && break
+    sleep 1
+  done
+  curl --fail --silent "${API_URL}/health" >/dev/null
 else
   kubectl -n osc-apps scale statefulset/rabbitmq --replicas=0 >/dev/null
   kubectl -n osc-apps wait --for=delete pod/rabbitmq-0 --timeout=90s >/dev/null
@@ -171,7 +197,7 @@ if [[ "${RECOVERY_MODE}" == "aws" ]]; then
   kubectl -n osc-apps delete pod -l app.kubernetes.io/name=submission-worker --wait=true >/dev/null
   kubectl -n osc-apps rollout status deployment/submission-worker --timeout=180s >/dev/null
   worker_restarted=true
-  kubectl apply -f "${AWS_NETWORK_POLICIES}" >/dev/null
+  restore_rabbitmq_egress
   kubectl -n argocd patch application "${APPLICATION}" --type=merge \
     -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}' >/dev/null
   kubectl -n argocd annotate application "${APPLICATION}" argocd.argoproj.io/refresh=hard --overwrite >/dev/null
