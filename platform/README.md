@@ -13,6 +13,11 @@ an evidence environment, not a production deployment.
   pinned upstream topology is recognizable.
 - Generated enrollments, private keys, runtime manifests, and logs live under
   `platform/.generated` and are ignored by Git.
+- Bootstrap secrets use a transient `platform/.generated/runtime-secrets`
+  directory with `0700`/`0600` POSIX modes, or a current-user-only ACL on a
+  Windows-mounted WSL checkout. Bootstrap and seed scripts create it themselves,
+  reject symlinks, purge stale files, and remove the directory on exit. Durable
+  values live only in Kubernetes Secrets.
 - The Fabric source is fixed to the commit in `versions.env`. Fabric binaries
   and Kubernetes tooling are downloaded as release assets and verified before
   extraction or execution. No remote installer is piped into a shell.
@@ -22,6 +27,7 @@ an evidence environment, not a production deployment.
 Run these through Ubuntu WSL from the infrastructure repository:
 
 ```bash
+bash platform/scripts/validate-clean-checkout.sh
 bash platform/scripts/prepare-local.sh
 bash platform/scripts/fabric-up.sh
 bash platform/scripts/deploy-local-apps.sh

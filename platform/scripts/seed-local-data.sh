@@ -3,17 +3,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SECRET_DIR="${PLATFORM_DIR}/.generated/runtime-secrets"
+source "${SCRIPT_DIR}/runtime-secrets.sh"
+runtime_secrets_init
+trap runtime_secrets_cleanup EXIT
+SECRET_DIR="${RUNTIME_SECRET_DIR}"
 PASSWORD_FILE="${SECRET_DIR}/e2e-password"
 API_IMAGE=${API_IMAGE:-localhost:5017/osc-api-gateway@sha256:917bd71bd7c1906ae4af22c90468ddd2ac00008dfeb9c5241a7ddf7b8308603d}
 
-umask 077
-if [[ -s "${PASSWORD_FILE}" ]]; then
-  PASSWORD=$(tr -d '\r\n' < "${PASSWORD_FILE}")
-else
-  PASSWORD=$(openssl rand -base64 24 | tr -d '\r\n')
-fi
+PASSWORD=$(openssl rand -base64 24 | tr -d '\r\n')
 printf '%s' "${PASSWORD}" > "${PASSWORD_FILE}"
+runtime_secrets_verify_files
 
 PASSWORD_HASH=$(docker run --rm -i --entrypoint node "${API_IMAGE}" -e '
   const bcrypt = require("bcrypt");

@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NETWORK_DIR="${PLATFORM_DIR}/.generated/fabric-network"
-SECRET_DIR="${PLATFORM_DIR}/.generated/runtime-secrets"
 NAMESPACE=osc-apps
+source "${SCRIPT_DIR}/runtime-secrets.sh"
 
 if ! kubectl config current-context | grep -Fxq kind-osc-usrse26-infra; then
   echo "Refusing to deploy outside kind-osc-usrse26-infra"
@@ -20,18 +20,15 @@ if ! curl --fail --silent http://127.0.0.1:5017/v2/ >/dev/null; then
   exit 1
 fi
 
-umask 077
-mkdir -p "${SECRET_DIR}"
+runtime_secrets_init
+trap runtime_secrets_cleanup EXIT
+SECRET_DIR="${RUNTIME_SECRET_DIR}"
 
 generate_secret() {
   local path=$1
   local value
 
-  if [[ -s "${path}" ]]; then
-    value=$(tr -d '\r\n' < "${path}")
-  else
-    value=$(openssl rand -hex 32)
-  fi
+  value=$(openssl rand -hex 32)
   printf '%s' "${value}" > "${path}"
 }
 
@@ -58,6 +55,7 @@ kubectl -n osc-fabric get secret org1-peer1-tls-cert -o jsonpath='{.data.ca\.crt
   | base64 -d > "${SECRET_DIR}/nsg-tls-ca.pem"
 kubectl -n osc-fabric get secret org2-peer1-tls-cert -o jsonpath='{.data.ca\.crt}' \
   | base64 -d > "${SECRET_DIR}/citizen-tls-ca.pem"
+runtime_secrets_verify_files
 
 kubectl apply -f "${PLATFORM_DIR}/gitops/local/namespace.yaml" >/dev/null
 
@@ -66,19 +64,28 @@ apply_secret() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
-apply_secret postgres-credentials \
+apply_secret_if_missing() {
+  local name=$1
+  shift
+  if kubectl -n "${NAMESPACE}" get secret "${name}" >/dev/null 2>&1; then
+    return 0
+  fi
+  apply_secret "${name}" "$@"
+}
+
+apply_secret_if_missing postgres-credentials \
   --from-file=username="${SECRET_DIR}/postgres-username" \
   --from-file=password="${SECRET_DIR}/postgres-password" \
   --from-file=database="${SECRET_DIR}/postgres-database"
-apply_secret rabbitmq-credentials \
+apply_secret_if_missing rabbitmq-credentials \
   --from-file=username="${SECRET_DIR}/rabbitmq-username" \
   --from-file=password="${SECRET_DIR}/rabbitmq-password"
-apply_secret api-auth --from-file=jwt-secret="${SECRET_DIR}/jwt-secret"
-apply_secret api-bootstrap-admin \
+apply_secret_if_missing api-auth --from-file=jwt-secret="${SECRET_DIR}/jwt-secret"
+apply_secret_if_missing api-bootstrap-admin \
   --from-file=password="${SECRET_DIR}/bootstrap-admin-password"
-apply_secret listener-api-auth --from-file=api-key="${SECRET_DIR}/listener-api-key"
-apply_secret ledger-gateway-nsg-auth --from-file=token="${SECRET_DIR}/nsg-ledger-token"
-apply_secret ledger-gateway-citizen-science-auth --from-file=token="${SECRET_DIR}/citizen-ledger-token"
+apply_secret_if_missing listener-api-auth --from-file=api-key="${SECRET_DIR}/listener-api-key"
+apply_secret_if_missing ledger-gateway-nsg-auth --from-file=token="${SECRET_DIR}/nsg-ledger-token"
+apply_secret_if_missing ledger-gateway-citizen-science-auth --from-file=token="${SECRET_DIR}/citizen-ledger-token"
 apply_secret fabric-nsg-identity \
   --from-file=certificate.pem="${SECRET_DIR}/nsg-certificate.pem" \
   --from-file=private-key.pem="${SECRET_DIR}/nsg-private-key.pem" \
