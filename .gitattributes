@@ -1,3 +1,4 @@
 /.gitattributes text eol=lf
 *.sh text eol=lf
 platform/versions.env text eol=lf
+/docs/usrse26/correlation-evidence/** text eol=lf
