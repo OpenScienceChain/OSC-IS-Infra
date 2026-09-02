@@ -25,6 +25,6 @@ e1b28ebfd07222a39d3d2ccf6da7f39769ca0256634b6b10bf9debaeb786417c  ./integrated/v
 8b14093ae44b41215a0faa6908c0002affe3df8c5825109659ac3bd853706d81  ./queue-depths-after.json
 16a44342c3fa6baaa724290282debeccd8d4eee1ab0815cb8ede701c69eb8a09  ./rabbitmq-boundaries.json
 993d420bf292545f89c8c119e31848f6e6ad5cc08f944b97df700a92860ab0c1  ./secret-reconciliation-hashes.json
-925601274e792a5d7acaad1b68f7c073ff6adcb3dcc94fabd483fecc4075b573  ./source-revisions.json
+120cc183cdf5a1c4e89a9858ae24fe771433bc3ecb6178bc2bb6b056b26df657  ./source-revisions.json
 beba4d26c5017c9f18b3c302607180dd88ed4f69c8428ec5b78943fa11ff14f6  ./test-summary.json
 2d49a7e2afa37b84604aeb563fd83dca91c8911ebb5be4acb4cf3640580fcf0a  ./trace-manifest.json

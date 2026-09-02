@@ -6,7 +6,7 @@
     "OSC-APIGateway": "b66cf12430fb086a83957950aeed5aa435fab42e",
     "OSC-Chaincode": "743df2d41a1ac845dc4600317aedf21cc0b0024e"
   },
-  "localIntegrationCommit": "83bda3b",
+  "localIntegrationCommit": "83bda3ba990fb1837935cc709ce9425091579998",
   "images": {
     "apiGateway": "localhost:5017/osc-api-gateway@sha256:a24064caa9d530253b669b397b7a8cd804d0cffe0cfecc424de3948a984eb6b8",
     "ledgerGateway": "localhost:5017/osc-ledger-gateway@sha256:e08f05eef4343108d5b3d97b0694113b5dda48650af0731450fae07cc964d4e2",
