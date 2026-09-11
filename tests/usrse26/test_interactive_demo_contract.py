@@ -132,7 +132,10 @@ class LifecycleContractTests(unittest.TestCase):
             'values = [format("user:RunId$%s", var.run_id)]',
             read("terraform/usrse26-control/budget.tf"),
         )
-        self.assertIn('"aws-portal:ViewBilling", "budgets:ViewBudget"', read("terraform/usrse26-control/lifecycle.tf"))
+        lifecycle = read("terraform/usrse26-control/lifecycle.tf")
+        self.assertIn('"aws-portal:ViewBilling"', lifecycle)
+        self.assertIn('"budgets:ViewBudget", "codebuild:UpdateProject"', lifecycle)
+        self.assertIn('budget/${local.name_prefix}-absolute-ceiling', lifecycle)
         self.assertEqual(config["costControlsUsd"], {
             "information": 75,
             "warning": 125,

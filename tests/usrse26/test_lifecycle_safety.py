@@ -183,6 +183,8 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
                 self.assertIn("unlisted same-run pass role", denied)
                 self.assertIn("pass role outside run prefix", denied)
                 self.assertIn("pass role to unapproved service", denied)
+                self.assertIn("view unrelated budget", denied)
+                self.assertIn("billing portal mutation", denied)
                 self.assertIn("budget mutation", denied)
                 self.assertIn("unrelated S3 object", denied)
                 self.assertIn("unrelated Secrets Manager secret", denied)

@@ -212,7 +212,7 @@ locals {
       Effect = "Allow"
       Action = [
         "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
-        "aws-portal:ViewBilling", "budgets:ViewBudget", "cloudfront:ListVpcOrigins",
+        "aws-portal:ViewBilling", "cloudfront:ListVpcOrigins",
         "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
         "ec2:GetCoipPoolUsage", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
         "eks:List*", "elasticloadbalancing:Describe*",
@@ -337,8 +337,9 @@ locals {
     {
       Sid    = "ExactControlOperations"
       Effect = "Allow"
-      Action = ["codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
+      Action = ["budgets:ViewBudget", "codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
       Resource = [
+        "arn:aws:budgets::${var.authorized_account_id}:budget/${local.name_prefix}-absolute-ceiling",
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle",
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-cleanup",
         "arn:aws:sns:${var.aws_region}:${var.authorized_account_id}:${local.name_prefix}-notifications",
@@ -460,6 +461,12 @@ locals {
     ]
     ExactRunMq = [
       "arn:aws:mq:${var.aws_region}:${var.authorized_account_id}:*:${local.name_prefix}-*:*",
+    ]
+    ExactControlOperations = [
+      "arn:aws:budgets::${var.authorized_account_id}:budget/${local.name_prefix}-absolute-ceiling",
+      "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-*",
+      "arn:aws:sns:${var.aws_region}:${var.authorized_account_id}:${local.name_prefix}-notifications",
+      "arn:aws:states:${var.aws_region}:${var.authorized_account_id}:stateMachine:${local.name_prefix}-stop",
     ]
     PassOnlyRunRolesToApprovedServices = [
       "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-*",

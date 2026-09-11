@@ -5,7 +5,7 @@
   "region": "us-west-2",
   "runId": "usrse26r1",
   "boundaryArn": "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26r1-runtime-boundary",
-  "boundaryPolicyCharacters": 5827,
+  "boundaryPolicyCharacters": 5816,
   "managedPolicyQuotaCharacters": 6144,
   "allPassed": true,
   "cases": [
@@ -90,11 +90,27 @@
       "passed": true
     },
     {
+      "name": "view unrelated budget",
+      "action": "budgets:ViewBudget",
+      "resource": "arn:aws:budgets::269624229733:budget/unrelated-production-budget",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
       "name": "supporting billing view",
       "action": "aws-portal:ViewBilling",
       "resource": "*",
       "expected": "allowed",
       "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "billing portal mutation",
+      "action": "aws-portal:ModifyBilling",
+      "resource": "*",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
       "passed": true
     },
     {
