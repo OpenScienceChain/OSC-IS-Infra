@@ -162,8 +162,10 @@ global limit, safety threshold, or persistent service error is reached.
 4. Destroy the tagged runtime.
 5. Verify that no tagged runtime resource remains.
 
-Schedule a backup stop two hours later. Finalize the cost report after 48 hours
-to allow billing data to settle. Retain security logs for seven days. Retain
+Schedule an independent backup stop two hours later. The runtime does not query
+billing data. Record actual billed cost only if a human later reconciles a
+CloudBank or account billing record, and never block teardown on that optional
+reconciliation. Retain security logs for seven days. Retain
 sanitized telemetry, reports, the static edge shell, and control-plane evidence
 for no more than 30 days unless a later decision explicitly extends them.
 
@@ -214,7 +216,7 @@ Use a consistent small response scale and allow one optional private comment.
 Report the survey as a self-selected convenience sample from a conference
 demonstration. Do not describe it as community acceptance.
 
-## Cost Controls
+## TIME_BOUNDED Cost Control
 
 Prior evidence observed about `$3.77` for a six-hour disposable run. A direct
 72-hour extrapolation is `$45.24`; two additional RabbitMQ brokers add roughly
@@ -222,19 +224,21 @@ Prior evidence observed about `$3.77` for a six-hour disposable run. A direct
 telemetry, lifecycle jobs, data transfer, and one compressed rehearsal, use a
 planning range of `$90-$120`.
 
-Cost controls:
+`TIME_BOUNDED` is the only supported and default mode. The computed estimate,
+including contingency, must be concrete and no greater than the USD 200
+pre-deployment planning-estimate ceiling before any provisioning. USD 200 is
+not a live-spend threshold and the estimate is never described as observed or
+actual spend.
 
-- `$75`: informational notification;
-- `$125`: warning and prepare/read-only action;
-- `$150`: force `READ_ONLY` and initiate teardown unless an explicit emergency
-  override exists; and
-- `$200`: absolute provisioning ceiling for this demonstration.
-
-Because billing alerts can lag, the primary controls are the 72-hour deadline,
-small quotas, explicit resource tags, idempotent stop workflow, backup stop, and
-tagged-resource sweeper. Send notifications through SNS to email and, when
-configured, Amazon Q Developer in chat applications for Slack. Any one-time
-email subscription or Slack authorization must be completed before rehearsal.
+Runtime exposure is bounded by fixed capacity, small quotas, a persisted
+`expiresAt`, a 72-hour maximum, an idempotent primary stop, an independently
+scheduled backup stop, outside-VPC cleanup, an exact-tag sweeper, and zero
+inventory verification in `us-west-2`, `us-east-1`, and run-scoped global
+resources. The runtime and control plane do not create or query AWS Budgets and
+do not call Cost Explorer, EstimatedCharges, billing-portal, or Billing APIs.
+SNS reports start failure, primary stop failure, backup-stop activation, and an
+incomplete sweep. Actual billed cost is a separate, optional human CloudBank or
+account reconciliation after teardown.
 
 ## Git and Delivery Ownership
 
@@ -301,8 +305,11 @@ Complete tests in this order, expanding only after the cheaper gates pass:
 - Threat model and least-privilege IAM/Kubernetes authorization review.
 - Data dictionary, retention table, and privacy statement for all telemetry.
 - Reproducible local and AWS test commands.
-- Rehearsal report with exact revisions, timings, failures, fixes, and cost.
-- Final event report with bounded claims, funnel metrics, survey caveats, cost,
+- Rehearsal report with exact revisions, timings, failures, fixes, planning
+  estimate, bounded-exposure evidence, and actual billed cost marked
+  `NOT_RECONCILED` unless supported by a later human billing record.
+- Final event report with bounded claims, funnel metrics, survey caveats,
+  planning estimate, bounded exposure, separately sourced actual billed cost,
   teardown evidence, and unresolved work.
 - A concise release-owner handoff identifying commits, PRs, deployed revision,
   URLs, AWS run ID, evidence paths, blockers, and anything not tested.
@@ -315,7 +322,8 @@ handoff are complete, and no expensive demonstration runtime remains deployed.
 
 Stop and request a user decision before:
 
-- changing the event dates, public hostname, organizations, or spending ceiling;
+- changing the event dates, public hostname, organizations, or USD 200
+  planning-estimate ceiling;
 - changing the agreed privacy boundary;
 - weakening an authentication, authorization, WAF, network, or teardown control;
 - deleting pre-existing or untagged AWS resources;

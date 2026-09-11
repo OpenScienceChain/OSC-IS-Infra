@@ -119,6 +119,7 @@ resource "aws_sfn_state_machine" "start" {
           Item = {
             runId          = { "S.$" = "$.runId" }
             status         = { S = "PREPARING" }
+            hardCloseAt    = { S = local.lifecycle_environment.HARD_CLOSE_AT }
             expiresAtEpoch = { N = "1795359600" }
           }
           ConditionExpression = "attribute_not_exists(runId)"
@@ -242,10 +243,22 @@ resource "aws_sfn_state_machine" "stop" {
       VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", Parameters = {}, ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = {
         Type    = "Choice"
-        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "ReadRun" }]
+        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "BackupActivation" }]
         Default = "Unauthorized"
       }
       Unauthorized = { Type = "Fail", Error = "UnauthorizedAccount", Cause = "Expected AWS account 269624229733" }
+      BackupActivation = {
+        Type    = "Choice"
+        Choices = [{ Variable = "$.reason", StringEquals = "backup-stop", Next = "NotifyBackupActivation" }]
+        Default = "ReadRun"
+      }
+      NotifyBackupActivation = {
+        Type       = "Task"
+        Resource   = "arn:aws:states:::sns:publish"
+        Parameters = { TopicArn = aws_sns_topic.lifecycle.arn, Subject = "OSC-IS demo backup stop activated", Message = "The independent backup stop is checking teardown after the primary stop window." }
+        Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.notificationFailure", Next = "ReadRun" }]
+        Next       = "ReadRun"
+      }
       ReadRun = {
         Type       = "Task"
         Resource   = "arn:aws:states:::dynamodb:getItem"

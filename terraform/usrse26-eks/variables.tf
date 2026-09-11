@@ -66,17 +66,6 @@ variable "maximum_runtime_hours" {
   }
 }
 
-variable "provisioning_ceiling_usd" {
-  description = "Absolute campaign provisioning ceiling enforced before apply."
-  type        = number
-  default     = 200
-
-  validation {
-    condition     = var.provisioning_ceiling_usd == 200
-    error_message = "The approved absolute provisioning ceiling is USD 200."
-  }
-}
-
 variable "admin_cidr" {
   description = "Single trusted public IPv4 address allowed to reach the EKS API."
   type        = string
@@ -104,6 +93,11 @@ variable "kubernetes_version" {
 variable "node_instance_types" {
   type    = list(string)
   default = ["m7i.large"]
+
+  validation {
+    condition     = length(var.node_instance_types) == 1 && var.node_instance_types[0] == "m7i.large"
+    error_message = "The reviewed experimental topology uses only m7i.large nodes."
+  }
 }
 
 variable "node_count" {
@@ -158,4 +152,9 @@ variable "runtime_role_arns" {
 variable "rabbitmq_instance_type" {
   type    = string
   default = "mq.m7g.medium"
+
+  validation {
+    condition     = var.rabbitmq_instance_type == "mq.m7g.medium"
+    error_message = "The reviewed experimental topology uses mq.m7g.medium RabbitMQ brokers."
+  }
 }

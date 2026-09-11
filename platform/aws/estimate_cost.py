@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the reviewed upper-bound cost model for the interactive demo."""
+"""Render the reviewed pre-deployment planning estimate for the demo."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ HOURLY = {
 }
 
 FIXED_REHEARSAL_AND_CONTROL_ALLOWANCE = 20.0
-ABSOLUTE_CEILING = 200.0
+PLANNING_ESTIMATE_CEILING = 200.0
 
 
 def main() -> None:
@@ -32,29 +32,35 @@ def main() -> None:
     subtotal = round(hourly * args.hours, 2)
     maximum = round(subtotal * 1.25 + FIXED_REHEARSAL_AND_CONTROL_ALLOWANCE, 2)
     report = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
+        "costControlMode": "TIME_BOUNDED",
+        "evidenceClass": "PRE_DEPLOYMENT_PLANNING_ESTIMATE",
         "currency": "USD",
         "hours": args.hours,
         "componentsHourly": HOURLY,
         "estimatedHourly": hourly,
         "estimatedRun": subtotal,
-        "maximumWith25PercentContingency": maximum,
+        "plannedEstimateWith25PercentContingency": maximum,
         "fixedRehearsalAndControlAllowance": FIXED_REHEARSAL_AND_CONTROL_ALLOWANCE,
-        "controls": {
-            "informational": 75.0,
-            "warning": 125.0,
-            "readOnlyAndTeardown": 150.0,
-            "absoluteProvisioningCeiling": ABSOLUTE_CEILING,
+        "planningEstimateCeilingUsd": PLANNING_ESTIMATE_CEILING,
+        "boundedExposure": {
+            "maximumRuntimeHours": 72,
+            "capacity": "fixed reviewed topology; no unbounded autoscaling or user infrastructure",
         },
-        "approved": maximum <= ABSOLUTE_CEILING,
+        "actualBilledCost": {
+            "status": "NOT_RECONCILED",
+            "amountUsd": None,
+            "source": "human CloudBank or account billing reconciliation after teardown",
+        },
+        "approvedForPlanning": maximum <= PLANNING_ESTIMATE_CEILING,
     }
     rendered = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
-    if not report["approved"]:
-        raise SystemExit("Cost gate failed")
+    if not report["approvedForPlanning"]:
+        raise SystemExit("Pre-deployment planning-estimate gate failed")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "entrypoint": "/usr/local/bin/osc-demo-lifecycle",
   "expectedAccount": "269624229733",
   "expectedRegion": "us-west-2",
+  "costControlMode": "TIME_BOUNDED",
   "stateOrder": ["SCHEDULED", "PREPARING", "OPEN", "READ_ONLY", "CLOSED"],
   "actions": {
     "START": {
@@ -12,11 +13,13 @@
         "verify checksummed ENFORCED_COMMON_AWS_SOURCES_ABSENT build-isolation evidence",
         "verify the manifest contains an immutable WebApp bundle and all required OCI image digests",
         "reject mutable image references",
-        "reject projected spend above USD 200",
+        "verify a concrete pre-deployment planning estimate no greater than USD 200",
+        "verify the 72-hour maximum, manifest expiresAt, hard-close deadline, and exact stop authorization",
         "acquire the run-id lock"
       ],
       "steps": [
         "write PREPARING status",
+        "persist the validated manifest expiresAt, hard-close deadline, and TIME_BOUNDED mode before provisioning",
         "sync the reviewed WebApp bundle to the private edge bucket while preserving status.json",
         "apply only the tagged runtime Terraform root",
         "deploy three-orderer and two-peer-per-organization Fabric",
@@ -40,9 +43,9 @@
         "record browser canary and service health through private in-cluster control endpoints",
         "record queue depth, queue age, p50 and p95 confirmation time",
         "record pod readiness, ALB health, WAF actions, and Fabric health",
-        "notify at USD 75 and USD 125",
-        "start the stop state machine at USD 150 or a persistent safety failure",
-        "refuse all provisioning at or above USD 200"
+        "record TIME_BOUNDED mode, the planning estimate, bounded exposure, and unreconciled actual-billed-cost status",
+        "idempotently start the stop state machine at the persisted runtime deadline or a persistent safety failure",
+        "do not call AWS Budgets, Cost Explorer, EstimatedCharges, or billing APIs"
       ]
     },
     "READ_ONLY": {
@@ -98,6 +101,7 @@
     "mutable image tags",
     "static AWS credentials",
     "writes outside the tagged demo runtime",
+    "AWS Budgets, Cost Explorer, EstimatedCharges, or billing API calls",
     "deletion of the Route 53 hosted zone",
     "collection of file bytes or original filenames"
   ],

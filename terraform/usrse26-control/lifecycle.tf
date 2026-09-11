@@ -212,7 +212,7 @@ locals {
       Effect = "Allow"
       Action = [
         "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
-        "aws-portal:ViewBilling", "cloudfront:ListVpcOrigins",
+        "cloudfront:ListVpcOrigins",
         "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
         "ec2:GetCoipPoolUsage", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
         "eks:List*", "elasticloadbalancing:Describe*",
@@ -337,9 +337,8 @@ locals {
     {
       Sid    = "ExactControlOperations"
       Effect = "Allow"
-      Action = ["budgets:ViewBudget", "codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
+      Action = ["codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
       Resource = [
-        "arn:aws:budgets::${var.authorized_account_id}:budget/${local.name_prefix}-absolute-ceiling",
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle",
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-cleanup",
         "arn:aws:sns:${var.aws_region}:${var.authorized_account_id}:${local.name_prefix}-notifications",
@@ -463,7 +462,6 @@ locals {
       "arn:aws:mq:${var.aws_region}:${var.authorized_account_id}:*:${local.name_prefix}-*:*",
     ]
     ExactControlOperations = [
-      "arn:aws:budgets::${var.authorized_account_id}:budget/${local.name_prefix}-absolute-ceiling",
       "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-*",
       "arn:aws:sns:${var.aws_region}:${var.authorized_account_id}:${local.name_prefix}-notifications",
       "arn:aws:states:${var.aws_region}:${var.authorized_account_id}:stateMachine:${local.name_prefix}-stop",
@@ -542,7 +540,7 @@ resource "aws_codebuild_project" "lifecycle" {
         pre_build = { commands = [
           "test \"$(aws sts get-caller-identity --query Account --output text)\" = \"$EXPECTED_ACCOUNT_ID\"",
           "test \"$AWS_DEFAULT_REGION\" = \"$EXPECTED_REGION\"",
-          "test \"$PLANNING_COST_USD\" -le \"$COST_CEILING_USD\""
+          "test \"$COST_CONTROL_MODE\" = \"TIME_BOUNDED\""
         ] }
         build = { commands = ["/usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
       }
@@ -554,7 +552,7 @@ resource "aws_codebuild_project" "lifecycle" {
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "SERVICE_ROLE"
     dynamic "environment_variable" {
-      for_each = merge(local.lifecycle_environment, { PLANNING_COST_USD = tostring(var.planning_cost_usd) })
+      for_each = merge(local.lifecycle_environment, { PLANNING_ESTIMATE_USD = tostring(var.planning_estimate_usd) })
       content {
         name  = environment_variable.key
         value = environment_variable.value
@@ -600,7 +598,7 @@ resource "aws_codebuild_project" "cleanup" {
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "SERVICE_ROLE"
     dynamic "environment_variable" {
-      for_each = merge(local.lifecycle_environment, { PLANNING_COST_USD = tostring(var.planning_cost_usd) })
+      for_each = merge(local.lifecycle_environment, { PLANNING_ESTIMATE_USD = tostring(var.planning_estimate_usd) })
       content {
         name  = environment_variable.key
         value = environment_variable.value

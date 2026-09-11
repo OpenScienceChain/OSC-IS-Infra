@@ -20,7 +20,7 @@ Checks `CKV_AWS_119`, `CKV_AWS_136`, `CKV_AWS_145`, `CKV_AWS_149`, `CKV_AWS_158`
 - `CKV_AWS_18` and `CKV_AWS_86`: private S3 origins do not receive direct public requests. WAF and control-plane logs provide the necessary audit trail, with cookie and authorization headers redacted. Duplicate S3/CloudFront access-log sinks are not retained.
 - `CKV_AWS_285`: Step Functions log every transition at `ALL`, use X-Ray, and deliberately set `include_execution_data = false` so guest request payloads cannot enter logs.
 - `CKV_AWS_338`: WAF, lifecycle, Step Functions, and EKS logs expire after seven days; one-year retention is disproportionate to a run capped at 72 hours.
-- `CKV2_AWS_11`: full VPC flow logs are not retained. Control-plane, WAF, aggregate application, authorization-denial, cost, and teardown evidence is exported instead.
+- `CKV2_AWS_11`: full VPC flow logs are not retained. Control-plane, WAF, aggregate application, authorization-denial, planning-estimate/bounded-exposure, and teardown evidence is exported instead.
 - `CKV2_AWS_57`: generated workload authentication, database, broker, and Fabric credentials are destroyed within 72 hours, before a rotation interval can elapse.
 - `CKV2_AWS_62`: the two buckets contain static status, explicit lifecycle state, and sanitized evidence; they do not implement object-created event processing.
 

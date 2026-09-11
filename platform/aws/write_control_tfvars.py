@@ -9,13 +9,13 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
-def bounded_cost(value: str) -> Decimal:
+def bounded_planning_estimate(value: str) -> Decimal:
     try:
         cost = Decimal(value)
     except InvalidOperation as error:
-        raise argparse.ArgumentTypeError("planning cost must be a decimal") from error
+        raise argparse.ArgumentTypeError("planning estimate must be a decimal") from error
     if not Decimal("0") <= cost <= Decimal("200"):
-        raise argparse.ArgumentTypeError("planning cost must be between 0 and 200")
+        raise argparse.ArgumentTypeError("planning estimate must be between 0 and 200")
     return cost
 
 
@@ -35,7 +35,7 @@ def main() -> int:
     parser.add_argument("--lifecycle-runner-image", required=True)
     parser.add_argument("--artifact-manifest-s3-uri", required=True)
     parser.add_argument("--artifact-manifest-sha256", required=True)
-    parser.add_argument("--planning-cost-usd", required=True, type=bounded_cost)
+    parser.add_argument("--planning-estimate-usd", required=True, type=bounded_planning_estimate)
     parser.add_argument("--notification-email")
     args = parser.parse_args()
 
@@ -47,7 +47,8 @@ def main() -> int:
         ("lifecycle_runner_image", args.lifecycle_runner_image),
         ("artifact_manifest_s3_uri", args.artifact_manifest_s3_uri),
         ("artifact_manifest_sha256", args.artifact_manifest_sha256),
-        ("planning_cost_usd", args.planning_cost_usd),
+        ("cost_control_mode", "TIME_BOUNDED"),
+        ("planning_estimate_usd", args.planning_estimate_usd),
         ("notification_email", notification_email),
     ]
 

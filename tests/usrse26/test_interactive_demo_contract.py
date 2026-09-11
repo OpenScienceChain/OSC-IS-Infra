@@ -123,25 +123,30 @@ class RuntimeTopologyTests(unittest.TestCase):
 
 
 class LifecycleContractTests(unittest.TestCase):
-    def test_exact_account_region_schedule_and_cost_boundaries(self) -> None:
+    def test_exact_account_region_schedule_and_time_bounded_cost_controls(self) -> None:
         config = json.loads(read("docs/usrse26/interactive-demo-config.json"))
         self.assertEqual(config["accountId"], "269624229733")
         self.assertEqual(config["primaryRegion"], "us-west-2")
         self.assertEqual(config["schedule"]["maximumRuntimeHours"], 72)
-        self.assertIn(
-            'values = [format("user:RunId$%s", var.run_id)]',
-            read("terraform/usrse26-control/budget.tf"),
-        )
+        self.assertFalse((ROOT / "terraform/usrse26-control/budget.tf").exists())
         lifecycle = read("terraform/usrse26-control/lifecycle.tf")
-        self.assertIn('"aws-portal:ViewBilling"', lifecycle)
-        self.assertIn('"budgets:ViewBudget", "codebuild:UpdateProject"', lifecycle)
-        self.assertIn('budget/${local.name_prefix}-absolute-ceiling', lifecycle)
-        self.assertEqual(config["costControlsUsd"], {
-            "information": 75,
-            "warning": 125,
-            "readOnlyAndTeardown": 150,
-            "absoluteCeiling": 200,
-        })
+        self.assertIn('COST_CONTROL_MODE             = var.cost_control_mode', read("terraform/usrse26-control/locals.tf"))
+        self.assertIn('variable "cost_control_mode"', read("terraform/usrse26-control/variables.tf"))
+        self.assertIn('default = "TIME_BOUNDED"', read("terraform/usrse26-control/variables.tf"))
+        self.assertEqual(config["costControl"]["mode"], "TIME_BOUNDED")
+        self.assertEqual(config["costControl"]["planningEstimateCeilingUsd"], 200)
+        self.assertFalse(config["costControl"]["liveBillingApisEnabled"])
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "terraform/usrse26-control/lifecycle.tf",
+                ROOT / "terraform/usrse26-control/state-machines.tf",
+                ROOT / "terraform/usrse26-control/schedules.tf",
+                ROOT / "platform/lifecycle/osc_demo_lifecycle.py",
+            )
+        ).lower()
+        for forbidden in ('budgets:', 'aws-portal:', '"ce"', '"billing"', 'describe-budget', 'estimatedcharges'):
+            self.assertNotIn(forbidden, source)
         for script in ("prepare-demo-control.ps1", "apply-demo-control.ps1", "destroy-demo-control.ps1"):
             self.assertIn("platform/aws/aws_guard.py", read(f"platform/aws/{script}"))
 
@@ -165,7 +170,7 @@ class LifecycleContractTests(unittest.TestCase):
             "--lifecycle-runner-image", "example.invalid/lifecycle-runner@sha256:" + "a" * 64,
             "--artifact-manifest-s3-uri", "s3://example/releases/usrse26r1/artifacts.json",
             "--artifact-manifest-sha256", "b" * 64,
-            "--planning-cost-usd", "34.140",
+            "--planning-estimate-usd", "34.140",
         ]
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "control.tfvars"
@@ -176,7 +181,8 @@ class LifecycleContractTests(unittest.TestCase):
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 generated = output.read_text(encoding="utf-8")
-                self.assertIn("planning_cost_usd = 34.14\n", generated)
+                self.assertIn('cost_control_mode = "TIME_BOUNDED"\n', generated)
+                self.assertIn("planning_estimate_usd = 34.14\n", generated)
                 self.assertIn("notification_email = null\n", generated)
 
             result = subprocess.run(
@@ -200,6 +206,15 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('WaitForRunnerNetworkRelease', machines)
         self.assertIn('backup-stop', schedules)
         self.assertIn('America/Los_Angeles', schedules)
+        self.assertEqual(schedules.count('action_after_completion      = "DELETE"'), 1)
+        self.assertIn('for_each                     = local.one_time_schedules', schedules)
+        self.assertIn('flexible_time_window { mode = "OFF" }', schedules)
+        self.assertIn('maximum_retry_attempts       = 2', schedules)
+        self.assertIn('dead_letter_config { arn = aws_sqs_queue.scheduler_dlq.arn }', schedules)
+        self.assertIn('Subject = "OSC-IS demo backup stop activated"', machines)
+        self.assertIn('hardCloseAt    = { S = local.lifecycle_environment.HARD_CLOSE_AT }', machines)
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
+        self.assertIn('expiresAt=manifest["expiresAt"]', runner)
         self.assertIn('StringEquals = "CLOSED"', machines)
         self.assertIn('StopComplete = { Type = "Succeed" }', machines)
         self.assertIn('resource "aws_codebuild_project" "cleanup"', read("terraform/usrse26-control/lifecycle.tf"))
@@ -367,6 +382,59 @@ class LifecycleContractTests(unittest.TestCase):
 
 
 class RenderingAndPolicyTests(unittest.TestCase):
+    def test_runtime_plan_policy_enforces_fixed_capacity(self) -> None:
+        tags = {
+            "Project": "OSC-IS", "Purpose": "USRSE26-Interactive-Demo",
+            "Environment": "ephemeral", "ManagedBy": "Terraform", "Owner": "ofgarzon",
+        }
+        broker_template = {
+            "Resources": {"Broker": {"Properties": {
+                "PubliclyAccessible": False,
+                "DeploymentMode": "CLUSTER_MULTI_AZ",
+                "EngineType": "RABBITMQ",
+                "HostInstanceType": "mq.m7g.medium",
+                "Users": [{"Password": "{{resolve:secretsmanager:exact-run}}"}],
+            }}},
+        }
+        plan = {
+            "resource_changes": [
+                {
+                    "address": "aws_eks_node_group.experiment",
+                    "type": "aws_eks_node_group",
+                    "change": {"actions": ["create"], "after": {
+                        "tags_all": tags,
+                        "instance_types": ["m7i.large"],
+                        "scaling_config": [{"desired_size": 3, "min_size": 3, "max_size": 3}],
+                    }},
+                },
+                {
+                    "address": "aws_cloudformation_stack.rabbitmq",
+                    "type": "aws_cloudformation_stack",
+                    "change": {"actions": ["create"], "after": {
+                        "tags_all": tags,
+                        "template_body": json.dumps(broker_template),
+                    }},
+                },
+            ],
+            "planned_values": {"outputs": {"account_id": {"value": "269624229733"}}},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "runtime-plan.json"
+            command = [sys.executable, str(ROOT / "platform/aws/check_terraform_plan.py"), str(path)]
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            accepted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            plan["resource_changes"][0]["change"]["after"]["scaling_config"][0]["max_size"] = 4
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            unbounded_nodes = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(unbounded_nodes.returncode, 0)
+            plan["resource_changes"][0]["change"]["after"]["scaling_config"][0]["max_size"] = 3
+            broker_template["Resources"]["Broker"]["Properties"]["HostInstanceType"] = "mq.m7g.large"
+            plan["resource_changes"][1]["change"]["after"]["template_body"] = json.dumps(broker_template)
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            oversized_broker = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(oversized_broker.returncode, 0)
+
     def test_gitops_renders_with_only_immutable_images(self) -> None:
         digest = "a" * 64
         images = {}
@@ -416,17 +484,29 @@ class RenderingAndPolicyTests(unittest.TestCase):
             "RunId": "usrse26demo",
         }
         required = [
-            ("aws_budgets_budget", {}),
             ("aws_cloudfront_distribution", {"enabled": True, "web_acl_id": "arn:waf"}),
             ("aws_cloudwatch_metric_alarm", {}),
-            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-lifecycle", "environment": [{"image": f"runner@sha256:{digest}"}]}),
-            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-cleanup", "environment": [{"image": f"runner@sha256:{digest}"}]}),
+            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-lifecycle", "environment": [{
+                "image": f"runner@sha256:{digest}",
+                "environment_variable": [
+                    {"name": "COST_CONTROL_MODE", "value": "TIME_BOUNDED"},
+                    {"name": "PLANNING_ESTIMATE_CEILING_USD", "value": "200"},
+                    {"name": "PLANNING_ESTIMATE_USD", "value": "104.83"},
+                ],
+            }]}),
+            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-cleanup", "environment": [{
+                "image": f"runner@sha256:{digest}",
+                "environment_variable": [
+                    {"name": "COST_CONTROL_MODE", "value": "TIME_BOUNDED"},
+                    {"name": "PLANNING_ESTIMATE_CEILING_USD", "value": "200"},
+                    {"name": "PLANNING_ESTIMATE_USD", "value": "104.83"},
+                ],
+            }]}),
             ("aws_dynamodb_table", {}),
             ("aws_iam_policy", {
                 "name": "osc-usrse26-usrse26demo-runtime-boundary",
                 "policy": json.dumps({"Statement": [{"Action": "iam:PassRole"}]}),
             }),
-            ("aws_scheduler_schedule", {}),
             ("aws_sfn_state_machine", {}),
             ("aws_wafv2_web_acl", {}),
         ]
@@ -434,6 +514,24 @@ class RenderingAndPolicyTests(unittest.TestCase):
         for index, (resource_type, values) in enumerate(required):
             after = {"tags_all": tags, **values}
             changes.append({"address": f"test.{index}", "type": resource_type, "change": {"actions": ["create"], "after": after}})
+        for suffix in ("start", "stop", "backup-stop"):
+            changes.append({
+                "address": f'aws_scheduler_schedule.one_time["{suffix}"]',
+                "type": "aws_scheduler_schedule",
+                "change": {
+                    "actions": ["create"],
+                    "after": {
+                        "name": f"osc-usrse26-usrse26demo-{suffix}",
+                        "action_after_completion": "DELETE",
+                        "flexible_time_window": [{"mode": "OFF"}],
+                        "target": [{
+                            "dead_letter_config": [{"arn": "arn:dlq"}],
+                            "retry_policy": [{"maximum_retry_attempts": 2}],
+                        }],
+                        "tags_all": tags,
+                    },
+                },
+            })
         boundary = "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26demo-runtime-boundary"
         for suffix in sorted({
             "eks-cluster", "eks-nodes", "alb-controller", "api-gateway", "postgres",
@@ -475,7 +573,20 @@ class RenderingAndPolicyTests(unittest.TestCase):
         })
         plan = {
             "resource_changes": changes,
-            "planned_values": {"outputs": {"public_url": {"value": "https://demo.osc-staging.org"}}},
+            "planned_values": {"outputs": {
+                "public_url": {"value": "https://demo.osc-staging.org"},
+                "cost_control_mode": {"value": "TIME_BOUNDED"},
+                "planning_estimate_usd": {"value": 104.83},
+                "planning_estimate_ceiling_usd": {"value": 200},
+                "maximum_runtime_hours": {"value": 72},
+                "lifecycle_schedule": {"value": {
+                    "timezone": "America/Los_Angeles",
+                    "start": "2026-10-20T08:00:00",
+                    "stop": "2026-10-23T08:00:00",
+                    "backup_stop": "2026-10-23T10:00:00",
+                    "hard_close": "2026-10-23T15:00:00Z",
+                }},
+            }},
             "configuration": {"root_module": {"resources": [{
                 "address": cloudfront["address"],
                 "expressions": {"web_acl_id": {"references": ["aws_wafv2_web_acl.edge.arn"]}},
@@ -513,6 +624,12 @@ class RenderingAndPolicyTests(unittest.TestCase):
             path.write_text(json.dumps(plan), encoding="utf-8")
             escalation = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(escalation.returncode, 0)
+            boundary_change["change"]["after"]["policy"] = json.dumps({
+                "Statement": [{"Action": "budgets:ViewBudget"}]
+            })
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            billing_dependency = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(billing_dependency.returncode, 0)
 
     def test_controller_source_is_provenance_bound(self) -> None:
         provenance = json.loads(read("platform/gitops/aws/aws-load-balancer-controller-v3.3.0.provenance.json"))

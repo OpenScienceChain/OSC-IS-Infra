@@ -103,12 +103,16 @@ runner, and executes the public canary. `OPEN` is forbidden before the canary
 confirms an artifact, workflow, history, and cross-organization denial.
 
 During the window, inspect request failures, confirmation p50/p95, queue depth
-and age, pod readiness, ALB target health, WAF actions, Fabric state, and cost.
+and age, pod readiness, ALB target health, WAF actions, Fabric state, schedule
+delivery, and the persisted deadline.
 The runner records only aggregate application metrics behind the control-key
 guard; it never records record/session identifiers or queue payloads. Two
 consecutive service/readiness/queue/latency safety failures automatically start
-the stop state machine. Cost notices are sent once at $75 and $125; at $150 the
-monitor sets read-only and starts stop. $200 is an absolute no-provision boundary.
+the stop state machine. `TIME_BOUNDED` is the only mode: the USD 200 value is a
+pre-deployment planning-estimate ceiling, not a live-spend threshold. Runtime
+automation does not call Budgets, Cost Explorer, EstimatedCharges, or billing
+APIs. Status and monitor evidence keep the planning estimate, bounded exposure,
+and unreconciled actual billed cost as separate fields.
 
 ## Stop and teardown
 
@@ -124,7 +128,10 @@ resets future lifecycle jobs to public placement; after that job exits and its
 network interface is released, a fresh out-of-VPC job destroys the Terraform
 runtime. This ordering prevents the runner from trying to delete its own VPC.
 
-After billing settles for 48 hours, fill `cost-report-template.json`. After the
+Fill `cost-report-template.json` from the approved estimate and teardown
+evidence. Leave `actualBilledCost.status` as `NOT_RECONCILED` unless a human
+later provides a CloudBank or account billing record; that optional step is
+outside runtime automation and never delays teardown. After the
 30-day retention window and only with `runtime-teardown-proof.json` showing
 zero tagged resources:
 

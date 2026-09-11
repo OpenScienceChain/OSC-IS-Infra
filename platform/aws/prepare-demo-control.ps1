@@ -6,7 +6,6 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')][string]$LifecycleRunnerImage,
     [Parameter(Mandatory = $true)][ValidatePattern('^s3://[a-z0-9.-]+/.+/.+\.json$')][string]$ArtifactManifestS3Uri,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ArtifactManifestSha256,
-    [ValidateRange(0, 200)][decimal]$PlanningCostUsd = 120,
     [AllowNull()][string]$NotificationEmail = $null
 )
 
@@ -28,7 +27,16 @@ New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 Push-Location $repoRoot
 try {
     python platform/aws/aws_guard.py | Out-Null
-    python platform/aws/estimate_cost.py --hours 72 --output (Join-Path $runRoot 'cost-estimate.json') | Out-Null
+    $costEstimatePath = Join-Path $runRoot 'cost-estimate.json'
+    python platform/aws/estimate_cost.py --hours 72 --output $costEstimatePath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Pre-deployment planning-estimate gate failed.' }
+    $costEstimate = Get-Content -LiteralPath $costEstimatePath -Raw | ConvertFrom-Json
+    if ($costEstimate.costControlMode -ne 'TIME_BOUNDED' -or
+        -not $costEstimate.approvedForPlanning -or
+        [decimal]$costEstimate.plannedEstimateWith25PercentContingency -gt 200) {
+        throw 'Planning estimate is missing, inconsistent, or above USD 200.'
+    }
+    $planningEstimateUsd = [decimal]$costEstimate.plannedEstimateWith25PercentContingency
     $tfvarsArguments = @(
         'platform/aws/write_control_tfvars.py',
         '--output', $tfvarsPath,
@@ -38,7 +46,7 @@ try {
         '--lifecycle-runner-image', $LifecycleRunnerImage,
         '--artifact-manifest-s3-uri', $ArtifactManifestS3Uri,
         '--artifact-manifest-sha256', $ArtifactManifestSha256,
-        '--planning-cost-usd', $PlanningCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)
+        '--planning-estimate-usd', $planningEstimateUsd.ToString([Globalization.CultureInfo]::InvariantCulture)
     )
     if (-not [string]::IsNullOrWhiteSpace($NotificationEmail)) {
         $tfvarsArguments += @('--notification-email', $NotificationEmail.Trim())

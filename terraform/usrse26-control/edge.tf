@@ -50,9 +50,12 @@ resource "aws_s3_object" "index" {
 }
 
 resource "aws_s3_object" "status" {
-  bucket                 = aws_s3_bucket.edge.id
-  key                    = "status.json"
-  content                = replace(file("${path.module}/templates/status.json"), "__RUN_ID__", var.run_id)
+  bucket = aws_s3_bucket.edge.id
+  key    = "status.json"
+  content = templatefile("${path.module}/templates/status.json.tftpl", {
+    run_id                = var.run_id
+    planning_estimate_usd = var.planning_estimate_usd
+  })
   content_type           = "application/json"
   cache_control          = "no-store, max-age=0"
   server_side_encryption = "AES256"

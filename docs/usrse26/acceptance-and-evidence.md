@@ -38,7 +38,7 @@ ephemeral AWS environment.
 | Event processing survives a temporary worker or peer failure | queue state and recovery timing | Proposed |
 | GitOps detects drift and supports controlled rollback | Argo state, revisions, digest, timing | Proposed |
 | The deployment is reproducible from reviewed source and immutable artifacts | source manifest, image digests, SBOMs, clean rebuild | Proposed |
-| The AWS experiment is cost-conscious and disposable | estimate, timestamps, tagged inventory, destroy proof | Proposed |
+| The AWS experiment has a plan-approved estimate and bounded disposable exposure | planning estimate, timestamps, schedules, tagged inventory, destroy proof | Proposed |
 | OSC-IS is production-ready | prohibited claim | Not tested |
 | Researchers have adopted OSC-IS or experienced measured improvement | prohibited claim | Not tested |
 
@@ -53,8 +53,11 @@ Each `platform-evidence/<run-id>/` directory must contain:
 - `gitops/`: sync, drift, rollout, rollback state and timings.
 - `fabric/`: sanitized transaction, event, denial, and history evidence.
 - `resilience/`: injected fault, expected behavior, recovery timing.
-- `aws/`: account number only, region, plan summary, tagged inventory, cost, and
-  teardown proof. Do not record IAM user IDs or secret-bearing ARNs.
+- `aws/`: account number only, region, plan summary, planning estimate,
+  bounded-exposure controls, tagged inventory, teardown proof, and an actual
+  billed-cost field that remains `NOT_RECONCILED` unless a human supplies a
+  CloudBank or account billing record. Do not record IAM user IDs or
+  secret-bearing ARNs.
 - `checksums.sha256`: integrity manifest for retained evidence.
 - `claim-matrix.md`: final status of every claim.
 
@@ -63,8 +66,11 @@ Each `platform-evidence/<run-id>/` directory must contain:
 Stop before AWS apply when any of these is true:
 
 - STS account is not `269624229733`.
-- The reviewed planning estimate exceeds the USD 200 absolute ceiling, or the
-  live run reaches the USD 150 read-only-and-teardown threshold.
+- The reviewed pre-deployment planning estimate is absent, non-concrete, or
+  exceeds the USD 200 planning-estimate ceiling.
+- The 72-hour deadline, fixed capacity, primary stop, independent backup stop,
+  teardown authorization, exact-tag sweep, or zero-inventory proof is absent or
+  inconsistent.
 - Terraform plans to change an untagged or pre-existing resource.
 - A required secret must be placed in source, state input, an image, or evidence.
 - Local provenance, authorization, recovery, GitOps, or teardown gates fail.

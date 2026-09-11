@@ -3,7 +3,9 @@
 This root creates the low-cost resources that survive disposable EKS runtime
 teardown: private S3 status content, CloudFront, WAF, ACM validation, the exact
 Route 53 record, lifecycle state, one-time schedules, Step Functions,
-CodeBuild, notifications, evidence storage, and the $200 budget ceiling.
+CodeBuild, notifications, and evidence storage. Cost control is explicitly
+`TIME_BOUNDED`: the root checks a concrete pre-deployment estimate against a
+USD 200 planning ceiling but creates and queries no AWS Budget or billing API.
 It also pre-creates the exact EKS cluster, node, controller, storage, and
 workload roles. The disposable runtime receives their ARNs and has no IAM role
 or trust-policy mutation surface.

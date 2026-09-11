@@ -19,7 +19,7 @@ Status: implemented controls require independent review and an AWS rehearsal.
 | Edge to runtime | public access to data plane, dead origin during failure | private internal ALB, pod-IP targets, VPC origin attachment only after canary, static fallback | `/demo/status` and read-only behavior |
 | API to data/services | lateral movement, secret exposure | default-deny NetworkPolicy, explicit ports, Secrets Store identities, non-root/read-only containers | server-authoritative role and organization checks |
 | Worker to Fabric | forged organization, duplicate writes | organization-scoped Ledger Gateways and Fabric identities, TLS, separate MSPs | idempotency keys and negative cross-organization tests |
-| Lifecycle automation | wrong account, over-spend, partial start, unsafe destroy | STS guard in state machines and CodeBuild, fixed region, run lock, max two start retries, canary-open gate, $150 stop and $200 ceiling contract, backup stop, all-tag sweeper | reviewed runner image and rehearsal logs |
+| Lifecycle automation | wrong account, excessive exposure, partial start, unsafe destroy | STS guard in state machines and CodeBuild, fixed region, run lock, max two start retries, canary-open gate, concrete estimate no greater than the USD 200 planning ceiling, 72-hour deadline, fixed capacity, independent backup stop, all-tag sweeper | reviewed runner image and rehearsal logs |
 | Evidence retention | personal-data leakage, indefinite retention | separate prefixes, seven-day security logs, 30-day sanitized evidence expiry, cookie/authorization redaction | sanitizer and data-dictionary tests |
 
 ## Residual risks

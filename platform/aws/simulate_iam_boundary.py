@@ -14,6 +14,7 @@ from typing import Any
 ACCOUNT = "269624229733"
 REGION = "us-west-2"
 MAX_MANAGED_POLICY_CHARACTERS = 6_144
+FORBIDDEN_BILLING_ACTION_PREFIXES = ("budgets:", "aws-portal:", "ce:", "billing:")
 
 
 def values(value: Any) -> list[str]:
@@ -102,7 +103,6 @@ def compact_policy_characters(policy: dict[str, Any]) -> int:
 
 def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) -> dict[str, Any]:
     role = f"arn:aws:iam::{ACCOUNT}:role/osc-usrse26-{run_id}-eks-cluster"
-    budget = f"arn:aws:budgets::{ACCOUNT}:budget/osc-usrse26-{run_id}-absolute-ceiling"
     run_bucket = f"arn:aws:s3:::osc-usrse26-{run_id}-control-{ACCOUNT}"
     run_secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:osc-usrse26-{run_id}/api/auth-AbCdEf"
     creation_tags = {
@@ -119,11 +119,6 @@ def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) ->
         ("pass role outside run prefix", "iam:PassRole", f"arn:aws:iam::{ACCOUNT}:role/admin", {"iam:PassedToService": "eks.amazonaws.com"}, "implicitDeny"),
         ("pass role to unapproved service", "iam:PassRole", role, {"iam:PassedToService": "lambda.amazonaws.com"}, "implicitDeny"),
         ("permissions boundary mutation", "iam:DeleteRolePermissionsBoundary", role, {}, "implicitDeny"),
-        ("view exact run budget", "budgets:ViewBudget", budget, {}, "allowed"),
-        ("view unrelated budget", "budgets:ViewBudget", f"arn:aws:budgets::{ACCOUNT}:budget/unrelated-production-budget", {}, "implicitDeny"),
-        ("supporting billing view", "aws-portal:ViewBilling", "*", {}, "allowed"),
-        ("billing portal mutation", "aws-portal:ModifyBilling", "*", {}, "implicitDeny"),
-        ("budget mutation", "budgets:ModifyBudget", budget, {}, "implicitDeny"),
         ("run-scoped S3 object", "s3:GetObject", f"{run_bucket}/runtime-state/{run_id}/terraform.tfstate", {}, "allowed"),
         ("unrelated S3 object", "s3:GetObject", "arn:aws:s3:::unrelated-account-data/private.txt", {}, "implicitDeny"),
         ("run-scoped secret", "secretsmanager:GetSecretValue", run_secret, {}, "allowed"),
@@ -138,6 +133,16 @@ def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) ->
         actual = effective_decision(boundary, identity, action, resource, context)
         results.append({"name": name, "action": action, "resource": resource, "expected": expected, "actual": actual, "passed": actual == expected})
     policy_characters = compact_policy_characters(boundary)
+    policy_actions = {
+        action
+        for policy in (boundary, identity)
+        for statement in policy["Statement"]
+        for action in values(statement["Action"])
+    }
+    forbidden_billing_actions = sorted(
+        action for action in policy_actions
+        if str(action).lower().startswith(FORBIDDEN_BILLING_ACTION_PREFIXES)
+    )
     return {
         "schemaVersion": 1,
         "simulation": "local identity-policy and permissions-boundary intersection model",
@@ -147,7 +152,12 @@ def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) ->
         "boundaryArn": f"arn:aws:iam::{ACCOUNT}:policy/osc-usrse26-{run_id}-runtime-boundary",
         "boundaryPolicyCharacters": policy_characters,
         "managedPolicyQuotaCharacters": MAX_MANAGED_POLICY_CHARACTERS,
-        "allPassed": policy_characters <= MAX_MANAGED_POLICY_CHARACTERS and all(item["passed"] for item in results),
+        "forbiddenBillingActions": forbidden_billing_actions,
+        "allPassed": (
+            policy_characters <= MAX_MANAGED_POLICY_CHARACTERS
+            and not forbidden_billing_actions
+            and all(item["passed"] for item in results)
+        ),
         "cases": results,
         "limitations": "Local identity-policy and permissions-boundary semantics only; repeat with AWS IAM simulation during an authorized rehearsal.",
     }

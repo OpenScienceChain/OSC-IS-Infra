@@ -13,3 +13,16 @@ output "required_tags" { value = local.required_tags }
 output "api_cache_policy_id" { value = aws_cloudfront_cache_policy.api.id }
 output "api_origin_request_policy_id" { value = aws_cloudfront_origin_request_policy.api.id }
 output "runtime_role_arns" { value = local.runtime_role_arn_map }
+output "cost_control_mode" { value = var.cost_control_mode }
+output "planning_estimate_usd" { value = var.planning_estimate_usd }
+output "planning_estimate_ceiling_usd" { value = 200 }
+output "maximum_runtime_hours" { value = 72 }
+output "lifecycle_schedule" {
+  value = {
+    timezone    = "America/Los_Angeles"
+    start       = var.start_at
+    stop        = var.stop_at
+    backup_stop = var.backup_stop_at
+    hard_close  = local.lifecycle_environment.HARD_CLOSE_AT
+  }
+}

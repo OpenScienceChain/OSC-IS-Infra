@@ -1,12 +1,13 @@
 # Disposable US-RSE 2026 EKS environment
 
-This root module creates one isolated, eight-hour OSC-IS evidence environment
+This root module creates one isolated OSC-IS evidence environment, capped at
+72 hours,
 in AWS account `269624229733`, region `us-west-2`. It does not import or modify
 the historical OSC infrastructure.
 
 The topology is deliberately experimental: one EKS 1.35 control plane, three
-on-demand `m7i.large` workers, one NAT gateway, one private single-instance
-Amazon MQ for RabbitMQ 4.2 broker, disposable encrypted volumes, six
+on-demand `m7i.large` workers, one NAT gateway, one private three-broker
+Multi-AZ Amazon MQ for RabbitMQ 4.2 cluster, disposable encrypted volumes, eight
 experiment-specific ECR repositories, and workload-scoped Secrets Manager
 values exposed through EKS Pod Identity and the Secrets Store CSI driver.
 
@@ -27,4 +28,5 @@ state.
 
 Never apply this module directly. Use the account-guarded scripts under
 `platform/aws`, which create a unique local state directory, record a baseline
-inventory and cost gate, and require same-session destruction.
+inventory and the approved pre-deployment planning estimate, and require
+same-session destruction. Runtime automation does not use billing APIs.

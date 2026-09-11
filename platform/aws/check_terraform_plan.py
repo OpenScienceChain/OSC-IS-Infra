@@ -83,12 +83,28 @@ def main() -> None:
             scan = (planned.get("image_scanning_configuration") or [{}])[0]
             require(scan.get("scan_on_push") is True, f"{address} does not scan on push", errors)
 
+        if resource_type == "aws_eks_node_group":
+            scaling = (planned.get("scaling_config") or [{}])[0]
+            require(
+                scaling.get("desired_size") == 3
+                and scaling.get("min_size") == 3
+                and scaling.get("max_size") == 3,
+                f"{address} must remain fixed at exactly three nodes",
+                errors,
+            )
+            require(
+                planned.get("instance_types") == ["m7i.large"],
+                f"{address} must use only m7i.large",
+                errors,
+            )
+
         if resource_type == "aws_cloudformation_stack":
             template = json.loads(planned.get("template_body", "{}"))
             broker = template.get("Resources", {}).get("Broker", {}).get("Properties", {})
             require(broker.get("PubliclyAccessible") is False, f"{address} creates a public broker", errors)
             require(broker.get("DeploymentMode") == "CLUSTER_MULTI_AZ", f"{address} must use a three-broker Multi-AZ cluster", errors)
             require(broker.get("EngineType") == "RABBITMQ", f"{address} is not RabbitMQ", errors)
+            require(broker.get("HostInstanceType") == "mq.m7g.medium", f"{address} broker size is outside the reviewed bound", errors)
             serialized = json.dumps(template)
             require("{{resolve:secretsmanager:" in serialized, f"{address} does not resolve its password from Secrets Manager", errors)
 

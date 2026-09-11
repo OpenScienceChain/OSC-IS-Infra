@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import http.cookiejar
 import json
+import math
 import os
 import re
 import shutil
@@ -24,6 +25,9 @@ from typing import Any
 
 ACCOUNT = "269624229733"
 REGION = "us-west-2"
+COST_CONTROL_MODE = "TIME_BOUNDED"
+PLANNING_ESTIMATE_CEILING_USD = 200.0
+MAX_RUNTIME_HOURS = 72
 REQUIRED_IMAGES = {
     "api-gateway",
     "ledger-gateway",
@@ -210,7 +214,7 @@ class Lifecycle:
         self.manifest: dict[str, Any] | None = None
         self.kubeconfig = self.work / "kubeconfig"
 
-    def guard(self) -> None:
+    def guard(self, action: str) -> None:
         expected_account = required("EXPECTED_ACCOUNT_ID")
         expected_region = required("EXPECTED_REGION")
         if expected_account != ACCOUNT or expected_region != REGION:
@@ -220,51 +224,84 @@ class Lifecycle:
             raise RuntimeError(f"Refusing AWS account {identity.get('Account')}")
         if os.environ.get("AWS_DEFAULT_REGION", REGION) != REGION:
             raise RuntimeError("AWS_DEFAULT_REGION is outside us-west-2")
-        if float(required("PLANNING_COST_USD")) > float(required("COST_CEILING_USD")):
-            raise RuntimeError("Reviewed planning cost exceeds the absolute ceiling")
-
-    def load_manifest(self) -> dict[str, Any]:
-        if self.manifest is not None:
-            return self.manifest
-        bucket, key = parse_s3_uri(required("ARTIFACT_MANIFEST_S3_URI"))
-        path = self.work / "artifacts.json"
-        aws("s3api", "get-object", "--bucket", bucket, "--key", key, str(path))
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        expected = required("ARTIFACT_MANIFEST_SHA256")
-        if not SHA_RE.fullmatch(expected) or actual != expected:
-            raise RuntimeError("Artifact manifest SHA-256 mismatch")
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        isolation = manifest.get("buildCredentialIsolation", {})
+        if required("COST_CONTROL_MODE") != COST_CONTROL_MODE:
+            raise RuntimeError("Only TIME_BOUNDED cost control is authorized")
+        if int(required("MAX_RUNTIME_HOURS")) != MAX_RUNTIME_HOURS:
+            raise RuntimeError("Maximum runtime must remain exactly 72 hours")
+        ceiling = float(required("PLANNING_ESTIMATE_CEILING_USD"))
+        estimate = float(required("PLANNING_ESTIMATE_USD"))
         if (
-            manifest.get("runId") != self.run_id
-            or isolation.get("status") != "ENFORCED_COMMON_AWS_SOURCES_ABSENT"
-            or isolation.get("commonAwsCredentialSourcesAbsent") is not True
-            or not SHA_RE.fullmatch(isolation.get("evidence", {}).get("sha256", ""))
+            not math.isfinite(estimate)
+            or not math.isfinite(ceiling)
+            or estimate < 0
+            or ceiling != PLANNING_ESTIMATE_CEILING_USD
+            or estimate > ceiling
         ):
-            raise RuntimeError("Artifact manifest provenance does not match the run")
-        images = manifest.get("images", {})
-        if set(images) != REQUIRED_IMAGES:
-            raise RuntimeError(f"Artifact manifest image set differs: {sorted(set(images) ^ REQUIRED_IMAGES)}")
-        prefix = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/osc-usrse26-{self.run_id}/"
-        for name, evidence in images.items():
-            reference = evidence.get("ecrReference", "")
-            if not reference.startswith(f"{prefix}{name}@sha256:") or not SHA_RE.fullmatch(reference.rsplit("sha256:", 1)[-1]):
-                raise RuntimeError(f"Mutable or cross-run image reference for {name}")
-        web = manifest.get("webApp", {})
-        if not re.fullmatch(r"[0-9a-f]{40}", web.get("sourceRevision", "")):
-            raise RuntimeError("WebApp source revision is not immutable")
-        if not SHA_RE.fullmatch(web.get("sha256", "")) or not web.get("s3Uri"):
-            raise RuntimeError("WebApp versioned object interface is incomplete")
+            raise RuntimeError("Pre-deployment planning estimate exceeds the USD 200 ceiling")
+        hard_close = datetime.fromisoformat(required("HARD_CLOSE_AT").replace("Z", "+00:00"))
+        if hard_close.tzinfo is None or hard_close.utcoffset() != timedelta(0):
+            raise RuntimeError("HARD_CLOSE_AT must be an explicit UTC timestamp")
+        cleanup_actions = {"READ_ONLY", "EXPORT", "DESTROY", "DESTROY_RUNTIME", "SWEEP", "FAILED_START_CLEANUP"}
+        if datetime.now(timezone.utc) >= hard_close and action not in cleanup_actions:
+            raise RuntimeError("The hard-close deadline has passed")
+        expected_stop = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:osc-usrse26-{self.run_id}-stop"
+        if required("STOP_STATE_MACHINE_ARN") != expected_stop:
+            raise RuntimeError("Teardown authorization does not match the exact run")
+
+    def load_manifest(self, *, allow_expired: bool = False) -> dict[str, Any]:
+        if self.manifest is None:
+            bucket, key = parse_s3_uri(required("ARTIFACT_MANIFEST_S3_URI"))
+            path = self.work / "artifacts.json"
+            aws("s3api", "get-object", "--bucket", bucket, "--key", key, str(path))
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            expected = required("ARTIFACT_MANIFEST_SHA256")
+            if not SHA_RE.fullmatch(expected) or actual != expected:
+                raise RuntimeError("Artifact manifest SHA-256 mismatch")
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            isolation = manifest.get("buildCredentialIsolation", {})
+            if (
+                manifest.get("runId") != self.run_id
+                or isolation.get("status") != "ENFORCED_COMMON_AWS_SOURCES_ABSENT"
+                or isolation.get("commonAwsCredentialSourcesAbsent") is not True
+                or not SHA_RE.fullmatch(isolation.get("evidence", {}).get("sha256", ""))
+            ):
+                raise RuntimeError("Artifact manifest provenance does not match the run")
+            images = manifest.get("images", {})
+            if set(images) != REQUIRED_IMAGES:
+                raise RuntimeError(f"Artifact manifest image set differs: {sorted(set(images) ^ REQUIRED_IMAGES)}")
+            prefix = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/osc-usrse26-{self.run_id}/"
+            for name, evidence in images.items():
+                reference = evidence.get("ecrReference", "")
+                if not reference.startswith(f"{prefix}{name}@sha256:") or not SHA_RE.fullmatch(reference.rsplit("sha256:", 1)[-1]):
+                    raise RuntimeError(f"Mutable or cross-run image reference for {name}")
+            web = manifest.get("webApp", {})
+            if not re.fullmatch(r"[0-9a-f]{40}", web.get("sourceRevision", "")):
+                raise RuntimeError("WebApp source revision is not immutable")
+            if not SHA_RE.fullmatch(web.get("sha256", "")) or not web.get("s3Uri"):
+                raise RuntimeError("WebApp versioned object interface is incomplete")
+            self.manifest = manifest
+        manifest = self.manifest
+        created = datetime.fromisoformat(manifest["createdAt"].replace("Z", "+00:00"))
         expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        if expires <= now or expires > now + timedelta(hours=int(required("MAX_RUNTIME_HOURS")), minutes=5):
+        hard_close = datetime.fromisoformat(required("HARD_CLOSE_AT").replace("Z", "+00:00"))
+        if (
+            created.tzinfo is None
+            or created.utcoffset() != timedelta(0)
+            or expires.tzinfo is None
+            or expires.utcoffset() != timedelta(0)
+            or expires <= created
+            or expires > created + timedelta(hours=MAX_RUNTIME_HOURS, minutes=5)
+            or expires > hard_close
+        ):
+            raise RuntimeError("Manifest timestamps are inconsistent with the 72-hour and hard-close deadlines")
+        if not allow_expired and (expires <= now or expires > now + timedelta(hours=MAX_RUNTIME_HOURS, minutes=5)):
             raise RuntimeError("Manifest expiry is outside the approved runtime window")
-        self.manifest = manifest
         return manifest
 
     @property
     def expires_at(self) -> str:
-        return self.load_manifest()["expiresAt"]
+        return self.load_manifest(allow_expired=True)["expiresAt"]
 
     def put_json(self, key: str, value: Any, bucket: str | None = None) -> None:
         target = self.work / (hashlib.sha256(key.encode()).hexdigest() + ".json")
@@ -281,12 +318,20 @@ class Lifecycle:
         self.put_json(
             "status.json",
             {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "state": state,
                 "message": message,
                 "applicationUrl": required("PUBLIC_URL") if state == "OPEN" else None,
                 "runId": self.run_id,
                 "updatedAt": iso_now(),
+                "costControl": {
+                    "mode": COST_CONTROL_MODE,
+                    "plannedEstimateUsd": float(required("PLANNING_ESTIMATE_USD")),
+                    "planningEstimateCeilingUsd": PLANNING_ESTIMATE_CEILING_USD,
+                    "maximumRuntimeHours": MAX_RUNTIME_HOURS,
+                    "hardCloseAt": required("HARD_CLOSE_AT"),
+                    "actualBilledCost": {"status": "NOT_RECONCILED", "amountUsd": None},
+                },
             },
             required("STATUS_BUCKET"),
         )
@@ -328,30 +373,6 @@ class Lifecycle:
             "--return-values", "ALL_NEW",
         )
         return int(response.get("Attributes", {}).get("monitorFailureCount", {}).get("N", "0"))
-
-    def notify_cost_once(self, field: str, subject: str, message: str) -> bool:
-        current = aws_json(
-            "dynamodb", "get-item", "--table-name", required("LIFECYCLE_TABLE"),
-            "--key", json.dumps({"runId": {"S": self.run_id}}), "--consistent-read",
-        ).get("Item", {})
-        if field in current:
-            return False
-        marker = iso_now()
-        result = run([
-            "aws", "dynamodb", "update-item", "--table-name", required("LIFECYCLE_TABLE"),
-            "--key", json.dumps({"runId": {"S": self.run_id}}),
-            "--update-expression", f"SET {field} = :v",
-            "--condition-expression", f"attribute_not_exists({field})",
-            "--expression-attribute-values", json.dumps({":v": {"S": marker}}),
-            "--region", REGION, "--no-cli-pager",
-        ], check=False)
-        if result.returncode:
-            return False
-        aws_json(
-            "sns", "publish", "--topic-arn", required("NOTIFICATION_TOPIC_ARN"),
-            "--subject", subject, "--message", message,
-        )
-        return True
 
     def sync_webapp(self) -> None:
         manifest = self.load_manifest()
@@ -591,8 +612,9 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         return json.loads(output or "null")
 
     def set_api_state(self, state: str, reason: str) -> None:
-        expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
-        opens = expires - timedelta(hours=int(required("MAX_RUNTIME_HOURS")))
+        manifest = self.load_manifest(allow_expired=True)
+        opens = datetime.fromisoformat(manifest["createdAt"].replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
         self.private_control_json(
             "/api/v1/demo/internal/status",
             method="PUT",
@@ -699,9 +721,14 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         aws("codebuild", "update-project", "--name", required("CODEBUILD_PROJECT"), "--vpc-config", json.dumps(config))
 
     def start(self) -> None:
-        self.load_manifest()
+        manifest = self.load_manifest()
         self.write_status("PREPARING", "The temporary demonstration environment is being prepared and verified.")
-        self.update_lifecycle_record("PREPARING")
+        self.update_lifecycle_record(
+            "PREPARING",
+            expiresAt=manifest["expiresAt"],
+            hardCloseAt=required("HARD_CLOSE_AT"),
+            costControlMode=COST_CONTROL_MODE,
+        )
         self.sync_webapp()
         root, outputs = self.provision()
         self.deploy_runtime(outputs)
@@ -821,14 +848,14 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             raise
 
     def read_only(self) -> None:
-        self.load_manifest()
+        self.load_manifest(allow_expired=True)
         self.configure_kubectl()
         self.write_status("READ_ONLY", "New contributions are closed; confirmed provenance history remains available during export.")
         self.set_api_state("READ_ONLY", "Scheduled close or safety threshold")
         self.update_lifecycle_record("READ_ONLY")
 
     def export(self) -> None:
-        self.load_manifest()
+        self.load_manifest(allow_expired=True)
         exported = self.private_control_json("/api/v1/demo/internal/export")
         validate_sanitized_export(exported)
         serialized = json.dumps(exported)
@@ -932,7 +959,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
     def destroy(self) -> None:
         failures: list[str] = []
         try:
-            self.load_manifest()
+            self.load_manifest(allow_expired=True)
             for operation in (self.detach_origin, self.restore_fallback, self.delete_workloads):
                 try:
                     operation()
@@ -1134,15 +1161,47 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         }
 
     def start_safety_teardown(self, reason: str) -> None:
-        self.write_status("READ_ONLY", "An automated safety threshold was reached; teardown has started.")
-        aws_json(
-            "states", "start-execution", "--state-machine-arn", required("STOP_STATE_MACHINE_ARN"),
+        self.write_status("READ_ONLY", "An automated safety condition was reached; teardown has started.")
+        execution_name = f"{self.run_id}-{reason}"
+        process = run([
+            "aws", "states", "start-execution",
+            "--state-machine-arn", required("STOP_STATE_MACHINE_ARN"),
+            "--name", execution_name,
             "--input", json.dumps({"runId": self.run_id, "reason": reason}),
-        )
+            "--region", REGION, "--no-cli-pager", "--output", "json",
+        ], check=False)
+        if process.returncode and "ExecutionAlreadyExists" not in (process.stderr or ""):
+            raise RuntimeError(f"Could not start teardown: {(process.stderr or process.stdout)[-2000:]}")
 
     def monitor(self) -> None:
-        self.load_manifest()
-        evidence: dict[str, Any] = {"schemaVersion": 1, "runId": self.run_id, "observedAt": iso_now()}
+        manifest = self.load_manifest(allow_expired=True)
+        evidence: dict[str, Any] = {
+            "schemaVersion": 2,
+            "runId": self.run_id,
+            "observedAt": iso_now(),
+            "costControl": {
+                "mode": COST_CONTROL_MODE,
+                "plannedEstimateUsd": float(required("PLANNING_ESTIMATE_USD")),
+                "planningEstimateCeilingUsd": PLANNING_ESTIMATE_CEILING_USD,
+                "boundedExposure": {
+                    "maximumRuntimeHours": MAX_RUNTIME_HOURS,
+                    "expiresAt": manifest["expiresAt"],
+                    "hardCloseAt": required("HARD_CLOSE_AT"),
+                },
+                "actualBilledCost": {
+                    "status": "NOT_RECONCILED",
+                    "amountUsd": None,
+                    "source": "human CloudBank or account billing reconciliation after teardown",
+                },
+            },
+        }
+        expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) >= expires:
+            evidence["runtimeDeadlineReached"] = True
+            self.start_safety_teardown("runtime-deadline")
+            evidence["teardownStarted"] = True
+            self.put_json(f"evidence/{self.run_id}/monitor-{int(time.time())}.json", evidence)
+            return
         failures: list[str] = []
 
         def collect(name: str, operation: Any) -> Any:
@@ -1168,10 +1227,6 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         targets = collect("albTargets", self.alb_health)
         collect("rabbitMq", self.broker_metrics)
         collect("waf", self.waf_metrics)
-        budget = aws_json("budgets", "describe-budget", "--account-id", ACCOUNT, "--budget-name", required("BUDGET_NAME"))
-        actual = float(budget["Budget"]["CalculatedSpend"]["ActualSpend"]["Amount"])
-        evidence["actualCostUsd"] = actual
-
         if not browser or browser.get("status", {}).get("state") != "OPEN":
             failures.append("browserState")
         if not health or health.get("status") != "ok":
@@ -1195,26 +1250,13 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         evidence["safetyFailures"] = failures
         evidence["consecutiveSafetyFailures"] = consecutive_failures
 
-        if actual >= float(required("COST_INFO_USD")):
-            evidence["costInformationSent"] = self.notify_cost_once(
-                "costInformationNotifiedAt", "OSC-IS demo cost information",
-                f"Run {self.run_id} reached USD {actual:.2f}.",
-            )
-        if actual >= float(required("COST_WARNING_USD")):
-            evidence["costWarningSent"] = self.notify_cost_once(
-                "costWarningNotifiedAt", "OSC-IS demo cost warning",
-                f"Run {self.run_id} reached USD {actual:.2f}.",
-            )
-        if actual >= float(required("COST_TEARDOWN_USD")):
-            self.start_safety_teardown("cost-threshold")
-            evidence["teardownStarted"] = True
-        elif consecutive_failures >= 2:
+        if consecutive_failures >= 2:
             self.start_safety_teardown("persistent-safety-failure")
             evidence["teardownStarted"] = True
         self.put_json(f"evidence/{self.run_id}/monitor-{int(time.time())}.json", evidence)
 
     def sweep(self) -> None:
-        manifest = self.load_manifest()
+        manifest = self.load_manifest(allow_expired=True)
         expected_prefix = f"osc-usrse26-{self.run_id}"
         runtime_tags = {
             "Project": "OSC-IS",
@@ -1329,7 +1371,7 @@ def main() -> None:
         Lifecycle.self_test()
         return
     lifecycle = Lifecycle()
-    lifecycle.guard()
+    lifecycle.guard(action)
     dispatch = {
         "START": lifecycle.start,
         "CANARY": lifecycle.canary,
@@ -1352,7 +1394,7 @@ if __name__ == "__main__":
             print("START failed; attempting same-build tagged cleanup before exiting", file=sys.stderr)
             try:
                 cleanup = Lifecycle()
-                cleanup.guard()
+                cleanup.guard("FAILED_START_CLEANUP")
                 cleanup.failed_start_cleanup()
             except Exception as cleanup_error:
                 print(f"same-build cleanup also failed: {cleanup_error}", file=sys.stderr)

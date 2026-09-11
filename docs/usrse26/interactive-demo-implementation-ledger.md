@@ -12,7 +12,8 @@
   application ingress is internal and uses pod-IP targets.
 - A separate persistent Terraform root defines the private S3/CloudFront/WAF
   status shell, lifecycle state, one-time and backup schedules, Step Functions,
-  synchronous CodeBuild, budget notifications, retention, and evidence stores.
+  synchronous CodeBuild, lifecycle-failure notifications, retention, and evidence
+  stores. `TIME_BOUNDED` mode uses no AWS Budget or billing API.
 - Guarded scripts prepare, policy-check, apply, and eventually remove the
   persistent control plane without touching the hosted zone.
 - CloudWatch alarms notify on lifecycle build failures, failed start/stop/

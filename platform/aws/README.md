@@ -14,8 +14,10 @@ terraform -chdir=terraform/usrse26-control output -json runtime_role_arns > plat
 ./platform/aws/destroy-run.ps1 -RunId usrse26demo
 ```
 
-`prepare-run.ps1` captures the baseline, applies the $200 ceiling, validates
-the exact control-owned role ARNs, creates a saved Terraform plan, and rejects
+`prepare-demo-control.ps1` first records the `TIME_BOUNDED` planning estimate
+and rejects it above the USD 200 planning ceiling. `prepare-run.ps1` then
+captures the baseline, validates the exact control-owned role ARNs, creates a
+saved Terraform plan, and rejects
 destructive, public, mutable, untagged, or out-of-scope resources.
 `apply-run.ps1` only applies that reviewed plan before its configured expiry.
 `destroy-run.ps1` destroys runtime and fails unless the final inventory has

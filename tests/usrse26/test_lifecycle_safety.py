@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -143,6 +144,50 @@ class SanitizedExportAllowlistTests(unittest.TestCase):
                 instance.put_json.assert_not_called()
 
 class InfrastructureSafetyContractTests(unittest.TestCase):
+    def test_monitor_starts_teardown_at_persisted_runtime_deadline_without_billing_call(self) -> None:
+        instance = object.__new__(Lifecycle)
+        instance.run_id = "usrse26r1"
+        instance.load_manifest = Mock(return_value={"expiresAt": "2026-09-10T00:00:00Z"})
+        instance.start_safety_teardown = Mock()
+        instance.put_json = Mock()
+        with patch.dict(os.environ, {
+            "PLANNING_ESTIMATE_USD": "104.83",
+            "HARD_CLOSE_AT": "2026-10-23T15:00:00Z",
+        }, clear=True):
+            instance.monitor()
+        instance.load_manifest.assert_called_once_with(allow_expired=True)
+        instance.start_safety_teardown.assert_called_once_with("runtime-deadline")
+        instance.put_json.assert_called_once()
+        evidence = instance.put_json.call_args.args[1]
+        self.assertTrue(evidence["runtimeDeadlineReached"])
+        self.assertEqual(evidence["costControl"]["actualBilledCost"]["status"], "NOT_RECONCILED")
+
+    def test_guard_enforces_time_bounded_mode_estimate_and_teardown_authority(self) -> None:
+        environment = {
+            "RUN_ID": "usrse26r1",
+            "EXPECTED_ACCOUNT_ID": "269624229733",
+            "EXPECTED_REGION": "us-west-2",
+            "AWS_DEFAULT_REGION": "us-west-2",
+            "COST_CONTROL_MODE": "TIME_BOUNDED",
+            "MAX_RUNTIME_HOURS": "72",
+            "PLANNING_ESTIMATE_CEILING_USD": "200",
+            "PLANNING_ESTIMATE_USD": "104.83",
+            "HARD_CLOSE_AT": "2026-10-23T15:00:00Z",
+            "STOP_STATE_MACHINE_ARN": "arn:aws:states:us-west-2:269624229733:stateMachine:osc-usrse26-usrse26r1-stop",
+        }
+        with patch.object(LIFECYCLE_MODULE, "aws_json", return_value={"Account": "269624229733"}):
+            with patch.dict(os.environ, environment, clear=True):
+                Lifecycle().guard("START")
+            for key, value in (
+                ("COST_CONTROL_MODE", "LIVE_BUDGET"),
+                ("PLANNING_ESTIMATE_USD", "200.01"),
+                ("MAX_RUNTIME_HOURS", "73"),
+                ("STOP_STATE_MACHINE_ARN", "arn:aws:states:us-west-2:269624229733:stateMachine:wrong"),
+            ):
+                with self.subTest(key=key), patch.dict(os.environ, {**environment, key: value}, clear=True):
+                    with self.assertRaises(RuntimeError):
+                        Lifecycle().guard("START")
+
     def test_stop_paths_always_reach_outside_vpc_destroy_and_sweep(self) -> None:
         machines = (ROOT / "terraform/usrse26-control/state-machines.tf").read_text(encoding="utf-8")
         self.assertIn("aws_codebuild_project.cleanup.name", machines)
@@ -183,13 +228,11 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
                 self.assertIn("unlisted same-run pass role", denied)
                 self.assertIn("pass role outside run prefix", denied)
                 self.assertIn("pass role to unapproved service", denied)
-                self.assertIn("view unrelated budget", denied)
-                self.assertIn("billing portal mutation", denied)
-                self.assertIn("budget mutation", denied)
                 self.assertIn("unrelated S3 object", denied)
                 self.assertIn("unrelated Secrets Manager secret", denied)
                 self.assertIn("unrelated secret creation", denied)
                 self.assertIn("broad inline policy intersected for unrelated data", denied)
+                self.assertEqual(report["forbiddenBillingActions"], [])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ REQUIRED_TAGS = {
     "RunId": None,
 }
 FORBIDDEN_TYPES = {"aws_instance", "aws_db_instance", "aws_eks_cluster", "aws_mq_broker"}
+FORBIDDEN_BILLING_RESOURCE_TYPES = {"aws_budgets_budget"}
+FORBIDDEN_BILLING_ACTION_PREFIXES = ("budgets:", "aws-portal:", "ce:", "billing:")
 ALLOWED_ACTIONS = (["create"], ["read"], ["no-op"])
 RUNTIME_ROLE_SUFFIXES = {
     "eks-cluster",
@@ -95,6 +97,7 @@ def main() -> None:
     codebuild_projects: set[str] = set()
     boundary_checked = False
     import_reconciliations = 0
+    one_time_schedule_names: set[str] = set()
     configuration_resources = {
         resource.get("address"): resource
         for resource in plan.get("configuration", {}).get("root_module", {}).get("resources", [])
@@ -115,6 +118,19 @@ def main() -> None:
             errors.append(f"{address} has forbidden actions {actions}")
         if resource_type in FORBIDDEN_TYPES:
             errors.append(f"{address} uses forbidden control-plane type {resource_type}")
+        if resource_type in FORBIDDEN_BILLING_RESOURCE_TYPES:
+            errors.append(f"{address} uses forbidden billing resource type {resource_type}")
+
+        if resource_type in {"aws_iam_policy", "aws_iam_role_policy"}:
+            rendered_actions = policy_actions(after.get("policy", ""))
+            forbidden_billing = sorted(
+                action for action in rendered_actions
+                if action.lower().startswith(FORBIDDEN_BILLING_ACTION_PREFIXES)
+            )
+            if forbidden_billing:
+                errors.append(
+                    f"{address} contains forbidden billing actions: {', '.join(forbidden_billing)}"
+                )
 
         tags = after.get("tags_all", after.get("tags", {}))
         if isinstance(tags, dict) and tags:
@@ -149,6 +165,52 @@ def main() -> None:
                 errors.append(f"{address} lifecycle image is mutable")
             if name.endswith("-cleanup") and after.get("vpc_config"):
                 errors.append(f"{address} cleanup project must remain outside every VPC")
+            environment_variables = {
+                item.get("name"): item.get("value")
+                for item in environment.get("environment_variable", [])
+            }
+            if name in {
+                f"osc-usrse26-{args.run_id}-lifecycle",
+                f"osc-usrse26-{args.run_id}-cleanup",
+            }:
+                if environment_variables.get("COST_CONTROL_MODE") != "TIME_BOUNDED":
+                    errors.append(f"{address} must use TIME_BOUNDED mode")
+                if environment_variables.get("PLANNING_ESTIMATE_CEILING_USD") != "200":
+                    errors.append(f"{address} must use the USD 200 planning-estimate ceiling")
+                try:
+                    runner_estimate = float(environment_variables["PLANNING_ESTIMATE_USD"])
+                except (KeyError, TypeError, ValueError):
+                    runner_estimate = float("inf")
+                if not 0 <= runner_estimate <= 200:
+                    errors.append(f"{address} has an invalid planning estimate")
+                stale_names = {
+                    "BUDGET_NAME", "COST_INFO_USD", "COST_WARNING_USD",
+                    "COST_TEARDOWN_USD", "COST_CEILING_USD", "PLANNING_COST_USD",
+                }
+                present_stale_names = sorted(stale_names & set(environment_variables))
+                if present_stale_names:
+                    errors.append(f"{address} retains stale live-cost variables: {', '.join(present_stale_names)}")
+
+        if resource_type == "aws_scheduler_schedule":
+            name = after.get("name", "")
+            expected_one_time_names = {
+                f"osc-usrse26-{args.run_id}-start",
+                f"osc-usrse26-{args.run_id}-stop",
+                f"osc-usrse26-{args.run_id}-backup-stop",
+            }
+            if name in expected_one_time_names:
+                one_time_schedule_names.add(name)
+                window = (after.get("flexible_time_window") or [{}])[0]
+                target = (after.get("target") or [{}])[0]
+                retry = (target.get("retry_policy") or [{}])[0]
+                if after.get("action_after_completion") != "DELETE":
+                    errors.append(f"{address} must delete itself after completion")
+                if window.get("mode") != "OFF":
+                    errors.append(f"{address} must disable flexible scheduling")
+                if not target.get("dead_letter_config"):
+                    errors.append(f"{address} must have a dead-letter queue")
+                if retry.get("maximum_retry_attempts") != 2:
+                    errors.append(f"{address} must retain two scheduler retries")
 
         if resource_type == "aws_iam_role":
             name = after.get("name", "")
@@ -176,7 +238,6 @@ def main() -> None:
                 errors.append(f"{address} restores forbidden IAM actions: {', '.join(forbidden)}")
 
     required_types = {
-        "aws_budgets_budget",
         "aws_cloudfront_distribution",
         "aws_cloudwatch_metric_alarm",
         "aws_codebuild_project",
@@ -206,10 +267,42 @@ def main() -> None:
         errors.append(f"control plan is missing lifecycle projects: {', '.join(sorted(missing_projects))}")
     if not boundary_checked:
         errors.append("control plan is missing the inspectable run permissions boundary")
+    expected_one_time_schedule_names = {
+        f"osc-usrse26-{args.run_id}-start",
+        f"osc-usrse26-{args.run_id}-stop",
+        f"osc-usrse26-{args.run_id}-backup-stop",
+    }
+    if one_time_schedule_names != expected_one_time_schedule_names:
+        errors.append("control plan is missing an exact one-time start, stop, or backup-stop schedule")
 
     outputs = plan.get("planned_values", {}).get("outputs", {})
     if not outputs.get("public_url", {}).get("value") == "https://demo.osc-staging.org":
         errors.append("public URL differs from the approved hostname")
+    if outputs.get("cost_control_mode", {}).get("value") != "TIME_BOUNDED":
+        errors.append("cost-control mode must be TIME_BOUNDED")
+    planning_estimate = outputs.get("planning_estimate_usd", {}).get("value")
+    planning_ceiling = outputs.get("planning_estimate_ceiling_usd", {}).get("value")
+    if (
+        not isinstance(planning_estimate, (int, float))
+        or isinstance(planning_estimate, bool)
+        or not isinstance(planning_ceiling, (int, float))
+        or isinstance(planning_ceiling, bool)
+        or planning_ceiling != 200
+        or planning_estimate < 0
+        or planning_estimate > planning_ceiling
+    ):
+        errors.append("pre-deployment planning estimate must be concrete and no greater than USD 200")
+    if outputs.get("maximum_runtime_hours", {}).get("value") != 72:
+        errors.append("maximum runtime must remain exactly 72 hours")
+    expected_schedule = {
+        "timezone": "America/Los_Angeles",
+        "start": "2026-10-20T08:00:00",
+        "stop": "2026-10-23T08:00:00",
+        "backup_stop": "2026-10-23T10:00:00",
+        "hard_close": "2026-10-23T15:00:00Z",
+    }
+    if outputs.get("lifecycle_schedule", {}).get("value") != expected_schedule:
+        errors.append("lifecycle schedule or hard-close deadline differs from the approved 72-hour window")
     if creates == 0:
         errors.append("control plan contains no creates")
 

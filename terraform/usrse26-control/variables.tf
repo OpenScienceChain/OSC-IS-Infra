@@ -119,11 +119,20 @@ variable "backup_stop_at" {
   }
 }
 
-variable "planning_cost_usd" {
+variable "cost_control_mode" {
+  type    = string
+  default = "TIME_BOUNDED"
+  validation {
+    condition     = var.cost_control_mode == "TIME_BOUNDED"
+    error_message = "The approved cost-control mode is fixed to TIME_BOUNDED."
+  }
+}
+
+variable "planning_estimate_usd" {
   type    = number
   default = 120
   validation {
-    condition     = var.planning_cost_usd >= 0 && var.planning_cost_usd <= 200
-    error_message = "The planning estimate may not exceed the USD 200 provisioning ceiling."
+    condition     = var.planning_estimate_usd >= 0 && var.planning_estimate_usd <= 200
+    error_message = "The pre-deployment planning estimate may not exceed USD 200."
   }
 }

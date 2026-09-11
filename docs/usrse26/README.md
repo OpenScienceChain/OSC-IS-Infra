@@ -35,7 +35,7 @@ impact.
 ## Evidence
 
 Evidence belongs under `platform-evidence/<run-id>/`. Each run must include its
-environment, exact source revisions, test results, timings, cost estimate, and
-teardown proof. Raw credentials, certificates, private keys, tokens, sensitive
+environment, exact source revisions, test results, timings, planning estimate,
+and teardown proof. Raw credentials, certificates, private keys, tokens, sensitive
 Terraform state, and unsanitized AWS identity output are prohibited.
 
