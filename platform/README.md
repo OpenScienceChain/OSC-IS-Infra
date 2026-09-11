@@ -30,6 +30,7 @@ Run these through Ubuntu WSL from the infrastructure repository:
 bash platform/scripts/validate-clean-checkout.sh
 bash platform/scripts/prepare-local.sh
 bash platform/scripts/fabric-up.sh
+bash platform/scripts/build-local-images.sh
 bash platform/scripts/deploy-local-apps.sh
 bash platform/scripts/seed-local-data.sh
 bash platform/scripts/validate-local-stack.sh

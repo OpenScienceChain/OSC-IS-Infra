@@ -93,6 +93,17 @@ spec:
             - name: SUBMISSION_LISTENER_API_KEY
               valueFrom: {secretKeyRef: {name: api-listener-auth, key: api-key}}
             - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
+            - {name: DEMO_ALLOWED_ORIGIN, value: "https://demo.osc-staging.org"}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: GHW_NSG_URL, value: http://history-worker-nsg:8002}
+            - {name: GHW_CITIZEN_SCIENCE_URL, value: http://history-worker-citizen-science:8002}
+            - name: DEMO_JWT_SECRET
+              valueFrom: {secretKeyRef: {name: api-demo-auth, key: jwt-secret}}
+            - name: DEMO_ANALYTICS_HMAC_SECRET
+              valueFrom: {secretKeyRef: {name: api-demo-auth, key: analytics-hmac-secret}}
+            - name: DEMO_CONTROL_API_KEY
+              valueFrom: {secretKeyRef: {name: api-demo-auth, key: control-api-key}}
           ports: [{name: http, containerPort: 3000}]
           startupProbe: {httpGet: {path: /api/v1/health, port: http}, failureThreshold: 30, periodSeconds: 5}
           readinessProbe: {httpGet: {path: /api/v1/health, port: http}, periodSeconds: 5}

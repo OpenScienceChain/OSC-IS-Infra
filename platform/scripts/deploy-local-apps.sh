@@ -42,6 +42,9 @@ generate_secret "${SECRET_DIR}/bootstrap-admin-password"
 generate_secret "${SECRET_DIR}/listener-api-key"
 generate_secret "${SECRET_DIR}/nsg-ledger-token"
 generate_secret "${SECRET_DIR}/citizen-ledger-token"
+generate_secret "${SECRET_DIR}/demo-jwt-secret"
+generate_secret "${SECRET_DIR}/demo-analytics-hmac-secret"
+generate_secret "${SECRET_DIR}/demo-control-api-key"
 
 jq -r '.credentials.certificate' \
   "${NETWORK_DIR}/build/application/wallet/appuser_org1.id" > "${SECRET_DIR}/nsg-certificate.pem"
@@ -86,6 +89,10 @@ apply_secret_if_missing api-bootstrap-admin \
 apply_secret_if_missing listener-api-auth --from-file=api-key="${SECRET_DIR}/listener-api-key"
 apply_secret_if_missing ledger-gateway-nsg-auth --from-file=token="${SECRET_DIR}/nsg-ledger-token"
 apply_secret_if_missing ledger-gateway-citizen-science-auth --from-file=token="${SECRET_DIR}/citizen-ledger-token"
+apply_secret_if_missing demo-auth \
+  --from-file=jwt-secret="${SECRET_DIR}/demo-jwt-secret" \
+  --from-file=analytics-hmac-secret="${SECRET_DIR}/demo-analytics-hmac-secret" \
+  --from-file=control-api-key="${SECRET_DIR}/demo-control-api-key"
 apply_secret fabric-nsg-identity \
   --from-file=certificate.pem="${SECRET_DIR}/nsg-certificate.pem" \
   --from-file=private-key.pem="${SECRET_DIR}/nsg-private-key.pem" \
@@ -99,11 +106,16 @@ apply_secret fabric-citizen-science-identity \
 # deployment consumes namespace-scoped Secrets instead and removes the copy.
 kubectl -n osc-fabric delete configmap app-fabric-ids-v1-map --ignore-not-found >/dev/null
 
-kubectl apply -k "${PLATFORM_DIR}/gitops/local"
+LOCAL_IMAGE_OVERLAY="${PLATFORM_DIR}/.generated/local-images"
+if [[ ! -f "${LOCAL_IMAGE_OVERLAY}/kustomization.yaml" ]]; then
+  echo "Local immutable image overlay is absent; run build-local-images.sh first"
+  exit 1
+fi
+kubectl apply -k "${LOCAL_IMAGE_OVERLAY}"
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready certificate/postgres-tls certificate/rabbitmq-tls --timeout=180s
 kubectl -n "${NAMESPACE}" rollout status statefulset/postgres --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status statefulset/rabbitmq --timeout=300s
-for deployment in api-gateway ledger-gateway-nsg ledger-gateway-citizen-science submission-worker submission-listener; do
+for deployment in api-gateway ledger-gateway-nsg ledger-gateway-citizen-science submission-worker submission-listener history-worker-nsg history-worker-citizen-science webapp; do
   kubectl -n "${NAMESPACE}" rollout status "deployment/${deployment}" --timeout=300s
 done
 

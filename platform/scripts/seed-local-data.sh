@@ -35,4 +35,23 @@ kubectl -n osc-apps create secret generic e2e-user-credentials \
   --from-file=password="${PASSWORD_FILE}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-echo "Deterministic organizations, users, and memberships are seeded; credentials remain in a Kubernetes Secret."
+kubectl -n osc-apps exec deployment/api-gateway -- node -e '
+  const now = Date.now();
+  fetch("http://127.0.0.1:3000/api/v1/demo/internal/status", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Demo-Control-Key": process.env.DEMO_CONTROL_API_KEY
+    },
+    body: JSON.stringify({
+      state: "OPEN",
+      runId: "local-kind",
+      opensAt: new Date(now - 60_000).toISOString(),
+      closesAt: new Date(now + 86_400_000).toISOString()
+    })
+  }).then(async response => {
+    if (!response.ok) throw new Error(`demo status ${response.status}`);
+  }).catch(error => { console.error(error.message); process.exit(1); });
+'
+
+echo "Deterministic organizations, users, memberships, and the local OPEN demo state are seeded; credentials remain in Kubernetes Secrets."

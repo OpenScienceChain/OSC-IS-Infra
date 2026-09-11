@@ -103,6 +103,20 @@ spec:
               valueFrom:
                 secretKeyRef: {name: listener-api-auth, key: api-key}
             - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
+            - {name: DEMO_ALLOWED_ORIGIN, value: "https://demo.localho.st:18443"}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: GHW_NSG_URL, value: http://history-worker-nsg:8002}
+            - {name: GHW_CITIZEN_SCIENCE_URL, value: http://history-worker-citizen-science:8002}
+            - name: DEMO_JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: jwt-secret}
+            - name: DEMO_ANALYTICS_HMAC_SECRET
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: analytics-hmac-secret}
+            - name: DEMO_CONTROL_API_KEY
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: control-api-key}
           ports:
             - {name: http, containerPort: 3000}
           startupProbe:

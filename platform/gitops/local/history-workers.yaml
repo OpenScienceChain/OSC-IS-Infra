@@ -9,7 +9,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: history-worker-nsg, namespace: osc-apps}
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: {app.kubernetes.io/name: history-worker-nsg}
   template:
@@ -18,12 +18,6 @@ spec:
     spec:
       serviceAccountName: history-worker
       automountServiceAccountToken: false
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels: {app.kubernetes.io/name: history-worker-nsg}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -31,7 +25,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: history-worker
-          image: __HISTORY_WORKER_IMAGE__
+          image: localhost:5017/osc-history-worker:usrse26-local
           env:
             - {name: BRIDGE_URL, value: http://ledger-gateway-nsg:4000}
             - name: LEDGER_GATEWAY_TOKEN
@@ -46,7 +40,7 @@ spec:
             capabilities: {drop: [ALL]}
             readOnlyRootFilesystem: true
           resources:
-            requests: {cpu: 50m, memory: 96Mi}
+            requests: {cpu: 25m, memory: 64Mi}
             limits: {cpu: 500m, memory: 384Mi}
           volumeMounts: [{name: tmp, mountPath: /tmp}]
       volumes: [{name: tmp, emptyDir: {}}]
@@ -62,7 +56,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: history-worker-citizen-science, namespace: osc-apps}
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: {app.kubernetes.io/name: history-worker-citizen-science}
   template:
@@ -71,12 +65,6 @@ spec:
     spec:
       serviceAccountName: history-worker
       automountServiceAccountToken: false
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels: {app.kubernetes.io/name: history-worker-citizen-science}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -84,7 +72,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: history-worker
-          image: __HISTORY_WORKER_IMAGE__
+          image: localhost:5017/osc-history-worker:usrse26-local
           env:
             - {name: BRIDGE_URL, value: http://ledger-gateway-citizen-science:4000}
             - name: LEDGER_GATEWAY_TOKEN
@@ -99,7 +87,7 @@ spec:
             capabilities: {drop: [ALL]}
             readOnlyRootFilesystem: true
           resources:
-            requests: {cpu: 50m, memory: 96Mi}
+            requests: {cpu: 25m, memory: 64Mi}
             limits: {cpu: 500m, memory: 384Mi}
           volumeMounts: [{name: tmp, mountPath: /tmp}]
       volumes: [{name: tmp, emptyDir: {}}]

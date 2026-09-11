@@ -31,6 +31,7 @@ Once product revisions are frozen, run:
 wsl bash platform/scripts/validate-clean-checkout.sh
 wsl bash platform/scripts/prepare-local.sh
 wsl bash platform/scripts/fabric-up.sh
+wsl bash platform/scripts/build-local-images.sh
 wsl bash platform/scripts/deploy-local-apps.sh
 wsl bash platform/scripts/seed-local-data.sh
 wsl bash platform/scripts/validate-local-stack.sh

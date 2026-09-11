@@ -59,3 +59,15 @@ spec:
     - rabbitmq.osc-apps.svc.cluster.local
   issuerRef:
     name: osc-local-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-local-tls
+  namespace: osc-apps
+spec:
+  secretName: demo-local-tls
+  dnsNames:
+    - demo.localho.st
+  issuerRef:
+    name: osc-local-ca

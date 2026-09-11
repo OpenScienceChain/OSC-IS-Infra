@@ -94,6 +94,31 @@ class RuntimeTopologyTests(unittest.TestCase):
         self.assertIn("metadata: {name: worker-to-ledger-gateways", policies)
         self.assertIn("metadata: {name: ledger-to-fabric", policies)
 
+    def test_history_routing_and_demo_secrets_are_organization_bound(self) -> None:
+        api = read("platform/gitops/aws/api-gateway.yaml")
+        history = read("platform/gitops/aws/history-workers.yaml")
+        secrets = read("platform/gitops/aws/namespace-and-secrets.yaml")
+        self.assertIn("GHW_NSG_URL", api)
+        self.assertIn("GHW_CITIZEN_SCIENCE_URL", api)
+        self.assertIn("api-demo-auth", api)
+        self.assertIn("ledger-gateway-nsg-auth", history)
+        self.assertIn("ledger-gateway-citizen-science-auth", history)
+        self.assertEqual(history.count("name: LEDGER_GATEWAY_TOKEN"), 2)
+        for name in ("demo-jwt-secret", "demo-analytics-hmac-secret", "demo-control-api-key"):
+            self.assertIn(name, secrets)
+
+    def test_local_browser_stack_uses_digest_overlay_and_real_history_workers(self) -> None:
+        kustomization = read("platform/gitops/local/kustomization.yaml")
+        deploy = read("platform/scripts/deploy-local-apps.sh")
+        builder = read("platform/scripts/build-local-images.sh")
+        self.assertIn("history-workers.yaml", kustomization)
+        self.assertIn("webapp.yaml", kustomization)
+        self.assertIn(".generated/local-images", deploy)
+        self.assertIn("docker push", builder)
+        self.assertIn("digest:", builder)
+        self.assertIn("osc-history-worker", builder)
+        self.assertIn("osc-webapp", builder)
+
 
 class LifecycleContractTests(unittest.TestCase):
     def test_exact_account_region_schedule_and_cost_boundaries(self) -> None:

@@ -80,6 +80,9 @@ put_secret(
         "listenerApiKey": secrets.token_hex(32),
         "nsgLedgerToken": secrets.token_hex(32),
         "citizenScienceLedgerToken": secrets.token_hex(32),
+        "demoJwtSecret": secrets.token_hex(32),
+        "demoAnalyticsHmacSecret": secrets.token_hex(32),
+        "demoControlApiKey": secrets.token_hex(32),
     },
 )
 put_secret(

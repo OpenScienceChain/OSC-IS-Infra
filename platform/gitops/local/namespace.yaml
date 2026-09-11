@@ -35,3 +35,17 @@ metadata:
   name: submission-listener
   namespace: osc-apps
 automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: history-worker
+  namespace: osc-apps
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: webapp
+  namespace: osc-apps
+automountServiceAccountToken: false

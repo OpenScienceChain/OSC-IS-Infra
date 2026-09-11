@@ -7,4 +7,6 @@ resources:
   - api-gateway.yaml
   - ledger-gateways.yaml
   - submission-services.yaml
+  - history-workers.yaml
+  - webapp.yaml
   - network-policies.yaml
