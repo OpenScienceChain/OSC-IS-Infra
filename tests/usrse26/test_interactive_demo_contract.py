@@ -386,7 +386,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
             self.assertTrue(all("@sha256:" in line for line in image_lines))
             subprocess.run(["kubectl", "kustomize", str(output)], check=True, capture_output=True, text=True)
 
-    def test_control_plan_policy_accepts_create_and_rejects_update(self) -> None:
+    def test_control_plan_policy_accepts_only_exact_import_reconciliation(self) -> None:
         digest = "a" * 64
         tags = {
             "Project": "OSC-IS",
@@ -432,13 +432,52 @@ class RenderingAndPolicyTests(unittest.TestCase):
                     },
                 },
             })
-        plan = {"resource_changes": changes, "planned_values": {"outputs": {"public_url": {"value": "https://demo.osc-staging.org"}}}}
+        cloudfront = next(change for change in changes if change["type"] == "aws_cloudfront_distribution")
+        cloudfront["change"]["after"].pop("web_acl_id")
+        cloudfront["change"]["after_unknown"] = {"web_acl_id": True}
+        lifecycle_before = {
+            "name": "osc-usrse26-usrse26demo/lifecycle-runner",
+            "force_delete": None,
+            "image_tag_mutability": "IMMUTABLE",
+            "image_scanning_configuration": [{"scan_on_push": True}],
+            "tags_all": tags,
+        }
+        lifecycle_after = {**lifecycle_before, "force_delete": True}
+        changes.append({
+            "address": "aws_ecr_repository.lifecycle_runner",
+            "type": "aws_ecr_repository",
+            "change": {
+                "actions": ["update"],
+                "before": lifecycle_before,
+                "after": lifecycle_after,
+                "after_unknown": {},
+            },
+        })
+        plan = {
+            "resource_changes": changes,
+            "planned_values": {"outputs": {"public_url": {"value": "https://demo.osc-staging.org"}}},
+            "configuration": {"root_module": {"resources": [{
+                "address": cloudfront["address"],
+                "expressions": {"web_acl_id": {"references": ["aws_wafv2_web_acl.edge.arn"]}},
+            }]}},
+        }
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "plan.json"
             path.write_text(json.dumps(plan), encoding="utf-8")
             command = [sys.executable, str(ROOT / "platform/aws/check_control_plan.py"), str(path), "--run-id", "usrse26demo"]
             accepted = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            waf_expression = plan["configuration"]["root_module"]["resources"][0]["expressions"]["web_acl_id"]
+            waf_expression["references"] = ["aws_wafv2_web_acl.unapproved.arn"]
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            unbound_waf = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(unbound_waf.returncode, 0)
+            waf_expression["references"] = ["aws_wafv2_web_acl.edge.arn"]
+            lifecycle_after["image_tag_mutability"] = "MUTABLE"
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            unsafe_reconciliation = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(unsafe_reconciliation.returncode, 0)
+            lifecycle_after["image_tag_mutability"] = "IMMUTABLE"
             plan["resource_changes"][0]["change"]["actions"] = ["update"]
             path.write_text(json.dumps(plan), encoding="utf-8")
             rejected = subprocess.run(command, capture_output=True, text=True)

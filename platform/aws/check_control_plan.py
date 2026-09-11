@@ -45,6 +45,31 @@ FORBIDDEN_LIFECYCLE_ACTIONS = {
 }
 
 
+def is_lifecycle_import_reconciliation(
+    address: str,
+    resource_type: str,
+    change: dict[str, Any],
+    run_id: str,
+) -> bool:
+    """Allow only Terraform's state-only force_delete reconciliation after import."""
+    if address != "aws_ecr_repository.lifecycle_runner" or resource_type != "aws_ecr_repository":
+        return False
+    if change.get("actions") != ["update"] or change.get("after_unknown"):
+        return False
+    before = dict(change.get("before") or {})
+    after = dict(change.get("after") or {})
+    if before.get("force_delete") not in (None, False) or after.get("force_delete") is not True:
+        return False
+    before["force_delete"] = True
+    if before != after:
+        return False
+    return (
+        after.get("name") == f"osc-usrse26-{run_id}/lifecycle-runner"
+        and after.get("image_tag_mutability") == "IMMUTABLE"
+        and (after.get("image_scanning_configuration") or [{}])[0].get("scan_on_push") is True
+    )
+
+
 def policy_actions(policy: str) -> set[str]:
     try:
         document = json.loads(policy)
@@ -69,15 +94,24 @@ def main() -> None:
     bounded_roles: set[str] = set()
     codebuild_projects: set[str] = set()
     boundary_checked = False
+    import_reconciliations = 0
+    configuration_resources = {
+        resource.get("address"): resource
+        for resource in plan.get("configuration", {}).get("root_module", {}).get("resources", [])
+    }
 
     for resource in plan.get("resource_changes", []):
         address = resource.get("address", "unknown")
         resource_type = resource.get("type", "")
-        actions = resource.get("change", {}).get("actions", [])
-        after = resource.get("change", {}).get("after") or {}
+        change = resource.get("change", {})
+        actions = change.get("actions", [])
+        after = change.get("after") or {}
+        after_unknown = change.get("after_unknown") or {}
         types.add(resource_type)
         creates += actions == ["create"]
-        if actions not in ALLOWED_ACTIONS:
+        if is_lifecycle_import_reconciliation(address, resource_type, change, args.run_id):
+            import_reconciliations += 1
+        elif actions not in ALLOWED_ACTIONS:
             errors.append(f"{address} has forbidden actions {actions}")
         if resource_type in FORBIDDEN_TYPES:
             errors.append(f"{address} uses forbidden control-plane type {resource_type}")
@@ -94,7 +128,17 @@ def main() -> None:
                 if after.get(key) is not True:
                     errors.append(f"{address} must set {key}=true")
         if resource_type == "aws_cloudfront_distribution":
-            if after.get("enabled") is not True or not after.get("web_acl_id"):
+            waf_references = (
+                configuration_resources.get(address, {})
+                .get("expressions", {})
+                .get("web_acl_id", {})
+                .get("references", [])
+            )
+            computed_waf = (
+                after_unknown.get("web_acl_id") is True
+                and "aws_wafv2_web_acl.edge.arn" in waf_references
+            )
+            if after.get("enabled") is not True or not (after.get("web_acl_id") or computed_waf):
                 errors.append(f"{address} must be enabled and protected by WAF")
         if resource_type == "aws_codebuild_project":
             name = after.get("name", "")
@@ -174,7 +218,10 @@ def main() -> None:
         for error in errors:
             print(f"- {error}")
         raise SystemExit(1)
-    print(f"Control-plane policy check passed: {creates} creates, zero updates, zero deletes in account {ACCOUNT}.")
+    print(
+        f"Control-plane policy check passed: {creates} creates, "
+        f"{import_reconciliations} state-only import reconciliation, zero deletes in account {ACCOUNT}."
+    )
 
 
 if __name__ == "__main__":
