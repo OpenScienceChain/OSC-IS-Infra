@@ -1,9 +1,13 @@
 resource "aws_cloudwatch_log_group" "eks" {
+  #checkov:skip=CKV_AWS_158: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
+  #checkov:skip=CKV_AWS_338: Seven-day retention is proportionate for a disposable demo capped at 72 hours.
   name              = "/aws/eks/${local.cluster_name}/cluster"
   retention_in_days = 7
 }
 
 resource "aws_eks_cluster" "experiment" {
+  #checkov:skip=CKV_AWS_39: The private endpoint is enabled; the public endpoint is additionally required by the bounded admin and runner CIDRs.
+  #checkov:skip=CKV_AWS_58: AWS-owned envelope encryption avoids a customer-managed KMS key whose deletion window would outlive exact teardown.
   name     = local.cluster_name
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.kubernetes_version
@@ -40,15 +44,16 @@ resource "aws_eks_cluster" "experiment" {
 }
 
 resource "aws_security_group" "lifecycle_runner" {
+  #checkov:skip=CKV2_AWS_5: This group is attached to the control-plane CodeBuild project after the EKS stack publishes its ID.
   name        = "${local.name_prefix}-lifecycle-runner"
   description = "Egress-only security group for the lifecycle CodeBuild ENI"
   vpc_id      = aws_vpc.experiment.id
 
   egress {
     description = "Runner access to AWS APIs, package mirrors, and the private EKS endpoint"
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
+    protocol    = "tcp"
+    from_port   = 443
+    to_port     = 443
     cidr_blocks = ["0.0.0.0/0"]
   }
 }

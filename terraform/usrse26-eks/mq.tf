@@ -1,4 +1,5 @@
 resource "aws_cloudformation_stack" "rabbitmq" {
+  #checkov:skip=CKV_AWS_124: Lifecycle alarms and the backup-stop workflow are the bounded experiment notification path; no stack-level SNS fanout is retained.
   name               = "${local.name_prefix}-rabbitmq"
   template_body      = file("${path.module}/templates/rabbitmq.json")
   timeout_in_minutes = 30

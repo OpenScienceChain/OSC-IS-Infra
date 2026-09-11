@@ -1,9 +1,14 @@
 resource "aws_vpc" "experiment" {
+  #checkov:skip=CKV2_AWS_11: Control-plane, WAF, application, and teardown evidence is exported; full VPC flow logs are not retained for the short-lived data-minimized run.
   cidr_block           = "10.73.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
 
   tags = { Name = "${local.name_prefix}-vpc" }
+}
+
+resource "aws_default_security_group" "experiment" {
+  vpc_id = aws_vpc.experiment.id
 }
 
 resource "aws_internet_gateway" "experiment" {
@@ -16,6 +21,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
 }
 
 resource "aws_security_group" "cloudfront_origin" {
+  #checkov:skip=CKV2_AWS_5: The group is consumed by the Kubernetes ALB ingress annotation, which static Terraform graph analysis cannot resolve.
   name        = "${local.name_prefix}-cloudfront-origin"
   description = "Only CloudFront VPC origins may reach the internal demo ALB"
   vpc_id      = aws_vpc.experiment.id
@@ -30,6 +36,7 @@ resource "aws_security_group" "cloudfront_origin" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cloudfront_to_origin" {
+  #checkov:skip=CKV_AWS_260: Port 80 is reachable only from the AWS-managed CloudFront origin-facing prefix list, not 0.0.0.0/0.
   security_group_id = aws_security_group.cloudfront_origin.id
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id
   ip_protocol       = "tcp"

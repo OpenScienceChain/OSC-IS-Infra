@@ -1,4 +1,5 @@
 resource "aws_ecr_repository" "experiment" {
+  #checkov:skip=CKV_AWS_136: AES256 encryption avoids a customer-managed KMS key whose deletion window would outlive exact teardown.
   for_each = local.ecr_repositories
 
   name                 = "${local.name_prefix}/${each.key}"

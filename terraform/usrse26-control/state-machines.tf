@@ -1,4 +1,6 @@
 resource "aws_cloudwatch_log_group" "step_functions" {
+  #checkov:skip=CKV_AWS_158: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
+  #checkov:skip=CKV_AWS_338: Seven-day retention is proportionate for a disposable demo capped at 72 hours.
   name              = "/aws/vendedlogs/states/${local.name_prefix}"
   retention_in_days = 7
 }
@@ -19,6 +21,8 @@ resource "aws_iam_role" "step_functions" {
 }
 
 resource "aws_iam_role_policy" "step_functions" {
+  #checkov:skip=CKV_AWS_290: Wildcards are limited to STS identity, CloudWatch Logs delivery, and X-Ray ingestion APIs that do not support resource scoping.
+  #checkov:skip=CKV_AWS_355: The only Resource=* statements call non-resource-scoped identity, logging, and tracing APIs.
   name = "exact-demo-orchestration"
   role = aws_iam_role.step_functions.id
   policy = jsonencode({
@@ -53,21 +57,29 @@ resource "aws_iam_role_policy" "step_functions" {
         Effect   = "Allow"
         Action   = ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutLogEvents", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = "*"
       }
     ]
   })
 }
 
 resource "aws_sfn_state_machine" "start" {
+  #checkov:skip=CKV_AWS_285: Execution-data logging is deliberately disabled so request payloads cannot enter logs; state transitions are logged at ALL level.
   name     = "${local.name_prefix}-start"
   role_arn = aws_iam_role.step_functions.arn
   type     = "STANDARD"
 
   logging_configuration {
     include_execution_data = false
-    level                  = "ERROR"
+    level                  = "ALL"
     log_destination        = "${aws_cloudwatch_log_group.step_functions.arn}:*"
   }
+
+  tracing_configuration { enabled = true }
 
   definition = jsonencode({
     Comment = "Guarded, idempotent start with two retries and canary-open gate"
@@ -192,15 +204,18 @@ resource "aws_sfn_state_machine" "start" {
 }
 
 resource "aws_sfn_state_machine" "stop" {
+  #checkov:skip=CKV_AWS_285: Execution-data logging is deliberately disabled so request payloads cannot enter logs; state transitions are logged at ALL level.
   name     = "${local.name_prefix}-stop"
   role_arn = aws_iam_role.step_functions.arn
   type     = "STANDARD"
 
   logging_configuration {
     include_execution_data = false
-    level                  = "ERROR"
+    level                  = "ALL"
     log_destination        = "${aws_cloudwatch_log_group.step_functions.arn}:*"
   }
+
+  tracing_configuration { enabled = true }
 
   definition = jsonencode({
     Comment = "Read-only, drain, export, destroy, sweep, and verify"
@@ -278,9 +293,19 @@ resource "aws_sfn_state_machine" "stop" {
 }
 
 resource "aws_sfn_state_machine" "monitor" {
+  #checkov:skip=CKV_AWS_285: Execution-data logging is deliberately disabled so request payloads cannot enter logs; state transitions are logged at ALL level.
   name     = "${local.name_prefix}-monitor"
   role_arn = aws_iam_role.step_functions.arn
   type     = "STANDARD"
+
+  logging_configuration {
+    include_execution_data = false
+    level                  = "ALL"
+    log_destination        = "${aws_cloudwatch_log_group.step_functions.arn}:*"
+  }
+
+  tracing_configuration { enabled = true }
+
   definition = jsonencode({
     StartAt = "VerifyAccount"
     States = {

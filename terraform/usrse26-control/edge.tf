@@ -1,4 +1,8 @@
 resource "aws_s3_bucket" "edge" {
+  #checkov:skip=CKV_AWS_18: Private OAC-only status origin; WAF and CloudFront provide request logging without a recursive log bucket.
+  #checkov:skip=CKV_AWS_144: The authorized experiment is single-region us-west-2 and must leave zero cross-region residuals.
+  #checkov:skip=CKV_AWS_145: AES256 encryption avoids a customer-managed KMS key whose deletion window would outlive teardown.
+  #checkov:skip=CKV2_AWS_62: This bucket serves static status files and does not process object-created events.
   bucket        = "${local.name_prefix}-edge-${var.authorized_account_id}"
   force_destroy = true
 }
@@ -25,6 +29,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "edge" {
   rule {
     id     = "expire-demo-edge"
     status = "Enabled"
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
     expiration { days = 30 }
     noncurrent_version_expiration { noncurrent_days = 7 }
   }
@@ -156,6 +161,8 @@ resource "aws_acm_certificate_validation" "edge" {
 }
 
 resource "aws_cloudwatch_log_group" "waf" {
+  #checkov:skip=CKV_AWS_158: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
+  #checkov:skip=CKV_AWS_338: Seven-day retention is proportionate for a disposable demo capped at 72 hours.
   provider          = aws.edge
   name              = "aws-waf-logs-${local.name_prefix}"
   retention_in_days = 7
@@ -186,6 +193,25 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "ManagedCommon"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedKnownBadInputs"
+    priority = 15
+    override_action {
+      none {}
+    }
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "ManagedKnownBadInputs"
       sampled_requests_enabled   = true
     }
   }
@@ -255,6 +281,10 @@ resource "aws_wafv2_web_acl_logging_configuration" "edge" {
 }
 
 resource "aws_cloudfront_distribution" "edge" {
+  #checkov:skip=CKV_AWS_86: WAF request logs are enabled with credential-bearing headers redacted; a second S3 log sink would create retained duplicate data.
+  #checkov:skip=CKV_AWS_310: The bounded single-region demonstration uses a static fallback page instead of a second origin.
+  #checkov:skip=CKV_AWS_374: Conference guests are intentionally supported without country restrictions.
+  #checkov:skip=CKV2_AWS_47: AWSManagedRulesKnownBadInputsRuleSet is attached; this graph check does not resolve the managed rule group.
   enabled             = true
   aliases             = [var.public_hostname]
   default_root_object = "index.html"

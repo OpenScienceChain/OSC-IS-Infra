@@ -1,4 +1,8 @@
 resource "aws_s3_bucket" "control" {
+  #checkov:skip=CKV_AWS_18: The private control bucket is not an HTTP origin; lifecycle and state-machine logs provide the audit trail.
+  #checkov:skip=CKV_AWS_144: The authorized experiment is single-region us-west-2 and must leave zero cross-region residuals.
+  #checkov:skip=CKV_AWS_145: AES256 encryption avoids a customer-managed KMS key whose deletion window would outlive teardown.
+  #checkov:skip=CKV2_AWS_62: Evidence, security logs, and Terraform state are written by explicit lifecycle actions, not event processing.
   bucket        = "${local.name_prefix}-control-${var.authorized_account_id}"
   force_destroy = true
 }
@@ -26,11 +30,13 @@ resource "aws_s3_bucket_versioning" "control" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "control" {
+  #checkov:skip=CKV_AWS_300: Every lifecycle rule has a one-day abort policy; Checkov 3.3.9 misreports the third rule.
   bucket = aws_s3_bucket.control.id
   rule {
     id     = "expire-sanitized-evidence"
     status = "Enabled"
     filter { prefix = "evidence/" }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
     expiration { days = 30 }
     noncurrent_version_expiration { noncurrent_days = 7 }
   }
@@ -38,6 +44,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "control" {
     id     = "expire-security-logs"
     status = "Enabled"
     filter { prefix = "security-logs/" }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
     expiration { days = 7 }
     noncurrent_version_expiration { noncurrent_days = 1 }
   }
@@ -45,12 +52,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "control" {
     id     = "expire-runtime-state"
     status = "Enabled"
     filter { prefix = "runtime-state/" }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
     expiration { days = 30 }
     noncurrent_version_expiration { noncurrent_days = 7 }
   }
 }
 
 resource "aws_dynamodb_table" "lifecycle" {
+  #checkov:skip=CKV_AWS_119: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
   name         = "${local.name_prefix}-lifecycle"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "runId"
@@ -67,6 +76,7 @@ resource "aws_dynamodb_table" "lifecycle" {
 }
 
 resource "aws_dynamodb_table" "terraform_locks" {
+  #checkov:skip=CKV_AWS_119: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
   name         = "${local.name_prefix}-terraform-locks"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
@@ -74,11 +84,13 @@ resource "aws_dynamodb_table" "terraform_locks" {
     name = "LockID"
     type = "S"
   }
+  point_in_time_recovery { enabled = true }
   server_side_encryption { enabled = true }
 }
 
 resource "aws_sns_topic" "lifecycle" {
-  name = "${local.name_prefix}-notifications"
+  name              = "${local.name_prefix}-notifications"
+  kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sns_topic_subscription" "email" {
@@ -95,6 +107,8 @@ resource "aws_sqs_queue" "scheduler_dlq" {
 }
 
 resource "aws_cloudwatch_log_group" "lifecycle" {
+  #checkov:skip=CKV_AWS_158: AWS-owned encryption avoids a KMS key whose deletion window would violate zero-residual teardown.
+  #checkov:skip=CKV_AWS_338: Seven-day retention is proportionate for a disposable demo capped at 72 hours.
   name              = "/aws/codebuild/${local.name_prefix}-lifecycle"
   retention_in_days = 7
 }
@@ -104,6 +118,7 @@ resource "aws_cloudwatch_log_group" "lifecycle" {
 # dependency part of the control plane and removes it only during final control
 # teardown, after runtime teardown evidence has passed.
 resource "aws_ecr_repository" "lifecycle_runner" {
+  #checkov:skip=CKV_AWS_136: AES256 encryption avoids a customer-managed KMS key whose deletion window would outlive teardown.
   name                 = "${local.name_prefix}/lifecycle-runner"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
@@ -144,6 +159,12 @@ data "aws_iam_policy_document" "codebuild_assume" {
 }
 
 resource "aws_iam_policy" "lifecycle_boundary" {
+  #checkov:skip=CKV_AWS_286: The boundary permits credential-management APIs only inside an exact account/region/run-tag guard enforced by the runner.
+  #checkov:skip=CKV_AWS_287: The boundary permits write APIs only inside an exact account/region/run-tag guard enforced by the runner.
+  #checkov:skip=CKV_AWS_288: The boundary permits data APIs only inside an exact account/region/run-tag guard enforced by the runner.
+  #checkov:skip=CKV_AWS_289: The boundary permits permissions APIs needed to create and tear down run-scoped roles; the attached role policy is narrower.
+  #checkov:skip=CKV_AWS_290: Service-level wildcards are the maximum boundary, while the attached role policy and fail-closed runtime guard restrict targets.
+  #checkov:skip=CKV_AWS_355: The lifecycle runner must enumerate and sweep all supported run-tagged resource types; exact ownership tags are checked before mutation.
   name        = "${local.name_prefix}-lifecycle-boundary"
   description = "Maximum AWS service surface for the disposable US-RSE lifecycle runner"
   policy = jsonencode({

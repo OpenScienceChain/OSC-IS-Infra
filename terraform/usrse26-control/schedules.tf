@@ -39,6 +39,7 @@ locals {
 }
 
 resource "aws_scheduler_schedule" "one_time" {
+  #checkov:skip=CKV_AWS_297: AWS-owned encryption is used so the run leaves no customer-managed KMS key pending deletion.
   for_each                     = local.one_time_schedules
   name                         = "${local.name_prefix}-${each.key}"
   schedule_expression          = each.value.expression
@@ -58,6 +59,7 @@ resource "aws_scheduler_schedule" "one_time" {
 }
 
 resource "aws_scheduler_schedule" "monitor" {
+  #checkov:skip=CKV_AWS_297: AWS-owned encryption is used so the run leaves no customer-managed KMS key pending deletion.
   name                = "${local.name_prefix}-monitor"
   schedule_expression = "rate(5 minutes)"
   start_date          = "2026-10-20T15:00:00Z"
