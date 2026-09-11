@@ -29,22 +29,22 @@ Push-Location $repoRoot
 try {
     python platform/aws/aws_guard.py | Out-Null
     python platform/aws/estimate_cost.py --hours 72 --output (Join-Path $runRoot 'cost-estimate.json') | Out-Null
-    $values = [ordered]@{
-        run_id = $RunId
-        hosted_zone_id = $HostedZoneId
-        admin_cidr = $AdminCidr
-        lifecycle_runner_image = $LifecycleRunnerImage
-        artifact_manifest_s3_uri = $ArtifactManifestS3Uri
-        artifact_manifest_sha256 = $ArtifactManifestSha256
-        planning_cost_usd = $PlanningCostUsd
-        notification_email = if ([string]::IsNullOrWhiteSpace($NotificationEmail)) { $null } else { $NotificationEmail }
+    $tfvarsArguments = @(
+        'platform/aws/write_control_tfvars.py',
+        '--output', $tfvarsPath,
+        '--run-id', $RunId,
+        '--hosted-zone-id', $HostedZoneId,
+        '--admin-cidr', $AdminCidr,
+        '--lifecycle-runner-image', $LifecycleRunnerImage,
+        '--artifact-manifest-s3-uri', $ArtifactManifestS3Uri,
+        '--artifact-manifest-sha256', $ArtifactManifestSha256,
+        '--planning-cost-usd', $PlanningCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)
+    )
+    if (-not [string]::IsNullOrWhiteSpace($NotificationEmail)) {
+        $tfvarsArguments += @('--notification-email', $NotificationEmail.Trim())
     }
-    $lines = foreach ($entry in $values.GetEnumerator()) {
-        if ($null -eq $entry.Value) { "$($entry.Key) = null" }
-        elseif ($entry.Value -is [decimal]) { "$($entry.Key) = $($entry.Value)" }
-        else { "$($entry.Key) = `"$($entry.Value)`"" }
-    }
-    [IO.File]::WriteAllLines($tfvarsPath, $lines, [Text.UTF8Encoding]::new($false))
+    python @tfvarsArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Control-plane variable generation failed.' }
 
     Push-Location $terraformRoot
     try {

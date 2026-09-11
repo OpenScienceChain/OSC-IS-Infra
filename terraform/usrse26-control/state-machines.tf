@@ -88,6 +88,7 @@ resource "aws_sfn_state_machine" "start" {
       VerifyAccount = {
         Type       = "Task"
         Resource   = "arn:aws:states:::aws-sdk:sts:getCallerIdentity"
+        Parameters = {}
         ResultPath = "$.identity"
         Next       = "AuthorizedAccount"
       }
@@ -238,7 +239,7 @@ resource "aws_sfn_state_machine" "stop" {
     Comment = "Read-only, drain, export, destroy, sweep, and verify"
     StartAt = "VerifyAccount"
     States = {
-      VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", ResultPath = "$.identity", Next = "AuthorizedAccount" }
+      VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", Parameters = {}, ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = {
         Type    = "Choice"
         Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "ReadRun" }]
@@ -353,7 +354,7 @@ resource "aws_sfn_state_machine" "monitor" {
   definition = jsonencode({
     StartAt = "VerifyAccount"
     States = {
-      VerifyAccount     = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", ResultPath = "$.identity", Next = "AuthorizedAccount" }
+      VerifyAccount     = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", Parameters = {}, ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = { Type = "Choice", Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "Monitor" }], Default = "Unauthorized" }
       Unauthorized      = { Type = "Fail", Error = "UnauthorizedAccount" }
       Monitor = {

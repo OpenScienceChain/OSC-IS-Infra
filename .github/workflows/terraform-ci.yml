@@ -114,6 +114,14 @@ jobs:
       - run: git diff --exit-code -- .terraform.lock.hcl
       - run: terraform validate
 
+  test-usrse26-contract:
+    name: Test US-RSE demo contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: python3 -m unittest discover -s tests/usrse26 -v
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

@@ -140,15 +140,50 @@ class LifecycleContractTests(unittest.TestCase):
     def test_first_control_plan_has_static_certificate_keys_and_null_optional_email(self) -> None:
         edge = read("terraform/usrse26-control/edge.tf")
         preparation = read("platform/aws/prepare-demo-control.ps1")
-        self.assertIn("for_each = toset([var.public_hostname])", edge)
+        self.assertRegex(edge, r"for_each\s*=\s*toset\(\[var\.public_hostname\]\)")
         self.assertIn("one(aws_acm_certificate.edge.domain_validation_options)", edge)
         self.assertNotIn("for option in aws_acm_certificate.edge.domain_validation_options", edge)
         self.assertIn("[string]::IsNullOrWhiteSpace($NotificationEmail)", preparation)
-        self.assertIn("{ $null } else { $NotificationEmail }", preparation)
+        self.assertIn("platform/aws/write_control_tfvars.py", preparation)
+
+    def test_control_tfvars_normalize_optional_email_by_behavior(self) -> None:
+        writer = ROOT / "platform/aws/write_control_tfvars.py"
+        base = [
+            sys.executable,
+            str(writer),
+            "--run-id", "usrse26r1",
+            "--hosted-zone-id", "Z1029455HHX7QD91NBY1",
+            "--admin-cidr", "192.0.2.10/32",
+            "--lifecycle-runner-image", "example.invalid/lifecycle-runner@sha256:" + "a" * 64,
+            "--artifact-manifest-s3-uri", "s3://example/releases/usrse26r1/artifacts.json",
+            "--artifact-manifest-sha256", "b" * 64,
+            "--planning-cost-usd", "34.140",
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "control.tfvars"
+            for notification in (None, "", " \t "):
+                command = [*base, "--output", str(output)]
+                if notification is not None:
+                    command.extend(("--notification-email", notification))
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                generated = output.read_text(encoding="utf-8")
+                self.assertIn("planning_cost_usd = 34.14\n", generated)
+                self.assertIn("notification_email = null\n", generated)
+
+            result = subprocess.run(
+                [*base, "--output", str(output), "--notification-email", " demo@example.org "],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('notification_email = "demo@example.org"\n', output.read_text(encoding="utf-8"))
 
     def test_state_machines_have_retry_canary_drain_backup_and_sweep(self) -> None:
         machines = read("terraform/usrse26-control/state-machines.tf")
         schedules = read("terraform/usrse26-control/schedules.tf")
+        self.assertEqual(machines.count('arn:aws:states:::aws-sdk:sts:getCallerIdentity'), 3)
+        self.assertEqual(machines.count("Parameters = {}"), 3)
         self.assertIn('MaxAttempts = 3', machines)
         self.assertIn('Value = "CANARY"', machines)
         self.assertIn('Seconds = 900', machines)
