@@ -9,7 +9,7 @@ resource "aws_eks_cluster" "experiment" {
   #checkov:skip=CKV_AWS_39: The private endpoint is enabled; the public endpoint is additionally required by the bounded admin and runner CIDRs.
   #checkov:skip=CKV_AWS_58: AWS-owned envelope encryption avoids a customer-managed KMS key whose deletion window would outlive exact teardown.
   name     = local.cluster_name
-  role_arn = aws_iam_role.eks_cluster.arn
+  role_arn = var.runtime_role_arns.eks_cluster
   version  = var.kubernetes_version
 
   access_config {
@@ -38,7 +38,6 @@ resource "aws_eks_cluster" "experiment" {
 
   depends_on = [
     aws_cloudwatch_log_group.eks,
-    aws_iam_role_policy_attachment.eks_cluster,
     aws_route.private_internet,
   ]
 }
@@ -105,7 +104,7 @@ resource "aws_launch_template" "eks_nodes" {
 resource "aws_eks_node_group" "experiment" {
   cluster_name    = aws_eks_cluster.experiment.name
   node_group_name = "${local.name_prefix}-nodes"
-  node_role_arn   = aws_iam_role.eks_nodes.arn
+  node_role_arn   = var.runtime_role_arns.eks_nodes
   subnet_ids      = aws_subnet.private[*].id
   ami_type        = "AL2023_x86_64_STANDARD"
   capacity_type   = "ON_DEMAND"
@@ -127,7 +126,6 @@ resource "aws_eks_node_group" "experiment" {
     max_unavailable = 1
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_nodes]
 }
 
 resource "aws_eks_addon" "vpc_cni" {

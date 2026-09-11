@@ -8,8 +8,8 @@
 - GitOps workloads use multiple replicas, node/zone spreading, disruption budgets,
   non-root containers, immutable image placeholders, narrowed network paths,
   two organization-scoped Ledger Gateways, and two history-worker paths.
-- AWS Load Balancer Controller uses a dedicated IRSA role; the application
-  ingress is internal and uses pod-IP targets.
+- AWS Load Balancer Controller uses a dedicated EKS Pod Identity role; the
+  application ingress is internal and uses pod-IP targets.
 - A separate persistent Terraform root defines the private S3/CloudFront/WAF
   status shell, lifecycle state, one-time and backup schedules, Step Functions,
   synchronous CodeBuild, budget notifications, retention, and evidence stores.
@@ -19,9 +19,10 @@
   monitor executions, and exhausted scheduler invocations.
 - The lifecycle contract requires a checksum-bound WebApp bundle for the S3
   edge and immutable digests for every runtime image before `START` may write.
-- The control root owns the lifecycle role's permissions boundary and imports
-  the exact lifecycle-runner ECR repository so the backup stop survives until
-  final control teardown.
+- The control root owns every runtime role, trust policy, policy attachment,
+  the lifecycle permissions boundary, and the exact lifecycle-runner ECR
+  repository. Runtime Terraform can pass and associate fixed roles but cannot
+  create or mutate IAM identities.
 
 ## Release-owner inputs still required
 
@@ -43,8 +44,7 @@ establish `Locally validated` after product contracts are integrated. Nothing
 in this branch establishes `AWS demonstrated`, production readiness, high
 availability, disaster recovery, adoption, or measured researcher benefit.
 
-No AWS resource, remote branch, pull request, or protected branch was changed
-while producing this ledger.
+No AWS resource or protected branch was changed while producing this ledger.
 
 See `interactive-demo-local-verification.md` for the exact checks performed and
 the product-interface blocker that prevents an honest end-to-end claim today.

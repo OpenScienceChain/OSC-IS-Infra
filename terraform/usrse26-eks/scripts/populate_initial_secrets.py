@@ -77,17 +77,31 @@ if identity.get("Account") != AUTHORIZED_ACCOUNT:
     raise SystemExit("AWS account guard failed; no secrets were written")
 
 put_secret(
-    required("APP_SECRET_ARN"),
+    required("API_AUTH_SECRET_ARN"),
     {
         "jwtSecret": secrets.token_hex(32),
         "bootstrapAdminPassword": password(),
-        "listenerApiKey": secrets.token_hex(32),
-        "nsgLedgerToken": secrets.token_hex(32),
-        "citizenScienceLedgerToken": secrets.token_hex(32),
+    },
+)
+put_secret(
+    required("LISTENER_AUTH_SECRET_ARN"),
+    {"listenerApiKey": secrets.token_hex(32)},
+)
+put_secret(
+    required("DEMO_AUTH_SECRET_ARN"),
+    {
         "demoJwtSecret": secrets.token_hex(32),
         "demoAnalyticsHmacSecret": secrets.token_hex(32),
         "demoControlApiKey": secrets.token_hex(32),
     },
+)
+put_secret(
+    required("LEDGER_NSG_AUTH_SECRET_ARN"),
+    {"nsgLedgerToken": secrets.token_hex(32)},
+)
+put_secret(
+    required("LEDGER_CITIZEN_SECRET_ARN"),
+    {"citizenScienceLedgerToken": secrets.token_hex(32)},
 )
 put_secret(
     required("POSTGRES_SECRET_ARN"),
@@ -98,4 +112,4 @@ put_secret(
     {"username": "osc_usrse26", "password": password()},
 )
 
-print("Populated three disposable Secrets Manager values; values were not logged.")
+print("Populated seven workload-scoped Secrets Manager values; values were not logged.")

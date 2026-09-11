@@ -19,6 +19,10 @@ Never collect or export file bytes, original filenames, names, email
 addresses, demographic data, raw session IDs, cookies, authorization headers,
 Fabric private keys, or application secrets. Feedback is never written to the
 ledger or displayed publicly. Export must fail when a field is not allowlisted.
+WAF logging redacts cookies, authorization, `X-Demo-Control-Key`,
+`X-Demo-CSRF`, and `X-Api-Key`. Lifecycle operations call the internal demo
+control endpoints through `kubectl exec` and loopback inside the API Gateway
+pod, so control credentials are not sent through CloudFront or WAF.
 The control-key-protected operational endpoint exposes only totals, confirmation
 latency sample size/p50/p95, and queue totals/oldest-pending age. Monitoring
 stores only those aggregates plus aggregate pod, ALB, Fabric, RabbitMQ, WAF, and

@@ -5,9 +5,12 @@
 
 ## Decision
 
-AWS Secrets Manager stores database credentials, Amazon MQ credentials, and the
-two organization Fabric client credential bundles. Separate secrets and IAM
-policies prevent one workload from reading another organization's Fabric key.
+AWS Secrets Manager stores separate API authentication, listener callback,
+internal demo-control, NSG Ledger Gateway, Citizen Science Ledger Gateway,
+database, Amazon MQ, and organization Fabric identity values. No shared
+`application` secret exists. Separate secrets and exact IAM policies prevent a
+workload from reading unrelated service credentials or another organization's
+Fabric key.
 
 EKS Pod Identity or IRSA provides short-lived AWS authorization to dedicated
 Kubernetes service accounts. Automatic service-account token mounting is
@@ -21,13 +24,22 @@ checksums and expiration, and removes them with the cluster.
 
 ## Policy boundaries
 
-- Gateway: database and its own token-signing material; no Fabric key.
-- Outbox/worker: broker credential and internal Ledger Gateway credential; no
-  direct Fabric key unless it is the Ledger Gateway process.
-- NSG Ledger Gateway: NSG Fabric client secret only.
-- Citizen Science Ledger Gateway: Citizen Science Fabric client secret only.
+- Gateway: API authentication, listener callback, internal demo-control,
+  database, and broker values; no Ledger Gateway token or Fabric key.
+- Submission worker: broker credential and both organization-scoped Ledger
+  Gateway tokens; no Fabric key.
+- Submission listener: broker credential and listener callback value only.
+- NSG Ledger Gateway: NSG Ledger token and NSG Fabric identity only.
+- Citizen Science Ledger Gateway: Citizen Science Ledger token and Fabric
+  identity only.
 - Deployment automation: permission to update verified image digests and
-  declarative revisions; no application secret read.
+  declarative revisions; no workload secret read outside exact run-scoped
+  creation, population, and teardown operations.
+
+The control plane owns all IAM roles and trust policies. Runtime Terraform is
+given exact control-owned role ARNs and cannot create or mutate roles. Pod
+Identity replaces the prior ALB-controller web-identity trust policy, removing
+the runtime OIDC-provider and trust-policy mutation path.
 
 ## Rotation and evidence
 

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "executedAt": "2026-09-11",
+  "environment": "local unit-test fault injection; no AWS API calls",
+  "command": "python -m unittest tests.usrse26.test_lifecycle_safety",
+  "results": [
+    {
+      "scenario": "DESTROY receives an injected CloudFront detach failure",
+      "result": "PASS",
+      "assertions": [
+        "fallback restoration attempted",
+        "workload deletion attempted",
+        "CodeBuild VPC placement reset attempted",
+        "teardown evidence write attempted",
+        "original failure propagated after cleanup"
+      ]
+    },
+    {
+      "scenario": "FAILED_START_CLEANUP receives an injected CloudFront detach failure",
+      "result": "PASS",
+      "assertions": [
+        "fallback restoration attempted",
+        "workload deletion attempted",
+        "CodeBuild VPC placement reset attempted",
+        "teardown evidence write attempted",
+        "original failure propagated after cleanup"
+      ]
+    }
+  ],
+  "stateMachineContract": "READ_ONLY and EXPORT failures continue; in-VPC cleanup failures reach outside-VPC DESTROY_RUNTIME; destroy failures reach SWEEP; incomplete sweep notifies and fails.",
+  "limitation": "This proves local control-flow behavior only. A real AWS fault-injection teardown and final tagged-resource inventory remain required before release approval."
+}

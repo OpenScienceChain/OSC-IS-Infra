@@ -31,11 +31,16 @@ def matches_any(actual: str, patterns: Any, *, casefold: bool = False) -> bool:
 
 def conditions_match(conditions: dict[str, Any], context: dict[str, str]) -> bool:
     for operator, entries in conditions.items():
-        if operator not in {"StringEquals", "ArnEquals"}:
+        if operator not in {"StringEquals", "ArnEquals", "StringLike"}:
             raise RuntimeError(f"Unsupported policy simulator condition: {operator}")
         for key, expected in entries.items():
             actual = context.get(key)
-            if actual is None or actual not in values(expected):
+            if actual is None:
+                return False
+            if operator == "StringLike":
+                if not matches_any(actual, expected):
+                    return False
+            elif actual not in values(expected):
                 return False
     return True
 
@@ -79,25 +84,30 @@ def render_policy(terraform_root: Path, run_id: str) -> dict[str, Any]:
 
 
 def simulate(policy: dict[str, Any], run_id: str) -> dict[str, Any]:
-    boundary = f"arn:aws:iam::{ACCOUNT}:policy/osc-usrse26-{run_id}-runtime-boundary"
     role = f"arn:aws:iam::{ACCOUNT}:role/osc-usrse26-{run_id}-eks-cluster"
-    tags = {
+    run_bucket = f"arn:aws:s3:::osc-usrse26-{run_id}-control-{ACCOUNT}"
+    run_secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:osc-usrse26-{run_id}/api/auth-AbCdEf"
+    creation_tags = {
         "aws:RequestTag/Project": "OSC-IS",
-        "aws:RequestTag/Purpose": "USRSE26-Interactive-Demo",
-        "aws:RequestTag/Environment": "ephemeral",
         "aws:RequestTag/RunId": run_id,
     }
     cases = [
-        ("bounded run role creation", "iam:CreateRole", role, {**tags, "iam:PermissionsBoundary": boundary}, "allowed"),
-        ("unbounded run role creation", "iam:CreateRole", role, tags, "implicitDeny"),
-        ("role creation outside run prefix", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/admin", {**tags, "iam:PermissionsBoundary": boundary}, "implicitDeny"),
-        ("arbitrary inline admin capability", "iam:CreateUser", f"arn:aws:iam::{ACCOUNT}:user/escape", {}, "implicitDeny"),
-        ("approved managed policy attachment", "iam:AttachRolePolicy", role, {"iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"}, "allowed"),
-        ("administrator managed policy attachment", "iam:AttachRolePolicy", role, {"iam:PolicyARN": "arn:aws:iam::aws:policy/AdministratorAccess"}, "implicitDeny"),
+        ("runtime role creation", "iam:CreateRole", role, {}, "implicitDeny"),
+        ("inline policy mutation", "iam:PutRolePolicy", role, {}, "implicitDeny"),
+        ("trust policy mutation", "iam:UpdateAssumeRolePolicy", role, {}, "implicitDeny"),
+        ("assume altered runtime role", "sts:AssumeRole", role, {}, "implicitDeny"),
         ("approved EKS pass role", "iam:PassRole", role, {"iam:PassedToService": "eks.amazonaws.com"}, "allowed"),
         ("pass role outside run prefix", "iam:PassRole", f"arn:aws:iam::{ACCOUNT}:role/admin", {"iam:PassedToService": "eks.amazonaws.com"}, "implicitDeny"),
         ("pass role to unapproved service", "iam:PassRole", role, {"iam:PassedToService": "lambda.amazonaws.com"}, "implicitDeny"),
         ("permissions boundary mutation", "iam:DeleteRolePermissionsBoundary", role, {}, "implicitDeny"),
+        ("run-scoped S3 object", "s3:GetObject", f"{run_bucket}/runtime-state/{run_id}/terraform.tfstate", {}, "allowed"),
+        ("unrelated S3 object", "s3:GetObject", "arn:aws:s3:::unrelated-account-data/private.txt", {}, "implicitDeny"),
+        ("run-scoped secret", "secretsmanager:GetSecretValue", run_secret, {}, "allowed"),
+        ("unrelated Secrets Manager secret", "secretsmanager:GetSecretValue", f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:production/database-AbCdEf", {}, "implicitDeny"),
+        ("named run secret creation", "secretsmanager:CreateSecret", "*", {**creation_tags, "secretsmanager:Name": f"osc-usrse26-{run_id}/api/auth"}, "allowed"),
+        ("unrelated secret creation", "secretsmanager:CreateSecret", "*", {**creation_tags, "secretsmanager:Name": "production/database"}, "implicitDeny"),
+        ("broad inline policy intersected for run data", "s3:GetObject", f"{run_bucket}/evidence/{run_id}/summary.json", {}, "allowed"),
+        ("broad inline policy intersected for unrelated data", "s3:GetObject", "arn:aws:s3:::production-data/records.json", {}, "implicitDeny"),
     ]
     results = []
     for name, action, resource, context, expected in cases:
@@ -109,10 +119,10 @@ def simulate(policy: dict[str, Any], run_id: str) -> dict[str, Any]:
         "account": ACCOUNT,
         "region": REGION,
         "runId": run_id,
-        "boundaryArn": boundary,
+        "boundaryArn": f"arn:aws:iam::{ACCOUNT}:policy/osc-usrse26-{run_id}-runtime-boundary",
         "allPassed": all(item["passed"] for item in results),
         "cases": results,
-        "limitations": "Local policy semantics only; repeat with AWS IAM simulation during the authorized rehearsal.",
+        "limitations": "Local permissions-boundary semantics only. The broad-inline-policy cases model intersection by asking whether the boundary permits the requested action; repeat with AWS IAM simulation during an authorized rehearsal.",
     }
 
 

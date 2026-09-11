@@ -21,7 +21,7 @@ Checks `CKV_AWS_119`, `CKV_AWS_136`, `CKV_AWS_145`, `CKV_AWS_149`, `CKV_AWS_158`
 - `CKV_AWS_285`: Step Functions log every transition at `ALL`, use X-Ray, and deliberately set `include_execution_data = false` so guest request payloads cannot enter logs.
 - `CKV_AWS_338`: WAF, lifecycle, Step Functions, and EKS logs expire after seven days; one-year retention is disproportionate to a run capped at 72 hours.
 - `CKV2_AWS_11`: full VPC flow logs are not retained. Control-plane, WAF, aggregate application, authorization-denial, cost, and teardown evidence is exported instead.
-- `CKV2_AWS_57`: generated application, database, broker, and Fabric credentials are destroyed within 72 hours, before a rotation interval can elapse.
+- `CKV2_AWS_57`: generated workload authentication, database, broker, and Fabric credentials are destroyed within 72 hours, before a rotation interval can elapse.
 - `CKV2_AWS_62`: the two buckets contain static status, explicit lifecycle state, and sanitized evidence; they do not implement object-created event processing.
 
 ## Static-analysis limitations and exact runtime controls
@@ -34,6 +34,6 @@ Checks `CKV_AWS_119`, `CKV_AWS_136`, `CKV_AWS_145`, `CKV_AWS_149`, `CKV_AWS_158`
 
 ## Lifecycle IAM boundary
 
-Checks `CKV_AWS_286` through `CKV_AWS_290` and `CKV_AWS_355` cannot model the combined guard. The permissions boundary defines the maximum service surface needed to provision, observe, stop, destroy, and sweep the experiment. The attached policy is narrower, and the lifecycle runner fails closed unless the caller account, region, run ID, expiry, and full ownership-tag set match. It mutates or destroys only exact run-tagged resources. The Step Functions role uses `Resource = "*"` only for STS identity and AWS logging/tracing APIs that do not support resource-level scoping; all provisioner, table, topic, and scheduler targets use exact ARNs.
+Checks `CKV_AWS_286` through `CKV_AWS_290` and `CKV_AWS_355` cannot model the combined guard. The control plane pre-creates every runtime role, policy attachment, trust policy, and permissions boundary. The lifecycle runner has no role-creation, policy-mutation, trust-mutation, or assume-role permission and may pass only the exact fixed roles to EKS, EC2, or EKS Pod Identity. S3, Secrets Manager, ECR, DynamoDB, CloudFormation, EKS, MQ, logs, CodeBuild, SNS, and Step Functions access is restricted to exact run/control ARNs or run-tag conditions. Broad read-only discovery remains only where AWS APIs do not support resource-level scoping. The EKS node CNI permissions are present in the shared boundary for cluster bootstrap, but are absent from the lifecycle role's attached policy and become effective only through the reviewed node managed policy.
 
 Any scope expansion, longer retention, different AWS account or region, reusable environment, or removal of the exact-tag teardown guard invalidates these exceptions and requires a new security review.

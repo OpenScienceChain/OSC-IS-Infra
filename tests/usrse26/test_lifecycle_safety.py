@@ -85,11 +85,16 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
             report = __import__("json").loads(output.read_text(encoding="utf-8"))
             self.assertTrue(report["allPassed"])
             denied = {item["name"] for item in report["cases"] if item["actual"] != "allowed"}
-            self.assertIn("unbounded run role creation", denied)
-            self.assertIn("arbitrary inline admin capability", denied)
-            self.assertIn("administrator managed policy attachment", denied)
+            self.assertIn("runtime role creation", denied)
+            self.assertIn("inline policy mutation", denied)
+            self.assertIn("trust policy mutation", denied)
+            self.assertIn("assume altered runtime role", denied)
             self.assertIn("pass role outside run prefix", denied)
             self.assertIn("pass role to unapproved service", denied)
+            self.assertIn("unrelated S3 object", denied)
+            self.assertIn("unrelated Secrets Manager secret", denied)
+            self.assertIn("unrelated secret creation", denied)
+            self.assertIn("broad inline policy intersected for unrelated data", denied)
 
 
 if __name__ == "__main__":

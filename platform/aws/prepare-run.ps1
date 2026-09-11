@@ -16,8 +16,8 @@ param(
     [string]$AlbControllerImage,
 
     [Parameter(Mandatory = $true)]
-    [ValidatePattern('^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$')]
-    [string]$PermissionsBoundaryArn
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
+    [string]$RuntimeRoleArnsPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +39,21 @@ if ($AdminCidr -eq '0.0.0.0/32' -or $AdminCidr -eq '0.0.0.0/0') {
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 $startedAt = [DateTimeOffset]::UtcNow
 $expiresAt = $startedAt.AddHours($Hours)
+$runtimeRoleArnsJson = Get-Content -LiteralPath $RuntimeRoleArnsPath -Raw
+$runtimeRoleArns = $runtimeRoleArnsJson | ConvertFrom-Json
+$requiredRuntimeRoles = @(
+    'eks_cluster', 'eks_nodes', 'alb_controller', 'api_gateway', 'postgres',
+    'submission_worker', 'submission_listener', 'ledger_gateway_nsg',
+    'ledger_gateway_citizen_science', 'ebs_csi'
+)
+foreach ($roleKey in $requiredRuntimeRoles) {
+    $roleArn = [string]$runtimeRoleArns.$roleKey
+    $expectedSuffix = $roleKey.Replace('_', '-')
+    if ($roleArn -notmatch "^arn:aws:iam::269624229733:role/osc-usrse26-$RunId-$expectedSuffix$") {
+        throw "RuntimeRoleArnsPath contains an invalid or cross-run role for $roleKey."
+    }
+}
+$runtimeRoleArnsJson = $runtimeRoleArns | ConvertTo-Json -Compress
 
 Push-Location $repoRoot
 try {
@@ -53,7 +68,7 @@ try {
         "runner_public_cidr = `"$AdminCidr`""
         "maximum_runtime_hours = $Hours"
         "alb_controller_image = `"$AlbControllerImage`""
-        "permissions_boundary_arn = `"$PermissionsBoundaryArn`""
+        "runtime_role_arns = $runtimeRoleArnsJson"
     ) -join [Environment]::NewLine
     [IO.File]::WriteAllText($tfvarsPath, $tfvars + [Environment]::NewLine)
 

@@ -8,15 +8,7 @@
   "allPassed": true,
   "cases": [
     {
-      "name": "bounded run role creation",
-      "action": "iam:CreateRole",
-      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
-      "expected": "allowed",
-      "actual": "allowed",
-      "passed": true
-    },
-    {
-      "name": "unbounded run role creation",
+      "name": "runtime role creation",
       "action": "iam:CreateRole",
       "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
       "expected": "implicitDeny",
@@ -24,32 +16,24 @@
       "passed": true
     },
     {
-      "name": "role creation outside run prefix",
-      "action": "iam:CreateRole",
-      "resource": "arn:aws:iam::269624229733:role/admin",
-      "expected": "implicitDeny",
-      "actual": "implicitDeny",
-      "passed": true
-    },
-    {
-      "name": "arbitrary inline admin capability",
-      "action": "iam:CreateUser",
-      "resource": "arn:aws:iam::269624229733:user/escape",
-      "expected": "implicitDeny",
-      "actual": "implicitDeny",
-      "passed": true
-    },
-    {
-      "name": "approved managed policy attachment",
-      "action": "iam:AttachRolePolicy",
+      "name": "inline policy mutation",
+      "action": "iam:PutRolePolicy",
       "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
-      "expected": "allowed",
-      "actual": "allowed",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
       "passed": true
     },
     {
-      "name": "administrator managed policy attachment",
-      "action": "iam:AttachRolePolicy",
+      "name": "trust policy mutation",
+      "action": "iam:UpdateAssumeRolePolicy",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "assume altered runtime role",
+      "action": "sts:AssumeRole",
       "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
       "expected": "implicitDeny",
       "actual": "implicitDeny",
@@ -86,7 +70,71 @@
       "expected": "implicitDeny",
       "actual": "implicitDeny",
       "passed": true
+    },
+    {
+      "name": "run-scoped S3 object",
+      "action": "s3:GetObject",
+      "resource": "arn:aws:s3:::osc-usrse26-usrse26r1-control-269624229733/runtime-state/usrse26r1/terraform.tfstate",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "unrelated S3 object",
+      "action": "s3:GetObject",
+      "resource": "arn:aws:s3:::unrelated-account-data/private.txt",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "run-scoped secret",
+      "action": "secretsmanager:GetSecretValue",
+      "resource": "arn:aws:secretsmanager:us-west-2:269624229733:secret:osc-usrse26-usrse26r1/api/auth-AbCdEf",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "unrelated Secrets Manager secret",
+      "action": "secretsmanager:GetSecretValue",
+      "resource": "arn:aws:secretsmanager:us-west-2:269624229733:secret:production/database-AbCdEf",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "named run secret creation",
+      "action": "secretsmanager:CreateSecret",
+      "resource": "*",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "unrelated secret creation",
+      "action": "secretsmanager:CreateSecret",
+      "resource": "*",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "broad inline policy intersected for run data",
+      "action": "s3:GetObject",
+      "resource": "arn:aws:s3:::osc-usrse26-usrse26r1-control-269624229733/evidence/usrse26r1/summary.json",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "broad inline policy intersected for unrelated data",
+      "action": "s3:GetObject",
+      "resource": "arn:aws:s3:::production-data/records.json",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
     }
   ],
-  "limitations": "Local policy semantics only; repeat with AWS IAM simulation during the authorized rehearsal."
+  "limitations": "Local permissions-boundary semantics only. The broad-inline-policy cases model intersection by asking whether the boundary permits the requested action; repeat with AWS IAM simulation during an authorized rehearsal."
 }

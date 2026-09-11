@@ -1418,8 +1418,6 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::269624229733:role/osc-usrse26-__RUN_ID__-alb-controller
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: aws-load-balancer-controller

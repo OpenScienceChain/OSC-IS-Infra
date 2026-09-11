@@ -25,6 +25,7 @@ $webBundleArchive = Join-Path $archiveRoot 'webapp-static.tar.gz'
 $gitRoot = Join-Path $runRoot 'gitops-source'
 $gitImageRoot = Join-Path $runRoot 'gitops-image'
 $manifestPath = Join-Path $artifactRoot 'artifacts.json'
+$credentialIsolationPath = Join-Path $artifactRoot 'build-credential-isolation.json'
 $lifecycleContext = Join-Path $infraRoot 'platform\.generated\lifecycle-context'
 $registryName = 'osc-usrse26-aws-artifacts'
 $registry = 'localhost:5018'
@@ -79,6 +80,18 @@ foreach ($generatedPath in @($artifactRoot, $gitRoot, $gitImageRoot)) {
 
 foreach ($path in @($artifactRoot, $sbomRoot, $scanRoot, $archiveRoot)) {
     New-Item -ItemType Directory -Force -Path $path | Out-Null
+}
+
+# This dependency-free preflight must run before any project-owned build or
+# preparation code. It reports source names and paths, never credential values.
+$env:AWS_EC2_METADATA_DISABLED = 'true'
+python (Join-Path $infraRoot 'platform/aws/assert_credential_free_build.py') `
+    --output $credentialIsolationPath
+if ($LASTEXITCODE -ne 0) { throw 'Artifact build credential isolation preflight failed.' }
+$credentialIsolation = Get-Content -LiteralPath $credentialIsolationPath -Raw | ConvertFrom-Json
+if ($credentialIsolation.status -ne 'ENFORCED_COMMON_AWS_SOURCES_ABSENT' -or
+    -not $credentialIsolation.commonAwsCredentialSourcesAbsent) {
+    throw 'Artifact build credential isolation evidence is not acceptable.'
 }
 
 python (Join-Path $infraRoot 'platform/scripts/patch_fabric_network.py') `
@@ -213,7 +226,13 @@ try {
         runId = $RunId
         expiresAt = $ExpiresAt.ToString('o')
         createdAt = [DateTimeOffset]::UtcNow.ToString('o')
-        credentialFreeBuild = $true
+        buildCredentialIsolation = [ordered]@{
+            status = $credentialIsolation.status
+            commonAwsCredentialSourcesAbsent = $credentialIsolation.commonAwsCredentialSourcesAbsent
+            evidenceFile = $credentialIsolationPath
+            evidenceSha256 = (Get-FileHash -LiteralPath $credentialIsolationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            limitation = $credentialIsolation.limitation
+        }
         webApp = [ordered]@{
             sourceRevision = $webRevision
             archive = $webBundleArchive

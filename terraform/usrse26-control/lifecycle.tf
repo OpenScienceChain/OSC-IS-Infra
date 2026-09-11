@@ -159,16 +159,19 @@ data "aws_iam_policy_document" "codebuild_assume" {
 }
 
 locals {
-  runtime_boundary_arn     = "arn:aws:iam::${var.authorized_account_id}:policy/${local.name_prefix}-runtime-boundary"
-  runtime_role_arn_pattern = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-*"
-  runtime_oidc_arn_pattern = "arn:aws:iam::${var.authorized_account_id}:oidc-provider/oidc.eks.${var.aws_region}.amazonaws.com/id/*"
-  runtime_managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
-    "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-    "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy",
-  ]
+  runtime_boundary_arn = "arn:aws:iam::${var.authorized_account_id}:policy/${local.name_prefix}-runtime-boundary"
+  runtime_role_arn_map = {
+    eks_cluster                    = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-eks-cluster"
+    eks_nodes                      = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-eks-nodes"
+    alb_controller                 = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-alb-controller"
+    api_gateway                    = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-api-gateway"
+    postgres                       = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-postgres"
+    submission_worker              = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-submission-worker"
+    submission_listener            = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-submission-listener"
+    ledger_gateway_nsg             = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-ledger-gateway-nsg"
+    ledger_gateway_citizen_science = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-ledger-gateway-citizen-science"
+    ebs_csi                        = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-ebs-csi"
+  }
   runtime_passed_to_services = [
     "ec2.amazonaws.com",
     "eks.amazonaws.com",
@@ -176,77 +179,15 @@ locals {
   ]
   runtime_iam_statements = [
     {
-      Sid      = "CreateOnlyBoundedRuntimeRoles"
-      Effect   = "Allow"
-      Action   = ["iam:CreateRole"]
-      Resource = local.runtime_role_arn_pattern
-      Condition = {
-        StringEquals = {
-          "iam:PermissionsBoundary"    = local.runtime_boundary_arn
-          "aws:RequestTag/Project"     = "OSC-IS"
-          "aws:RequestTag/Purpose"     = "USRSE26-Interactive-Demo"
-          "aws:RequestTag/Environment" = "ephemeral"
-          "aws:RequestTag/RunId"       = var.run_id
-        }
-      }
-    },
-    {
-      Sid    = "ManageOnlyRunPrefixedRoles"
-      Effect = "Allow"
-      Action = [
-        "iam:DeleteRole",
-        "iam:DeleteRolePolicy",
-        "iam:GetRole",
-        "iam:GetRolePolicy",
-        "iam:ListAttachedRolePolicies",
-        "iam:ListInstanceProfilesForRole",
-        "iam:ListRolePolicies",
-        "iam:PutRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:UpdateAssumeRolePolicy",
-      ]
-      Resource = local.runtime_role_arn_pattern
-    },
-    {
-      Sid      = "AttachOnlyApprovedManagedPolicies"
-      Effect   = "Allow"
-      Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
-      Resource = local.runtime_role_arn_pattern
-      Condition = {
-        ArnEquals = {
-          "iam:PolicyARN" = local.runtime_managed_policy_arns
-        }
-      }
-    },
-    {
-      Sid      = "ReadOnlyApprovedManagedPolicies"
-      Effect   = "Allow"
-      Action   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
-      Resource = local.runtime_managed_policy_arns
-    },
-    {
       Sid      = "PassOnlyRunRolesToApprovedServices"
       Effect   = "Allow"
       Action   = ["iam:PassRole"]
-      Resource = local.runtime_role_arn_pattern
+      Resource = values(local.runtime_role_arn_map)
       Condition = {
         StringEquals = {
           "iam:PassedToService" = local.runtime_passed_to_services
         }
       }
-    },
-    {
-      Sid      = "ManageOnlyRegionalEksOidcProvider"
-      Effect   = "Allow"
-      Action   = ["iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider", "iam:GetOpenIDConnectProvider", "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider"]
-      Resource = local.runtime_oidc_arn_pattern
-    },
-    {
-      Sid      = "ListOidcProviders"
-      Effect   = "Allow"
-      Action   = ["iam:ListOpenIDConnectProviders"]
-      Resource = "*"
     },
     {
       Sid      = "CreateOnlyRequiredServiceLinkedRoles"
@@ -265,33 +206,220 @@ locals {
       }
     },
   ]
+  runtime_service_statements = [
+    {
+      Sid    = "ReadOnlyRuntimeDiscovery"
+      Effect = "Allow"
+      Action = [
+        "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
+        "budgets:ViewBudget", "cloudfront:ListVpcOrigins",
+        "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
+        "ec2:GetCoipPoolUsage", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
+        "eks:List*", "elasticloadbalancing:Describe*",
+        "logs:DescribeLogGroups", "mq:List*", "resourcegroupstaggingapi:GetResources",
+        "iam:GetServerCertificate", "iam:ListServerCertificates", "shield:GetSubscriptionState", "shield:ListProtections", "sts:GetCallerIdentity",
+        "waf-regional:Get*", "waf-regional:List*", "wafv2:Get*", "wafv2:List*",
+      ]
+      Resource = "*"
+    },
+    {
+      Sid    = "ExactRunS3Buckets"
+      Effect = "Allow"
+      Action = ["s3:GetBucketVersioning", "s3:ListBucket"]
+      Resource = [
+        "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}",
+        "arn:aws:s3:::${local.name_prefix}-edge-${var.authorized_account_id}",
+      ]
+    },
+    {
+      Sid    = "ExactRunS3Objects"
+      Effect = "Allow"
+      Action = ["s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+      Resource = [
+        "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}/artifacts/${var.run_id}/*",
+        "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}/evidence/${var.run_id}/*",
+        "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}/runtime-state/${var.run_id}/*",
+        "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}/security-logs/${var.run_id}/*",
+        "arn:aws:s3:::${local.name_prefix}-edge-${var.authorized_account_id}/*",
+        "arn:aws:s3:::${local.artifact_manifest_bucket}/${local.artifact_manifest_prefix}/*",
+      ]
+    },
+    {
+      Sid      = "ExactRunSecrets"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"]
+      Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.authorized_account_id}:secret:${local.name_prefix}/*"
+    },
+    {
+      Sid      = "CreateNamedRunSecrets"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:CreateSecret"]
+      Resource = "*"
+      Condition = {
+        StringLike = { "secretsmanager:Name" = "${local.name_prefix}/*" }
+        StringEquals = {
+          "aws:RequestTag/Project" = "OSC-IS"
+          "aws:RequestTag/RunId"   = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "ExactRunEcrRepositories"
+      Effect   = "Allow"
+      Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:CompleteLayerUpload", "ecr:CreateRepository", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:DescribeImages", "ecr:DescribeRepositories", "ecr:GetDownloadUrlForLayer", "ecr:GetLifecyclePolicy", "ecr:GetRepositoryPolicy", "ecr:InitiateLayerUpload", "ecr:ListImages", "ecr:ListTagsForResource", "ecr:PutImage", "ecr:PutLifecyclePolicy", "ecr:SetRepositoryPolicy", "ecr:TagResource", "ecr:UntagResource", "ecr:UploadLayerPart"]
+      Resource = "arn:aws:ecr:${var.aws_region}:${var.authorized_account_id}:repository/${local.name_prefix}/*"
+    },
+    {
+      Sid    = "ExactRunDynamoTables"
+      Effect = "Allow"
+      Action = ["dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
+      Resource = [
+        "arn:aws:dynamodb:${var.aws_region}:${var.authorized_account_id}:table/${local.name_prefix}-lifecycle",
+        "arn:aws:dynamodb:${var.aws_region}:${var.authorized_account_id}:table/${local.name_prefix}-terraform-locks",
+      ]
+    },
+    {
+      Sid      = "ExactRunCloudFormation"
+      Effect   = "Allow"
+      Action   = ["cloudformation:*Stack*", "cloudformation:GetTemplate", "cloudformation:GetTemplateSummary", "cloudformation:ListStackResources", "cloudformation:TagResource", "cloudformation:UntagResource"]
+      Resource = "arn:aws:cloudformation:${var.aws_region}:${var.authorized_account_id}:stack/${local.name_prefix}-*/*"
+    },
+    {
+      Sid    = "ExactRunEks"
+      Effect = "Allow"
+      Action = ["eks:Associate*", "eks:Create*", "eks:Delete*", "eks:Describe*", "eks:Disassociate*", "eks:TagResource", "eks:UntagResource", "eks:Update*"]
+      Resource = [
+        "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:cluster/${local.name_prefix}-*",
+        "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:nodegroup/${local.name_prefix}-*/*/*",
+        "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:addon/${local.name_prefix}-*/*/*",
+        "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:podidentityassociation/${local.name_prefix}-*/*",
+      ]
+    },
+    {
+      Sid    = "ExactRunMq"
+      Effect = "Allow"
+      Action = ["mq:Create*", "mq:Delete*", "mq:Describe*", "mq:RebootBroker", "mq:TagResource", "mq:UntagResource", "mq:Update*"]
+      Resource = [
+        "arn:aws:mq:${var.aws_region}:${var.authorized_account_id}:broker:${local.name_prefix}-*:*",
+        "arn:aws:mq:${var.aws_region}:${var.authorized_account_id}:configuration:${local.name_prefix}-*:*",
+      ]
+    },
+    {
+      Sid      = "CreateTaggedNetworkResources"
+      Effect   = "Allow"
+      Action   = ["ec2:AllocateAddress", "ec2:Create*", "elasticloadbalancing:Create*"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:RequestTag/Project" = "OSC-IS"
+          "aws:RequestTag/RunId"   = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "ManageTaggedNetworkResources"
+      Effect   = "Allow"
+      Action   = ["ec2:Associate*", "ec2:Attach*", "ec2:Authorize*", "ec2:CreateRoute", "ec2:CreateTags", "ec2:Delete*", "ec2:Detach*", "ec2:Disassociate*", "ec2:Modify*", "ec2:ReleaseAddress", "ec2:Revoke*", "elasticloadbalancing:AddTags", "elasticloadbalancing:CreateListener", "elasticloadbalancing:CreateRule", "elasticloadbalancing:Delete*", "elasticloadbalancing:DeregisterTargets", "elasticloadbalancing:Modify*", "elasticloadbalancing:RegisterTargets", "elasticloadbalancing:RemoveTags", "elasticloadbalancing:Set*"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:ResourceTag/Project" = "OSC-IS"
+          "aws:ResourceTag/RunId"   = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "ExactRunLogs"
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy"]
+      Resource = "arn:aws:logs:${var.aws_region}:${var.authorized_account_id}:log-group:/aws/eks/${local.name_prefix}-*"
+    },
+    {
+      Sid    = "ExactControlOperations"
+      Effect = "Allow"
+      Action = ["codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
+      Resource = [
+        "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle",
+        "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-cleanup",
+        "arn:aws:sns:${var.aws_region}:${var.authorized_account_id}:${local.name_prefix}-notifications",
+        "arn:aws:states:${var.aws_region}:${var.authorized_account_id}:stateMachine:${local.name_prefix}-stop",
+      ]
+    },
+    {
+      Sid      = "CreateTaggedCloudFrontRuntimeOrigin"
+      Effect   = "Allow"
+      Action   = ["cloudfront:CreateVpcOrigin"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:RequestTag/RunId" = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "DeleteTaggedCloudFrontRuntimeOrigin"
+      Effect   = "Allow"
+      Action   = ["cloudfront:DeleteVpcOrigin"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:ResourceTag/RunId" = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "ReadTaggedCloudFrontResources"
+      Effect   = "Allow"
+      Action   = ["cloudfront:GetDistribution", "cloudfront:GetDistributionConfig", "cloudfront:GetVpcOrigin"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:ResourceTag/RunId" = var.run_id
+        }
+      }
+    },
+    {
+      Sid      = "UpdateTaggedControlDistribution"
+      Effect   = "Allow"
+      Action   = ["cloudfront:UpdateDistribution"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "aws:ResourceTag/RunId" = var.run_id
+        }
+      }
+    },
+  ]
+  runtime_workload_boundary_statements = [
+    {
+      Sid    = "EksNodeCniBootstrap"
+      Effect = "Allow"
+      Action = [
+        "ec2:AssignIpv6Addresses", "ec2:AssignPrivateIpAddresses", "ec2:AttachNetworkInterface",
+        "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface",
+        "ec2:ModifyNetworkInterfaceAttribute", "ec2:UnassignIpv6Addresses", "ec2:UnassignPrivateIpAddresses",
+      ]
+      Resource = "*"
+    },
+    {
+      Sid      = "EksPodIdentityAgent"
+      Effect   = "Allow"
+      Action   = ["eks-auth:AssumeRoleForPodIdentity"]
+      Resource = "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:cluster/${local.name_prefix}-*"
+    },
+  ]
   lifecycle_boundary_policy = {
-    Version = "2012-10-17"
-    Statement = concat([
-      {
-        Sid    = "RuntimeAndControlServices"
-        Effect = "Allow"
-        Action = [
-          "autoscaling:*", "budgets:ViewBudget", "cloudformation:*", "cloudfront:*",
-          "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "codebuild:UpdateProject",
-          "dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
-          "ec2:*", "ecr:*", "eks:*", "elasticloadbalancing:*",
-          "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
-          "mq:*", "resourcegroupstaggingapi:GetResources", "s3:*", "secretsmanager:*", "sns:Publish",
-          "states:StartExecution", "sts:GetCallerIdentity",
-        ]
-        Resource = "*"
-      },
-    ], local.runtime_iam_statements)
+    Version   = "2012-10-17"
+    Statement = concat(local.runtime_service_statements, local.runtime_workload_boundary_statements, local.runtime_iam_statements)
   }
 }
 
 resource "aws_iam_policy" "lifecycle_boundary" {
-  #checkov:skip=CKV_AWS_286: The boundary permits credential APIs only for the disposable runtime; exact role policy and run ownership checks are narrower.
-  #checkov:skip=CKV_AWS_287: The boundary is the maximum runtime service surface; exact role policy and run ownership checks are narrower.
-  #checkov:skip=CKV_AWS_288: The boundary permits disposable runtime data APIs; exact role policy and run ownership checks are narrower.
-  #checkov:skip=CKV_AWS_290: Service wildcards exclude IAM and are intersected with the narrower lifecycle role policy.
-  #checkov:skip=CKV_AWS_355: Resource=* is limited to non-IAM runtime services and APIs that do not support resource scoping.
+  #checkov:skip=CKV_AWS_286: Credential reads are limited to exact run-scoped secret ARNs; no IAM credential creation is allowed.
+  #checkov:skip=CKV_AWS_287: IAM is limited to exact-role PassRole and four allowlisted service-linked roles; role and policy mutation are absent.
+  #checkov:skip=CKV_AWS_288: Runtime data APIs are restricted to exact run/control ARNs or mandatory run tags.
+  #checkov:skip=CKV_AWS_290: Wildcard action patterns are limited to named run resources, tag-conditioned infrastructure, and read-only discovery.
+  #checkov:skip=CKV_AWS_355: Resource=* remains only for read-only discovery, tag-conditioned operations, ECR authorization, and EKS CNI bootstrap.
   name        = "${local.name_prefix}-runtime-boundary"
   description = "Immutable permission ceiling for the lifecycle runner and every disposable runtime role"
   policy      = jsonencode(local.lifecycle_boundary_policy)
@@ -300,106 +428,17 @@ resource "aws_iam_policy" "lifecycle_boundary" {
 resource "aws_iam_role" "lifecycle" {
   name                 = "${local.name_prefix}-lifecycle"
   assume_role_policy   = data.aws_iam_policy_document.codebuild_assume.json
-  permissions_boundary = aws_iam_policy.lifecycle_boundary.arn
+  permissions_boundary = local.runtime_boundary_arn
+
+  depends_on = [aws_iam_policy.lifecycle_boundary]
 }
 
 resource "aws_iam_role_policy" "lifecycle" {
   name = "bounded-demo-lifecycle"
   role = aws_iam_role.lifecycle.id
   policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = concat([
-      {
-        Sid      = "AccountGuard"
-        Effect   = "Allow"
-        Action   = ["sts:GetCallerIdentity"]
-        Resource = "*"
-      },
-      {
-        Sid      = "ControlState"
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
-        Resource = aws_dynamodb_table.lifecycle.arn
-      },
-      {
-        Sid      = "ExactControlObjects"
-        Effect   = "Allow"
-        Action   = ["s3:GetBucketVersioning", "s3:ListBucket"]
-        Resource = [aws_s3_bucket.control.arn, aws_s3_bucket.edge.arn]
-      },
-      {
-        Sid      = "VersionedReleaseArtifacts"
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-        Resource = "arn:aws:s3:::${local.artifact_manifest_bucket}/${local.artifact_manifest_prefix}/*"
-      },
-      {
-        Sid      = "TerraformStateLock"
-        Effect   = "Allow"
-        Action   = ["dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
-        Resource = aws_dynamodb_table.terraform_locks.arn
-      },
-      {
-        Sid    = "RunScopedObjects"
-        Effect = "Allow"
-        Action = ["s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
-        Resource = [
-          "${aws_s3_bucket.control.arn}/artifacts/${var.run_id}/*",
-          "${aws_s3_bucket.control.arn}/evidence/${var.run_id}/*",
-          "${aws_s3_bucket.control.arn}/runtime-state/${var.run_id}/*",
-          "${aws_s3_bucket.control.arn}/security-logs/${var.run_id}/*",
-          "${aws_s3_bucket.edge.arn}/*"
-        ]
-      },
-      {
-        Sid      = "NotificationsAndLifecycle"
-        Effect   = "Allow"
-        Action   = ["sns:Publish", "states:StartExecution"]
-        Resource = [aws_sns_topic.lifecycle.arn, aws_sfn_state_machine.stop.arn]
-      },
-      {
-        Sid      = "UpdateOwnNetworkPlacement"
-        Effect   = "Allow"
-        Action   = ["codebuild:UpdateProject"]
-        Resource = "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle"
-      },
-      {
-        Sid      = "ObserveSafetySignals"
-        Effect   = "Allow"
-        Action   = ["budgets:ViewBudget", "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "resourcegroupstaggingapi:GetResources"]
-        Resource = "*"
-      },
-      {
-        Sid      = "CloudFrontRuntimeOrigin"
-        Effect   = "Allow"
-        Action   = ["cloudfront:CreateVpcOrigin", "cloudfront:DeleteVpcOrigin", "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig", "cloudfront:GetVpcOrigin", "cloudfront:ListVpcOrigins", "cloudfront:UpdateDistribution"]
-        Resource = "*"
-      },
-      {
-        Sid      = "PullExactLifecycleImage"
-        Effect   = "Allow"
-        Action   = ["ecr:GetAuthorizationToken"]
-        Resource = "*"
-      },
-      {
-        Sid      = "PullLifecycleImageLayers"
-        Effect   = "Allow"
-        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-        Resource = "arn:aws:ecr:us-west-2:${var.authorized_account_id}:repository/*"
-      },
-      {
-        Sid    = "TaggedRuntimeProvisioning"
-        Effect = "Allow"
-        Action = [
-          "autoscaling:*", "cloudformation:*", "ec2:*", "ecr:*", "eks:*",
-          "elasticloadbalancing:*",
-          "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
-          "mq:*", "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret",
-          "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"
-        ]
-        Resource = "*"
-      }
-    ], local.runtime_iam_statements)
+    Version   = "2012-10-17"
+    Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)
   })
 }
 

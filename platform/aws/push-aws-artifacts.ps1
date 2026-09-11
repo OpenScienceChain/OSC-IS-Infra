@@ -27,11 +27,21 @@ if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]:
     throw 'ExpiresAt must be in the future and no more than 72 hours from now.'
 }
 
-if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Credential-free artifact manifest is absent.' }
+if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Isolated-build artifact manifest is absent.' }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.runId -ne $RunId -or -not $manifest.credentialFreeBuild) { throw 'Artifact manifest provenance check failed.' }
+if ($manifest.runId -ne $RunId -or
+    $manifest.buildCredentialIsolation.status -ne 'ENFORCED_COMMON_AWS_SOURCES_ABSENT' -or
+    -not $manifest.buildCredentialIsolation.commonAwsCredentialSourcesAbsent) {
+    throw 'Artifact manifest build-isolation provenance check failed.'
+}
+$credentialEvidencePath = [string]$manifest.buildCredentialIsolation.evidenceFile
+if (-not (Test-Path -LiteralPath $credentialEvidencePath)) { throw 'Build credential-isolation evidence is absent.' }
+$credentialEvidenceSha = (Get-FileHash -LiteralPath $credentialEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($credentialEvidenceSha -ne $manifest.buildCredentialIsolation.evidenceSha256) {
+    throw 'Build credential-isolation evidence checksum mismatch.'
+}
 if ([DateTimeOffset]::Parse($manifest.expiresAt).ToString('o') -ne $ExpiresAt.ToString('o')) {
-    throw 'ExpiresAt does not match the credential-free artifact manifest.'
+    throw 'ExpiresAt does not match the isolated-build artifact manifest.'
 }
 
 foreach ($image in $manifest.images.PSObject.Properties) {
@@ -175,12 +185,37 @@ try {
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($webPut.VersionId)) {
         throw 'Versioned WebApp bundle upload failed.'
     }
+    $credentialEvidenceKey = "$releasePrefix/build-credential-isolation.json"
+    python platform/aws/aws_guard.py | Out-Null
+    $credentialEvidencePut = aws s3api put-object `
+        --bucket $ReleaseBucket `
+        --key $credentialEvidenceKey `
+        --body $credentialEvidencePath `
+        --content-type application/json `
+        --server-side-encryption AES256 `
+        --checksum-algorithm SHA256 `
+        --output json `
+        --profile default `
+        --region us-west-2 `
+        --no-cli-pager | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($credentialEvidencePut.VersionId)) {
+        throw 'Versioned build credential-isolation evidence upload failed.'
+    }
     $releaseManifest = [ordered]@{
         schemaVersion = $manifest.schemaVersion
         runId = $manifest.runId
         expiresAt = $manifest.expiresAt
         createdAt = $manifest.createdAt
-        credentialFreeBuild = $manifest.credentialFreeBuild
+        buildCredentialIsolation = [ordered]@{
+            status = $manifest.buildCredentialIsolation.status
+            commonAwsCredentialSourcesAbsent = $manifest.buildCredentialIsolation.commonAwsCredentialSourcesAbsent
+            evidence = [ordered]@{
+                s3Uri = "s3://$ReleaseBucket/$credentialEvidenceKey"
+                versionId = $credentialEvidencePut.VersionId
+                sha256 = $credentialEvidenceSha
+            }
+            limitation = $manifest.buildCredentialIsolation.limitation
+        }
         webApp = [ordered]@{
             sourceRevision = $manifest.webApp.sourceRevision
             s3Uri = "s3://$ReleaseBucket/$($manifest.webApp.objectKey)"
@@ -231,7 +266,7 @@ try {
         }
     }
     [IO.File]::WriteAllText($deploymentPath, ($report | ConvertTo-Json -Depth 5) + [Environment]::NewLine)
-    Write-Host 'All ECR digests and versioned S3 release artifacts match the credential-free build manifest.'
+    Write-Host 'All ECR digests and versioned S3 release artifacts match the isolated-build manifest.'
 }
 finally {
     docker logout $registry | Out-Null

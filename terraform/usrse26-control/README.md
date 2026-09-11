@@ -4,6 +4,9 @@ This root creates the low-cost resources that survive disposable EKS runtime
 teardown: private S3 status content, CloudFront, WAF, ACM validation, the exact
 Route 53 record, lifecycle state, one-time schedules, Step Functions,
 CodeBuild, notifications, evidence storage, and the $200 budget ceiling.
+It also pre-creates the exact EKS cluster, node, controller, storage, and
+workload roles. The disposable runtime receives their ARNs and has no IAM role
+or trust-policy mutation surface.
 
 The application runtime remains in `../usrse26-eks`. The lifecycle runner must
 attach the internal ALB as a CloudFront VPC origin only after the public canary

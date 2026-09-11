@@ -9,6 +9,7 @@
       "preconditions": [
         "verify STS account and AWS_DEFAULT_REGION",
         "verify artifact manifest SHA-256",
+        "verify checksummed ENFORCED_COMMON_AWS_SOURCES_ABSENT build-isolation evidence",
         "verify the manifest contains an immutable WebApp bundle and all required OCI image digests",
         "reject mutable image references",
         "reject projected spend above USD 200",
@@ -36,7 +37,7 @@
     },
     "MONITOR": {
       "steps": [
-        "record browser canary and service health",
+        "record browser canary and service health through private in-cluster control endpoints",
         "record queue depth, queue age, p50 and p95 confirmation time",
         "record pod readiness, ALB health, WAF actions, and Fabric health",
         "notify at USD 75 and USD 125",
@@ -52,7 +53,7 @@
     },
     "EXPORT": {
       "steps": [
-        "export only the approved data dictionary",
+        "export only the approved data dictionary through private in-cluster control endpoints",
         "HMAC-hash session identifiers",
         "exclude file bytes, filenames, names, email addresses, secrets, and raw tokens",
         "write checksums and a resource inventory"
@@ -101,6 +102,7 @@
     "collection of file bytes or original filenames"
   ],
   "requiredArtifactInterfaces": {
+    "buildCredentialIsolation": ["status", "commonAwsCredentialSourcesAbsent", "evidence.sha256", "limitation"],
     "webApp": ["sourceRevision", "s3Uri", "sha256"],
     "ociImages": [
       "api-gateway",

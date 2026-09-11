@@ -44,11 +44,15 @@ output "ecr_repositories" {
 
 output "secret_arns" {
   value = {
-    application    = aws_secretsmanager_secret.application.arn
-    postgres       = aws_secretsmanager_secret.postgres.arn
-    rabbitmq       = aws_secretsmanager_secret.rabbitmq.arn
-    fabric_nsg     = aws_secretsmanager_secret.fabric_nsg.arn
-    fabric_citizen = aws_secretsmanager_secret.fabric_citizen_science.arn
+    api_auth            = aws_secretsmanager_secret.api_auth.arn
+    listener_auth       = aws_secretsmanager_secret.listener_auth.arn
+    demo_auth           = aws_secretsmanager_secret.demo_auth.arn
+    ledger_nsg_auth     = aws_secretsmanager_secret.ledger_nsg_auth.arn
+    ledger_citizen_auth = aws_secretsmanager_secret.ledger_citizen_science_auth.arn
+    postgres            = aws_secretsmanager_secret.postgres.arn
+    rabbitmq            = aws_secretsmanager_secret.rabbitmq.arn
+    fabric_nsg          = aws_secretsmanager_secret.fabric_nsg.arn
+    fabric_citizen      = aws_secretsmanager_secret.fabric_citizen_science.arn
   }
 }
 
@@ -62,7 +66,7 @@ output "required_tags" {
 }
 
 output "alb_controller_role_arn" {
-  value = aws_iam_role.alb_controller.arn
+  value = var.runtime_role_arns.alb_controller
 }
 
 output "alb_controller_image" {

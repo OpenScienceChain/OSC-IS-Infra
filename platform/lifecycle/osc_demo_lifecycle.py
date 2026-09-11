@@ -146,7 +146,13 @@ class Lifecycle:
         if not SHA_RE.fullmatch(expected) or actual != expected:
             raise RuntimeError("Artifact manifest SHA-256 mismatch")
         manifest = json.loads(path.read_text(encoding="utf-8"))
-        if manifest.get("runId") != self.run_id or manifest.get("credentialFreeBuild") is not True:
+        isolation = manifest.get("buildCredentialIsolation", {})
+        if (
+            manifest.get("runId") != self.run_id
+            or isolation.get("status") != "ENFORCED_COMMON_AWS_SOURCES_ABSENT"
+            or isolation.get("commonAwsCredentialSourcesAbsent") is not True
+            or not SHA_RE.fullmatch(isolation.get("evidence", {}).get("sha256", ""))
+        ):
             raise RuntimeError("Artifact manifest provenance does not match the run")
         images = manifest.get("images", {})
         if set(images) != REQUIRED_IMAGES:
@@ -316,7 +322,7 @@ class Lifecycle:
                 "admin_cidr": required("ADMIN_CIDR"),
                 "runner_public_cidr": f"{public_ip}/32",
                 "alb_controller_image": manifest["externalImages"]["aws-load-balancer-controller"],
-                "permissions_boundary_arn": required("RUNTIME_PERMISSIONS_BOUNDARY_ARN"),
+                "runtime_role_arns": json.loads(required("RUNTIME_ROLE_ARNS_JSON")),
             }
             variables.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
             aws(

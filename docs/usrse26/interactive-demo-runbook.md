@@ -35,8 +35,8 @@ kubectl kustomize platform/gitops/aws
 Run the existing clean-checkout and complete Kind E2E scripts only after the
 release owner places all sibling repositories at the approved revisions.
 
-Prepare the credential-free artifact set only after those revisions are clean
-and frozen. The controller reference must be the reviewed digest, never its
+Prepare the isolated artifact set only after those revisions are clean and
+frozen. The controller reference must be the reviewed digest, never its
 readable tag:
 
 ```powershell
@@ -52,9 +52,15 @@ static archive. It also builds the lifecycle runner from commit-pinned Fabric,
 Fabric CA, Terraform, and Kubernetes sources against a content-addressed Amazon
 Linux repository snapshot;
 the build stops unless every source repository is clean and every image has zero
-HIGH or CRITICAL findings. No AWS credential is present during any build. After
-reviewing the scan, SBOM, source revisions, and estimated expiry, publish the
-exact artifacts to an existing versioned release bucket:
+HIGH or CRITICAL findings. Before project-owned preparation or build code runs,
+a dependency-free preflight rejects common AWS environment variables, local
+AWS profiles and caches, CI OIDC variables, cloud SDK credential files, and
+Kubernetes service-account tokens. Its machine-readable result and checksum
+are bound into the artifact manifest. This is evidence of enforced common
+credential-source isolation, not proof that an unknown source cannot exist;
+the build job must also have no secrets and no `id-token` permission. After
+reviewing the scan, SBOM, source revisions, isolation evidence, and estimated
+expiry, publish the exact artifacts to an existing versioned release bucket:
 
 ```powershell
 ./platform/aws/push-aws-artifacts.ps1 `

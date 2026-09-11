@@ -192,6 +192,7 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("preserve the static edge and control plane", runner["actions"]["DESTROY"]["steps"])
         self.assertEqual(runner["stateOrder"], ["SCHEDULED", "PREPARING", "OPEN", "READ_ONLY", "CLOSED"])
         self.assertEqual(runner["requiredArtifactInterfaces"]["webApp"], ["sourceRevision", "s3Uri", "sha256"])
+        self.assertIn("evidence.sha256", runner["requiredArtifactInterfaces"]["buildCredentialIsolation"])
 
     def test_waf_redacts_all_sensitive_request_headers(self) -> None:
         edge = read("terraform/usrse26-control/edge.tf")
@@ -201,13 +202,35 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("def private_control_json", runner)
         self.assertNotIn('headers={"X-Demo-Control-Key"', runner)
 
-    def test_every_runtime_role_uses_the_exact_boundary(self) -> None:
+    def test_runtime_roles_are_control_owned_and_immutable_to_runner(self) -> None:
         iam = read("terraform/usrse26-eks/iam.tf")
-        self.assertEqual(iam.count("permissions_boundary = var.permissions_boundary_arn"), 5)
+        self.assertNotIn('resource "aws_iam_role"', iam)
+        self.assertNotIn('resource "aws_iam_role_policy"', iam)
+        self.assertNotIn('aws_iam_openid_connect_provider', iam)
         control = read("terraform/usrse26-control/lifecycle.tf")
-        self.assertIn('"iam:PermissionsBoundary"', control)
-        self.assertIn("local.runtime_role_arn_pattern", control)
-        self.assertNotIn('"iam:CreateRole", "iam:CreateServiceLinkedRole"', control)
+        roles = read("terraform/usrse26-control/runtime-roles.tf")
+        self.assertIn("permissions_boundary = local.runtime_boundary_arn", roles)
+        self.assertIn("local.runtime_role_arn_map", control)
+        self.assertIn("Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)", control)
+        self.assertIn("runtime_workload_boundary_statements", control)
+        for forbidden in ("iam:CreateRole", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"):
+            self.assertNotIn(forbidden, control)
+
+    def test_aws_secrets_are_split_by_workload(self) -> None:
+        secrets = read("terraform/usrse26-eks/secrets.tf")
+        iam = read("terraform/usrse26-control/runtime-roles.tf")
+        manifests = read("platform/gitops/aws/namespace-and-secrets.yaml")
+        renderer = read("platform/scripts/render_aws_gitops.py")
+        self.assertNotIn('name                    = "${local.name_prefix}/application"', secrets)
+        self.assertNotIn("__APP_SECRET_NAME__", manifests + renderer)
+        for path in (
+            "/api/auth", "/submission-listener/auth", "/demo/auth",
+            "/ledger/nsg/auth", "/ledger/citizen-science/auth",
+        ):
+            self.assertIn(path, secrets)
+        self.assertIn("runtime_workload_secret_access", iam)
+        self.assertIn("local.runtime_secret_arn_patterns.ledger_nsg_auth", iam)
+        self.assertIn("local.runtime_secret_arn_patterns.ledger_citizen_auth", iam)
 
     def test_codebuild_has_no_install_or_source_build_step(self) -> None:
         lifecycle = read("terraform/usrse26-control/lifecycle.tf")
@@ -304,8 +327,13 @@ class RenderingAndPolicyTests(unittest.TestCase):
             ("aws_budgets_budget", {}),
             ("aws_cloudfront_distribution", {"enabled": True, "web_acl_id": "arn:waf"}),
             ("aws_cloudwatch_metric_alarm", {}),
-            ("aws_codebuild_project", {"environment": [{"image": f"runner@sha256:{digest}"}]}),
+            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-lifecycle", "environment": [{"image": f"runner@sha256:{digest}"}]}),
+            ("aws_codebuild_project", {"name": "osc-usrse26-usrse26demo-cleanup", "environment": [{"image": f"runner@sha256:{digest}"}]}),
             ("aws_dynamodb_table", {}),
+            ("aws_iam_policy", {
+                "name": "osc-usrse26-usrse26demo-runtime-boundary",
+                "policy": json.dumps({"Statement": [{"Action": "iam:PassRole"}]}),
+            }),
             ("aws_scheduler_schedule", {}),
             ("aws_sfn_state_machine", {}),
             ("aws_wafv2_web_acl", {}),
@@ -314,6 +342,24 @@ class RenderingAndPolicyTests(unittest.TestCase):
         for index, (resource_type, values) in enumerate(required):
             after = {"tags_all": tags, **values}
             changes.append({"address": f"test.{index}", "type": resource_type, "change": {"actions": ["create"], "after": after}})
+        boundary = "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26demo-runtime-boundary"
+        for suffix in sorted({
+            "eks-cluster", "eks-nodes", "alb-controller", "api-gateway", "postgres",
+            "submission-worker", "submission-listener", "ledger-gateway-nsg",
+            "ledger-gateway-citizen-science", "ebs-csi", "lifecycle",
+        }):
+            changes.append({
+                "address": f"aws_iam_role.{suffix}",
+                "type": "aws_iam_role",
+                "change": {
+                    "actions": ["create"],
+                    "after": {
+                        "name": f"osc-usrse26-usrse26demo-{suffix}",
+                        "permissions_boundary": boundary,
+                        "tags_all": tags,
+                    },
+                },
+            })
         plan = {"resource_changes": changes, "planned_values": {"outputs": {"public_url": {"value": "https://demo.osc-staging.org"}}}}
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "plan.json"
@@ -325,6 +371,17 @@ class RenderingAndPolicyTests(unittest.TestCase):
             path.write_text(json.dumps(plan), encoding="utf-8")
             rejected = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(rejected.returncode, 0)
+            plan["resource_changes"][0]["change"]["actions"] = ["create"]
+            boundary_change = next(
+                change for change in plan["resource_changes"]
+                if change["type"] == "aws_iam_policy"
+            )
+            boundary_change["change"]["after"]["policy"] = json.dumps({
+                "Statement": [{"Action": "iam:CreateRole"}]
+            })
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            escalation = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(escalation.returncode, 0)
 
     def test_controller_source_is_provenance_bound(self) -> None:
         provenance = json.loads(read("platform/gitops/aws/aws-load-balancer-controller-v3.3.0.provenance.json"))

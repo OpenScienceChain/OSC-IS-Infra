@@ -7,17 +7,19 @@ and outputs under ignored `platform/.generated/aws/<run-id>/` storage.
 The required order is:
 
 ```powershell
-./platform/aws/prepare-run.ps1 -RunId usrse26demo -AdminCidr 203.0.113.10/32 -Hours 72 -AlbControllerImage 'IMAGE@sha256:REVIEWED'
+terraform -chdir=terraform/usrse26-control output -json runtime_role_arns > platform/.generated/runtime-role-arns.json
+./platform/aws/prepare-run.ps1 -RunId usrse26demo -AdminCidr 203.0.113.10/32 -Hours 72 -AlbControllerImage 'IMAGE@sha256:REVIEWED' -RuntimeRoleArnsPath platform/.generated/runtime-role-arns.json
 ./platform/aws/apply-run.ps1 -RunId usrse26demo
 # Deploy and validate only prebuilt, scanned artifacts.
 ./platform/aws/destroy-run.ps1 -RunId usrse26demo
 ```
 
-`prepare-run.ps1` captures the baseline, applies the $200 ceiling, creates a
-saved Terraform plan, and rejects destructive, public, mutable, untagged, or
-out-of-scope resources. `apply-run.ps1` only applies that reviewed plan before
-its configured expiry. `destroy-run.ps1` destroys runtime and fails unless the
-final inventory has exact baseline parity.
+`prepare-run.ps1` captures the baseline, applies the $200 ceiling, validates
+the exact control-owned role ARNs, creates a saved Terraform plan, and rejects
+destructive, public, mutable, untagged, or out-of-scope resources.
+`apply-run.ps1` only applies that reviewed plan before its configured expiry.
+`destroy-run.ps1` destroys runtime and fails unless the final inventory has
+exact baseline parity.
 
 The persistent status edge and automated lifecycle use the separate guarded
 `prepare-demo-control.ps1`, `apply-demo-control.ps1`, and

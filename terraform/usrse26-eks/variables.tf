@@ -131,13 +131,27 @@ variable "alb_controller_image" {
   }
 }
 
-variable "permissions_boundary_arn" {
-  description = "Exact control-owned permissions boundary required on every disposable runtime IAM role."
-  type        = string
+variable "runtime_role_arns" {
+  description = "Exact control-owned role ARNs; runtime Terraform may associate or pass them but cannot create or mutate IAM roles."
+  type = object({
+    eks_cluster                    = string
+    eks_nodes                      = string
+    alb_controller                 = string
+    api_gateway                    = string
+    postgres                       = string
+    submission_worker              = string
+    submission_listener            = string
+    ledger_gateway_nsg             = string
+    ledger_gateway_citizen_science = string
+    ebs_csi                        = string
+  })
 
   validation {
-    condition     = can(regex("^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$", var.permissions_boundary_arn))
-    error_message = "permissions_boundary_arn must be the exact run-scoped boundary in account 269624229733."
+    condition = alltrue([
+      for key, arn in var.runtime_role_arns :
+      arn == "arn:aws:iam::269624229733:role/osc-usrse26-${var.run_id}-${replace(key, "_", "-")}"
+    ])
+    error_message = "Every runtime role must be the exact run-scoped role for its fixed workload key in account 269624229733."
   }
 }
 

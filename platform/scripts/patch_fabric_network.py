@@ -125,7 +125,7 @@ def main() -> None:
         regex_replace_required(
             prereqs,
             r"  \$\{CONTAINER_CLI\} version > /dev/null.*?  echo \"Fabric image versions: Peer \(\$FABRIC_IMAGE_VERSION\), CA \(\$FABRIC_CA_IMAGE_VERSION\)\"\n  if \[ -z \"\$FABRIC_IMAGE_VERSION\" \] \|\| \[ -z \"\$FABRIC_CA_IMAGE_VERSION\" \]; then\n    echo \"It seems some of the specified Fabric images are not available\.\"\n    exit 1\n  fi\n",
-            """  # The credential-free preparation phase already verifies immutable EKS image digests.
+            """  # The isolated preparation phase already verifies immutable EKS image digests.
   # The lifecycle runner intentionally has no Docker daemon and performs no source builds.
   FABRIC_IMAGE_VERSION=${FABRIC_VERSION}
   FABRIC_CA_IMAGE_VERSION=${FABRIC_CA_VERSION}
