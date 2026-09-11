@@ -263,6 +263,12 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("--severity HIGH,CRITICAL", preparation)
         self.assertIn("require a clean committed source tree", preparation)
 
+    def test_artifact_expiry_is_compared_as_a_utc_instant(self) -> None:
+        publisher = read("platform/aws/push-aws-artifacts.ps1")
+        self.assertIn("([DateTimeOffset]$manifest.expiresAt).ToUniversalTime()", publisher)
+        self.assertIn("$ExpiresAt.ToUniversalTime().Ticks", publisher)
+        self.assertNotIn("Parse($manifest.expiresAt).ToString('o')", publisher)
+
     def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         control = read("platform/aws/destroy-demo-control.ps1")

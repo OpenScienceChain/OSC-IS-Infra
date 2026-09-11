@@ -40,7 +40,8 @@ $credentialEvidenceSha = (Get-FileHash -LiteralPath $credentialEvidencePath -Alg
 if ($credentialEvidenceSha -ne $manifest.buildCredentialIsolation.evidenceSha256) {
     throw 'Build credential-isolation evidence checksum mismatch.'
 }
-if ([DateTimeOffset]::Parse($manifest.expiresAt).ToString('o') -ne $ExpiresAt.ToString('o')) {
+$manifestExpiresAtUtc = ([DateTimeOffset]$manifest.expiresAt).ToUniversalTime()
+if ($manifestExpiresAtUtc.Ticks -ne $ExpiresAt.ToUniversalTime().Ticks) {
     throw 'ExpiresAt does not match the isolated-build artifact manifest.'
 }
 
