@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 
@@ -13,6 +14,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def load_check_control_plan():
+    spec = spec_from_file_location("check_control_plan", ROOT / "platform/aws/check_control_plan.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load check_control_plan.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class RuntimeTopologyTests(unittest.TestCase):
@@ -278,6 +288,8 @@ class LifecycleContractTests(unittest.TestCase):
         edge = read("terraform/usrse26-control/edge.tf")
         for header in ("authorization", "cookie", "x-demo-control-key", "x-demo-csrf", "x-api-key"):
             self.assertIn(f'single_header {{ name = "{header}" }}', edge)
+        self.assertNotIn("sampled_requests_enabled   = true", edge)
+        self.assertEqual(edge.count("sampled_requests_enabled   = false"), 6)
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         self.assertIn("def private_control_json", runner)
         self.assertNotIn('headers={"X-Demo-Control-Key"', runner)
@@ -291,17 +303,52 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('aggregate_key_type    = "CONSTANT"', history_rule)
         self.assertIn("evaluation_window_sec = 60", history_rule)
         self.assertIn("limit                 = 300", history_rule)
-        self.assertIn('positional_constraint = "STARTS_WITH"', history_rule)
-        self.assertIn('search_string         = "/api/v1/demo/"', history_rule)
-        self.assertIn('positional_constraint = "ENDS_WITH"', history_rule)
-        self.assertIn('search_string         = "/history"', history_rule)
+        self.assertIn('regex_string = "^/api/v1/demo/(artifacts|workflows)/[^/]+/history/?$"', history_rule)
+        self.assertIn('type     = "URL_DECODE"', history_rule)
+        self.assertIn('type     = "LOWERCASE"', history_rule)
         self.assertIn("response_code = 429", history_rule)
         self.assertIn('metric_name                = "DemoHistoryRate"', history_rule)
-        self.assertIn("sampled_requests_enabled   = true", history_rule)
+        self.assertIn("sampled_requests_enabled   = false", history_rule)
+
+        matcher = load_check_control_plan().history_path_matches
+        for path in (
+            "/api/v1/demo/artifacts/record-1/history",
+            "/api/v1/demo/workflows/record-2/history/",
+            "/API/V1/DEMO/ARTIFACTS/record-3/HISTORY",
+            "/api%2Fv1%2Fdemo%2Fworkflows%2Frecord-4%2Fhistory%2F",
+            "/api/v1/demo/%61rtifacts/record-5/hist%6fry?view=public",
+        ):
+            self.assertTrue(matcher(path), path)
+        for path in (
+            "/api/v1/demo/artifacts/record-1",
+            "/api/v1/demo/artifacts/record-1/history/extra",
+            "/api/v1/demo/events/record-1/history",
+            "/api/v1/demo/artifacts//history",
+            "/api/v1/demo/not-artifacts/record-1/history",
+            "/other/api/v1/demo/artifacts/record-1/history",
+            "/api/v1/demo/artifacts/record-1/other-history",
+        ):
+            self.assertFalse(matcher(path), path)
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         self.assertIn('"OriginReadTimeout": 90', runner)
         self.assertIn('"DemoHistoryRateBlockedRequests"', runner)
         self.assertIn('{"Name": "Rule", "Value": "DemoHistoryRate"}', runner)
+
+    def test_public_history_rehearsal_harness_contract(self) -> None:
+        harness = read("platform/aws/public-history-rehearsal.mjs")
+        self.assertIn("export const MAX_CONCURRENCY = 100", harness)
+        self.assertIn("export const SUCCESS_START_LIMIT = 300", harness)
+        self.assertIn("export const RATE_WINDOW_MS = 60_000", harness)
+        self.assertIn("name: 'paced-success'", harness)
+        self.assertIn("name: 'read-only-rate-limit'", harness)
+        self.assertIn("name: 'recovery'", harness)
+        self.assertIn("storesCookies: false", harness)
+        result = subprocess.run(
+            ["node", "--test", str(ROOT / "tests/usrse26/public-history-rehearsal.test.mjs")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runtime_roles_are_control_owned_and_immutable_to_runner(self) -> None:
         iam = read("terraform/usrse26-eks/iam.tf")
@@ -505,6 +552,58 @@ class RenderingAndPolicyTests(unittest.TestCase):
             "ManagedBy": "Terraform",
             "RunId": "usrse26demo",
         }
+        visibility = [{
+            "cloudwatch_metrics_enabled": True,
+            "metric_name": "DemoHistoryRate",
+            "sampled_requests_enabled": False,
+        }]
+        waf_after = {
+            "name": "osc-usrse26-usrse26demo-edge",
+            "rule": [
+                {
+                    "name": "DemoHistoryRateLimit",
+                    "priority": 25,
+                    "action": [{"block": [{"custom_response": [{"response_code": 429}]}]}],
+                    "statement": [{"rate_based_statement": [{
+                        "aggregate_key_type": "CONSTANT",
+                        "evaluation_window_sec": 60,
+                        "limit": 300,
+                        "scope_down_statement": [{"regex_match_statement": [{
+                            "regex_string": "^/api/v1/demo/(artifacts|workflows)/[^/]+/history/?$",
+                            "field_to_match": [{"uri_path": [{}]}],
+                            "text_transformation": [
+                                {"priority": 0, "type": "URL_DECODE"},
+                                {"priority": 1, "type": "LOWERCASE"},
+                            ],
+                        }]}],
+                    }]}],
+                    "visibility_config": visibility,
+                },
+                {
+                    "name": "AWSManagedCommon",
+                    "priority": 10,
+                    "visibility_config": [{
+                        "cloudwatch_metrics_enabled": True,
+                        "metric_name": "ManagedCommon",
+                        "sampled_requests_enabled": False,
+                    }],
+                },
+            ],
+            "visibility_config": [{
+                "cloudwatch_metrics_enabled": True,
+                "metric_name": "osc-usrse26-usrse26demo-edge",
+                "sampled_requests_enabled": False,
+            }],
+        }
+        waf_logging_after = {
+            "log_destination_configs": ["arn:aws:logs:us-east-1:269624229733:log-group:aws-waf-logs-test"],
+            "redacted_fields": [
+                {"single_header": [{"name": header}]}
+                for header in (
+                    "cookie", "authorization", "x-demo-control-key", "x-demo-csrf", "x-api-key",
+                )
+            ],
+        }
         required = [
             ("aws_cloudfront_distribution", {"enabled": True, "web_acl_id": "arn:waf"}),
             ("aws_cloudwatch_metric_alarm", {}),
@@ -530,12 +629,20 @@ class RenderingAndPolicyTests(unittest.TestCase):
                 "policy": json.dumps({"Statement": [{"Action": "iam:PassRole"}]}),
             }),
             ("aws_sfn_state_machine", {}),
-            ("aws_wafv2_web_acl", {}),
+            ("aws_wafv2_web_acl", waf_after),
+            ("aws_wafv2_web_acl_logging_configuration", waf_logging_after),
         ]
         changes = []
         for index, (resource_type, values) in enumerate(required):
             after = {"tags_all": tags, **values}
             changes.append({"address": f"test.{index}", "type": resource_type, "change": {"actions": ["create"], "after": after}})
+        waf_change = next(change for change in changes if change["type"] == "aws_wafv2_web_acl")
+        waf_change["address"] = "aws_wafv2_web_acl.edge"
+        waf_logging_change = next(
+            change for change in changes
+            if change["type"] == "aws_wafv2_web_acl_logging_configuration"
+        )
+        waf_logging_change["address"] = "aws_wafv2_web_acl_logging_configuration.edge"
         for suffix in ("start", "stop", "backup-stop"):
             changes.append({
                 "address": f'aws_scheduler_schedule.one_time["{suffix}"]',
@@ -609,10 +716,19 @@ class RenderingAndPolicyTests(unittest.TestCase):
                     "hard_close": "2026-10-23T15:00:00Z",
                 }},
             }},
-            "configuration": {"root_module": {"resources": [{
-                "address": cloudfront["address"],
-                "expressions": {"web_acl_id": {"references": ["aws_wafv2_web_acl.edge.arn"]}},
-            }]}},
+            "configuration": {"root_module": {"resources": [
+                {
+                    "address": cloudfront["address"],
+                    "expressions": {"web_acl_id": {"references": ["aws_wafv2_web_acl.edge.arn"]}},
+                },
+                {
+                    "address": waf_logging_change["address"],
+                    "expressions": {
+                        "resource_arn": {"references": ["aws_wafv2_web_acl.edge.arn"]},
+                        "log_destination_configs": {"references": ["aws_cloudwatch_log_group.waf.arn"]},
+                    },
+                },
+            ]}},
         }
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "plan.json"
@@ -620,6 +736,77 @@ class RenderingAndPolicyTests(unittest.TestCase):
             command = [sys.executable, str(ROOT / "platform/aws/check_control_plan.py"), str(path), "--run-id", "usrse26demo"]
             accepted = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+            def change_after(candidate: dict, address: str) -> dict:
+                return next(
+                    change["change"]["after"]
+                    for change in candidate["resource_changes"]
+                    if change["address"] == address
+                )
+
+            def history_rule(candidate: dict) -> dict:
+                waf = change_after(candidate, "aws_wafv2_web_acl.edge")
+                return next(rule for rule in waf["rule"] if rule["name"] == "DemoHistoryRateLimit")
+
+            def rate_statement(candidate: dict) -> dict:
+                return history_rule(candidate)["statement"][0]["rate_based_statement"][0]
+
+            def regex_statement(candidate: dict) -> dict:
+                return rate_statement(candidate)["scope_down_statement"][0]["regex_match_statement"][0]
+
+            def assert_waf_rejected(label: str, mutate) -> None:
+                candidate = json.loads(json.dumps(plan))
+                mutate(candidate)
+                path.write_text(json.dumps(candidate), encoding="utf-8")
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, f"{label}\n{result.stdout}{result.stderr}")
+
+            waf_mutations = (
+                ("missing history rule", lambda candidate: change_after(
+                    candidate, "aws_wafv2_web_acl.edge"
+                ).__setitem__("rule", [])),
+                ("incorrect matcher", lambda candidate: regex_statement(candidate).__setitem__(
+                    "regex_string", "^/api/v1/demo/.*history$"
+                )),
+                ("missing URL decoding", lambda candidate: regex_statement(candidate).__setitem__(
+                    "text_transformation", [{"priority": 0, "type": "LOWERCASE"}]
+                )),
+                ("incorrect threshold", lambda candidate: rate_statement(candidate).__setitem__("limit", 5000)),
+                ("incorrect priority", lambda candidate: history_rule(candidate).__setitem__("priority", 30)),
+                ("incorrect aggregate key", lambda candidate: rate_statement(candidate).__setitem__(
+                    "aggregate_key_type", "IP"
+                )),
+                ("rule sampling enabled", lambda candidate: history_rule(candidate)[
+                    "visibility_config"
+                ][0].__setitem__("sampled_requests_enabled", True)),
+                ("other rule sampling enabled", lambda candidate: change_after(
+                    candidate, "aws_wafv2_web_acl.edge"
+                )["rule"][1]["visibility_config"][0].__setitem__("sampled_requests_enabled", True)),
+                ("web ACL sampling enabled", lambda candidate: change_after(
+                    candidate, "aws_wafv2_web_acl.edge"
+                )["visibility_config"][0].__setitem__("sampled_requests_enabled", True)),
+                ("aggregate metrics disabled", lambda candidate: history_rule(candidate)[
+                    "visibility_config"
+                ][0].__setitem__("cloudwatch_metrics_enabled", False)),
+                ("incorrect metric dimension", lambda candidate: history_rule(candidate)[
+                    "visibility_config"
+                ][0].__setitem__("metric_name", "OtherMetric")),
+                ("incorrect web ACL metric dimension", lambda candidate: change_after(
+                    candidate, "aws_wafv2_web_acl.edge"
+                )["visibility_config"][0].__setitem__("metric_name", "OtherMetric")),
+                ("missing log redaction", lambda candidate: change_after(
+                    candidate, "aws_wafv2_web_acl_logging_configuration.edge"
+                )["redacted_fields"].pop()),
+                ("incorrect logging attachment", lambda candidate: candidate["configuration"][
+                    "root_module"
+                ]["resources"][1]["expressions"]["resource_arn"].__setitem__(
+                    "references", ["aws_wafv2_web_acl.other.arn"]
+                )),
+            )
+            for label, mutate in waf_mutations:
+                assert_waf_rejected(label, mutate)
+
+            path.write_text(json.dumps(plan), encoding="utf-8")
             waf_expression = plan["configuration"]["root_module"]["resources"][0]["expressions"]["web_acl_id"]
             waf_expression["references"] = ["aws_wafv2_web_acl.unapproved.arn"]
             path.write_text(json.dumps(plan), encoding="utf-8")

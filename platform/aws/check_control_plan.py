@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 ACCOUNT = "269624229733"
 REQUIRED_TAGS = {
@@ -45,6 +47,139 @@ FORBIDDEN_LIFECYCLE_ACTIONS = {
     "iam:UpdateAssumeRolePolicy",
     "sts:AssumeRole",
 }
+HISTORY_PATH_REGEX = r"^/api/v1/demo/(artifacts|workflows)/[^/]+/history/?$"
+REQUIRED_WAF_REDACTED_HEADERS = {
+    "authorization",
+    "cookie",
+    "x-api-key",
+    "x-demo-control-key",
+    "x-demo-csrf",
+}
+
+
+def history_path_matches(path: str) -> bool:
+    """Mirror the WAF URL_DECODE then LOWERCASE URI-path matching contract."""
+    normalized_path = unquote(urlsplit(path).path).lower()
+    return re.fullmatch(HISTORY_PATH_REGEX, normalized_path) is not None
+
+
+def single_block(value: Any, key: str) -> dict[str, Any] | None:
+    blocks = value.get(key) if isinstance(value, dict) else None
+    if not isinstance(blocks, list) or len(blocks) != 1 or not isinstance(blocks[0], dict):
+        return None
+    return blocks[0]
+
+
+def validate_waf_web_acl(after: dict[str, Any], run_id: str, errors: list[str]) -> None:
+    rules = after.get("rule")
+    if not isinstance(rules, list):
+        errors.append("aws_wafv2_web_acl.edge has no rendered rules")
+        return
+
+    visibility_targets = [("web ACL", after)] + [
+        (f"rule {rule.get('name', 'unknown')}", rule)
+        for rule in rules
+        if isinstance(rule, dict)
+    ]
+    for label, target in visibility_targets:
+        visibility = single_block(target, "visibility_config")
+        if visibility is None:
+            errors.append(f"WAF {label} must have one visibility configuration")
+            continue
+        if visibility.get("cloudwatch_metrics_enabled") is not True:
+            errors.append(f"WAF {label} must retain aggregate CloudWatch metrics")
+        if visibility.get("sampled_requests_enabled") is not False:
+            errors.append(f"WAF {label} must disable sampled requests")
+    web_acl_visibility = single_block(after, "visibility_config")
+    expected_web_acl_metric = f"osc-usrse26-{run_id}-edge"
+    if (
+        after.get("name") != expected_web_acl_metric
+        or web_acl_visibility is None
+        or web_acl_visibility.get("metric_name") != expected_web_acl_metric
+    ):
+        errors.append("WAF web ACL name and aggregate metric dimension must remain run-scoped")
+
+    matches = [
+        rule for rule in rules
+        if isinstance(rule, dict) and rule.get("name") == "DemoHistoryRateLimit"
+    ]
+    if len(matches) != 1:
+        errors.append("WAF must contain exactly one DemoHistoryRateLimit rule")
+        return
+    rule = matches[0]
+    if rule.get("priority") != 25:
+        errors.append("DemoHistoryRateLimit must retain priority 25")
+
+    action = single_block(rule, "action")
+    block = single_block(action, "block") if action is not None else None
+    custom_response = single_block(block, "custom_response") if block is not None else None
+    if custom_response is None or custom_response.get("response_code") != 429:
+        errors.append("DemoHistoryRateLimit must block with HTTP 429")
+
+    statement = single_block(rule, "statement")
+    rate = single_block(statement, "rate_based_statement") if statement is not None else None
+    if rate is None:
+        errors.append("DemoHistoryRateLimit must contain one rate-based statement")
+        return
+    if rate.get("aggregate_key_type") != "CONSTANT":
+        errors.append("DemoHistoryRateLimit must use CONSTANT aggregation")
+    if rate.get("evaluation_window_sec") != 60:
+        errors.append("DemoHistoryRateLimit must use a 60-second evaluation window")
+    if rate.get("limit") != 300:
+        errors.append("DemoHistoryRateLimit must retain the 300-request threshold")
+
+    scope = single_block(rate, "scope_down_statement")
+    regex_match = single_block(scope, "regex_match_statement") if scope is not None else None
+    if regex_match is None:
+        errors.append("DemoHistoryRateLimit must contain one normalized regex matcher")
+        return
+    if regex_match.get("regex_string") != HISTORY_PATH_REGEX:
+        errors.append("DemoHistoryRateLimit has an incorrect history-route regex")
+    field = single_block(regex_match, "field_to_match")
+    uri_path = field.get("uri_path") if field is not None else None
+    if not isinstance(uri_path, list) or len(uri_path) != 1:
+        errors.append("DemoHistoryRateLimit must match the URI path")
+    transformations = regex_match.get("text_transformation")
+    if not isinstance(transformations, list):
+        transformations = []
+    normalized_transformations = sorted(
+        (
+            {"priority": item.get("priority"), "type": item.get("type")}
+            for item in transformations
+            if isinstance(item, dict)
+        ),
+        key=lambda item: item["priority"] if isinstance(item["priority"], int) else -1,
+    )
+    if normalized_transformations != [
+        {"priority": 0, "type": "URL_DECODE"},
+        {"priority": 1, "type": "LOWERCASE"},
+    ]:
+        errors.append("DemoHistoryRateLimit must URL-decode then lowercase the URI path")
+    visibility = single_block(rule, "visibility_config")
+    if visibility is None or visibility.get("metric_name") != "DemoHistoryRate":
+        errors.append("DemoHistoryRateLimit must publish the DemoHistoryRate metric dimension")
+
+
+def validate_waf_logging(
+    after: dict[str, Any],
+    configuration: dict[str, Any],
+    errors: list[str],
+) -> None:
+    redacted_headers: set[str] = set()
+    for field in after.get("redacted_fields") or []:
+        header = single_block(field, "single_header")
+        if header is not None and isinstance(header.get("name"), str):
+            redacted_headers.add(header["name"].lower())
+    if redacted_headers != REQUIRED_WAF_REDACTED_HEADERS:
+        errors.append("WAF logging must retain the exact sensitive-header redaction set")
+
+    expressions = configuration.get("expressions", {})
+    acl_references = expressions.get("resource_arn", {}).get("references", [])
+    if "aws_wafv2_web_acl.edge.arn" not in acl_references:
+        errors.append("WAF logging must attach to aws_wafv2_web_acl.edge")
+    log_references = expressions.get("log_destination_configs", {}).get("references", [])
+    if "aws_cloudwatch_log_group.waf.arn" not in log_references:
+        errors.append("WAF logging must use the restricted WAF CloudWatch log group")
 
 
 def is_lifecycle_import_reconciliation(
@@ -98,6 +233,8 @@ def main() -> None:
     boundary_checked = False
     import_reconciliations = 0
     one_time_schedule_names: set[str] = set()
+    waf_controls_checked = False
+    waf_logging_checked = False
     configuration_resources = {
         resource.get("address"): resource
         for resource in plan.get("configuration", {}).get("root_module", {}).get("resources", [])
@@ -156,6 +293,15 @@ def main() -> None:
             )
             if after.get("enabled") is not True or not (after.get("web_acl_id") or computed_waf):
                 errors.append(f"{address} must be enabled and protected by WAF")
+        if resource_type == "aws_wafv2_web_acl" and address == "aws_wafv2_web_acl.edge":
+            validate_waf_web_acl(after, args.run_id, errors)
+            waf_controls_checked = True
+        if (
+            resource_type == "aws_wafv2_web_acl_logging_configuration"
+            and address == "aws_wafv2_web_acl_logging_configuration.edge"
+        ):
+            validate_waf_logging(after, configuration_resources.get(address, {}), errors)
+            waf_logging_checked = True
         if resource_type == "aws_codebuild_project":
             name = after.get("name", "")
             codebuild_projects.add(name)
@@ -247,6 +393,7 @@ def main() -> None:
         "aws_scheduler_schedule",
         "aws_sfn_state_machine",
         "aws_wafv2_web_acl",
+        "aws_wafv2_web_acl_logging_configuration",
     }
     missing = required_types - types
     if missing:
@@ -267,6 +414,10 @@ def main() -> None:
         errors.append(f"control plan is missing lifecycle projects: {', '.join(sorted(missing_projects))}")
     if not boundary_checked:
         errors.append("control plan is missing the inspectable run permissions boundary")
+    if not waf_controls_checked:
+        errors.append("control plan is missing the exact reviewed WAF web ACL")
+    if not waf_logging_checked:
+        errors.append("control plan is missing the exact reviewed WAF logging configuration")
     expected_one_time_schedule_names = {
         f"osc-usrse26-{args.run_id}-start",
         f"osc-usrse26-{args.run_id}-stop",

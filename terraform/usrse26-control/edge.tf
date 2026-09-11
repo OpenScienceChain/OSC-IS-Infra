@@ -188,7 +188,7 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "ManagedCommon"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
@@ -207,7 +207,7 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "ManagedKnownBadInputs"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
@@ -233,7 +233,7 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "OversizeBody"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
@@ -253,32 +253,18 @@ resource "aws_wafv2_web_acl" "edge" {
         evaluation_window_sec = 60
         limit                 = 300
         scope_down_statement {
-          and_statement {
-            statement {
-              byte_match_statement {
-                positional_constraint = "STARTS_WITH"
-                search_string         = "/api/v1/demo/"
-                field_to_match {
-                  uri_path {}
-                }
-                text_transformation {
-                  priority = 0
-                  type     = "NONE"
-                }
-              }
+          regex_match_statement {
+            regex_string = "^/api/v1/demo/(artifacts|workflows)/[^/]+/history/?$"
+            field_to_match {
+              uri_path {}
             }
-            statement {
-              byte_match_statement {
-                positional_constraint = "ENDS_WITH"
-                search_string         = "/history"
-                field_to_match {
-                  uri_path {}
-                }
-                text_transformation {
-                  priority = 0
-                  type     = "NONE"
-                }
-              }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
             }
           }
         }
@@ -287,7 +273,7 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "DemoHistoryRate"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
@@ -306,14 +292,14 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "SharedNatRate"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "${local.name_prefix}-edge"
-    sampled_requests_enabled   = true
+    sampled_requests_enabled   = false
   }
 }
 
