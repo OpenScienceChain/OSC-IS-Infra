@@ -28,6 +28,15 @@ latency sample size/p50/p95, and queue totals/oldest-pending age. Monitoring
 stores only those aggregates plus aggregate pod, ALB, Fabric, RabbitMQ, WAF, and
 cost signals; it does not store Kubernetes object names or message payloads.
 
+The sanitized export is schema version 1 and is fail-closed against an exact
+allowlist. It contains only the export timestamp, lifecycle state/window, the
+six aggregate funnel counters, an event-wide survey sample size, five-bin
+distributions for the three ratings, and the approved convenience-sample
+caveat. It contains no response rows, per-response timestamps, comments,
+organization-level survey cells, pseudonyms, or unrecognized root or nested
+fields. The lifecycle runner validates exact key sets, value types, UTC
+timestamps, non-negative counts, and distribution totals before any S3 write.
+
 The S3 lifecycle rules enforce seven-day security-log expiry and 30-day expiry
 for sanitized evidence and runtime state. The final report may retain aggregate
 numbers and non-identifying conclusions only after the source records expire.

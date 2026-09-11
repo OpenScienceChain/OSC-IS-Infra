@@ -51,6 +51,10 @@ VALID_ACTIONS = {
 ROOT = Path(os.environ.get("OSC_RUNNER_ROOT", "/opt/osc/infra"))
 RUN_ID_RE = re.compile(r"^[a-z0-9]{8,20}$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+SANITIZED_EXPORT_CAVEAT = (
+    "Self-selected convenience sample from a conference demonstration; "
+    "not a measure of community acceptance."
+)
 
 
 def required(name: str) -> str:
@@ -103,6 +107,90 @@ def aws_json_in_region(region: str, *args: str, check: bool = True) -> Any:
 
 def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _require_exact_keys(value: Any, expected: set[str], path: str) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise RuntimeError(f"Sanitized export {path} must be an object")
+    actual = set(value)
+    if actual != expected:
+        raise RuntimeError(f"Sanitized export {path} has unapproved fields")
+    return value
+
+
+def _require_nonnegative_integer(value: Any, path: str) -> int:
+    if type(value) is not int or value < 0:
+        raise RuntimeError(f"Sanitized export {path} must be a non-negative integer")
+    return value
+
+
+def _require_utc_timestamp(value: Any, path: str) -> None:
+    if type(value) is not str or not value.endswith("Z"):
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp") from error
+    if parsed.utcoffset() != timedelta(0):
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp")
+
+
+def validate_sanitized_export(exported: Any) -> None:
+    root = _require_exact_keys(
+        exported,
+        {"schemaVersion", "exportedAt", "status", "counters", "survey", "caveat"},
+        "root",
+    )
+    if root["schemaVersion"] != 1 or type(root["schemaVersion"]) is not int:
+        raise RuntimeError("Sanitized export schemaVersion must be exactly 1")
+    _require_utc_timestamp(root["exportedAt"], "exportedAt")
+    if root["caveat"] != SANITIZED_EXPORT_CAVEAT:
+        raise RuntimeError("Sanitized export caveat is not approved")
+
+    status = _require_exact_keys(root["status"], {"state", "opensAt", "closesAt"}, "status")
+    if type(status["state"]) is not str or status["state"] not in {
+        "SCHEDULED",
+        "PREPARING",
+        "OPEN",
+        "READ_ONLY",
+        "CLOSED",
+    }:
+        raise RuntimeError("Sanitized export status.state is invalid")
+    _require_utc_timestamp(status["opensAt"], "status.opensAt")
+    _require_utc_timestamp(status["closesAt"], "status.closesAt")
+
+    counter_keys = {
+        "anonymousBrowserSessions",
+        "acceptedArtifacts",
+        "confirmedArtifacts",
+        "acceptedWorkflows",
+        "confirmedWorkflows",
+        "provenanceHistoryViews",
+    }
+    counters = _require_exact_keys(root["counters"], counter_keys, "counters")
+    for key in counter_keys:
+        _require_nonnegative_integer(counters[key], f"counters.{key}")
+
+    survey = _require_exact_keys(root["survey"], {"sampleSize", "ratings"}, "survey")
+    sample_size = _require_nonnegative_integer(survey["sampleSize"], "survey.sampleSize")
+    ratings = _require_exact_keys(
+        survey["ratings"], {"ease", "provenance", "usefulness"}, "survey.ratings"
+    )
+    rating_keys = {"1", "2", "3", "4", "5"}
+    for dimension in ("ease", "provenance", "usefulness"):
+        distribution = _require_exact_keys(
+            ratings[dimension], rating_keys, f"survey.ratings.{dimension}"
+        )
+        counts = [
+            _require_nonnegative_integer(
+                distribution[key], f"survey.ratings.{dimension}.{key}"
+            )
+            for key in rating_keys
+        ]
+        if sum(counts) != sample_size:
+            raise RuntimeError(
+                f"Sanitized export survey.ratings.{dimension} does not match sampleSize"
+            )
 
 
 def parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -742,10 +830,8 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
     def export(self) -> None:
         self.load_manifest()
         exported = self.private_control_json("/api/v1/demo/internal/export")
-        forbidden = ("email", "filename", "privateComment", "token", "secret", "sessionId")
+        validate_sanitized_export(exported)
         serialized = json.dumps(exported)
-        if any(term.lower() in serialized.lower() for term in forbidden):
-            raise RuntimeError("Sanitized export contains a forbidden field")
         key = f"evidence/{self.run_id}/sanitized-export.json"
         self.put_json(key, exported)
         self.put_json(
