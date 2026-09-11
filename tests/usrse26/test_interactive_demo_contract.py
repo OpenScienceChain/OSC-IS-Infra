@@ -46,6 +46,7 @@ class RuntimeTopologyTests(unittest.TestCase):
         self.assertIn("alb.ingress.kubernetes.io/target-type: ip", ingress)
         self.assertIn("alb.ingress.kubernetes.io/security-groups: osc-usrse26-__RUN_ID__-cloudfront-origin", ingress)
         self.assertIn('alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"', ingress)
+        self.assertIn("idle_timeout.timeout_seconds=90", ingress)
         self.assertNotIn("NodePort", ingress)
 
     def test_fabric_contract_is_three_orderers_two_peers_per_org(self) -> None:
@@ -280,6 +281,27 @@ class LifecycleContractTests(unittest.TestCase):
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         self.assertIn("def private_control_json", runner)
         self.assertNotIn('headers={"X-Demo-Control-Key"', runner)
+
+    def test_public_history_timeout_rate_bound_and_observability(self) -> None:
+        edge = read("terraform/usrse26-control/edge.tf")
+        history_rule = edge.split('name     = "DemoHistoryRateLimit"', 1)[1].split(
+            'name     = "SharedNatRateLimit"', 1
+        )[0]
+        self.assertIn("priority = 25", history_rule)
+        self.assertIn('aggregate_key_type    = "CONSTANT"', history_rule)
+        self.assertIn("evaluation_window_sec = 60", history_rule)
+        self.assertIn("limit                 = 300", history_rule)
+        self.assertIn('positional_constraint = "STARTS_WITH"', history_rule)
+        self.assertIn('search_string         = "/api/v1/demo/"', history_rule)
+        self.assertIn('positional_constraint = "ENDS_WITH"', history_rule)
+        self.assertIn('search_string         = "/history"', history_rule)
+        self.assertIn("response_code = 429", history_rule)
+        self.assertIn('metric_name                = "DemoHistoryRate"', history_rule)
+        self.assertIn("sampled_requests_enabled   = true", history_rule)
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
+        self.assertIn('"OriginReadTimeout": 90', runner)
+        self.assertIn('"DemoHistoryRateBlockedRequests"', runner)
+        self.assertIn('{"Name": "Rule", "Value": "DemoHistoryRate"}', runner)
 
     def test_runtime_roles_are_control_owned_and_immutable_to_runner(self) -> None:
         iam = read("terraform/usrse26-eks/iam.tf")

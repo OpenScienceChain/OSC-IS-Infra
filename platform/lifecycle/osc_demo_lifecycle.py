@@ -675,7 +675,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         origins.setdefault("Items", []).append({
             "Id": "runtime-api",
             "DomainName": load_balancer["DNSName"],
-            "VpcOriginConfig": {"VpcOriginId": origin_id, "OriginReadTimeout": 30, "OriginKeepaliveTimeout": 5},
+            "VpcOriginConfig": {"VpcOriginId": origin_id, "OriginReadTimeout": 90, "OriginKeepaliveTimeout": 5},
             "ConnectionAttempts": 3,
             "ConnectionTimeout": 10,
         })
@@ -1150,15 +1150,27 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         }
 
     def waf_metrics(self) -> dict[str, Any]:
+        web_acl = required("WEB_ACL_NAME")
         dimensions = [
-            {"Name": "WebACL", "Value": required("WEB_ACL_NAME")},
+            {"Name": "WebACL", "Value": web_acl},
             {"Name": "Rule", "Value": "ALL"},
             {"Name": "Region", "Value": "Global"},
         ]
-        return {
+        metrics = {
             metric: self.cloudwatch_window("AWS/WAFV2", metric, dimensions, region="us-east-1")
             for metric in ("AllowedRequests", "BlockedRequests")
         }
+        metrics["DemoHistoryRateBlockedRequests"] = self.cloudwatch_window(
+            "AWS/WAFV2",
+            "BlockedRequests",
+            [
+                {"Name": "WebACL", "Value": web_acl},
+                {"Name": "Rule", "Value": "DemoHistoryRate"},
+                {"Name": "Region", "Value": "Global"},
+            ],
+            region="us-east-1",
+        )
+        return metrics
 
     def start_safety_teardown(self, reason: str) -> None:
         self.write_status("READ_ONLY", "An automated safety condition was reached; teardown has started.")

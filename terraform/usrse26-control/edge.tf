@@ -166,7 +166,7 @@ resource "aws_cloudwatch_log_group" "waf" {
 resource "aws_wafv2_web_acl" "edge" {
   provider    = aws.edge
   name        = "${local.name_prefix}-edge"
-  description = "Managed rules, payload bound, and shared-NAT-aware rate control"
+  description = "Managed rules, payload and history traffic bounds, and shared-NAT-aware rate control"
   scope       = "CLOUDFRONT"
 
   default_action {
@@ -233,6 +233,60 @@ resource "aws_wafv2_web_acl" "edge" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "OversizeBody"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "DemoHistoryRateLimit"
+    priority = 25
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type    = "CONSTANT"
+        evaluation_window_sec = 60
+        limit                 = 300
+        scope_down_statement {
+          and_statement {
+            statement {
+              byte_match_statement {
+                positional_constraint = "STARTS_WITH"
+                search_string         = "/api/v1/demo/"
+                field_to_match {
+                  uri_path {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+            statement {
+              byte_match_statement {
+                positional_constraint = "ENDS_WITH"
+                search_string         = "/history"
+                field_to_match {
+                  uri_path {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "DemoHistoryRate"
       sampled_requests_enabled   = true
     }
   }
