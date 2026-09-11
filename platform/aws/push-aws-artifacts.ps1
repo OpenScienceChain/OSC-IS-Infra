@@ -21,6 +21,7 @@ $registry = '269624229733.dkr.ecr.us-west-2.amazonaws.com'
 $releasePrefix = "releases/$RunId"
 $manifestKey = "$releasePrefix/artifacts.json"
 $repositoryPolicyPath = Join-Path $runRoot 'artifacts\ecr-lifecycle-policy.json'
+$repositoryTagsPath = Join-Path $runRoot 'artifacts\ecr-repository-tags.json'
 $controlExpiresAt = '2026-11-22T15:00:00Z'
 
 if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]::UtcNow.AddHours(72)) {
@@ -94,19 +95,22 @@ try {
             --no-cli-pager 2>$null
         if ($LASTEXITCODE -ne 0) {
             python platform/aws/aws_guard.py | Out-Null
+            $repositoryTags = @(
+                @{Key='Project'; Value='OSC-IS'}
+                @{Key='Purpose'; Value='USRSE26-Interactive-Demo'}
+                @{Key='Environment'; Value='ephemeral'}
+                @{Key='ManagedBy'; Value='Terraform'}
+                @{Key='Owner'; Value='ofgarzon'}
+                @{Key='RunId'; Value=$RunId}
+                @{Key='ExpiresAt'; Value=$repositoryExpiresAt}
+            ) | ConvertTo-Json -Compress
+            [IO.File]::WriteAllText($repositoryTagsPath, $repositoryTags + [Environment]::NewLine)
             $existing = aws ecr create-repository `
                 --repository-name $repository `
                 --image-tag-mutability IMMUTABLE `
                 --image-scanning-configuration scanOnPush=true `
                 --encryption-configuration encryptionType=AES256 `
-                --tags `
-                    Key=Project,Value=OSC-IS `
-                    Key=Purpose,Value=USRSE26-Interactive-Demo `
-                    Key=Environment,Value=ephemeral `
-                    Key=ManagedBy,Value=Terraform `
-                    Key=Owner,Value=ofgarzon `
-                    Key=RunId,Value=$RunId `
-                    Key=ExpiresAt,Value=$repositoryExpiresAt `
+                --tags "file://$repositoryTagsPath" `
                 --query repository `
                 --output json `
                 --profile default `

@@ -269,6 +269,12 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("$ExpiresAt.ToUniversalTime().Ticks", publisher)
         self.assertNotIn("Parse($manifest.expiresAt).ToString('o')", publisher)
 
+    def test_ecr_repository_tags_use_a_cross_platform_json_payload(self) -> None:
+        publisher = read("platform/aws/push-aws-artifacts.ps1")
+        self.assertIn("ecr-repository-tags.json", publisher)
+        self.assertIn('--tags "file://$repositoryTagsPath"', publisher)
+        self.assertNotIn("Key=ExpiresAt,Value=$repositoryExpiresAt", publisher)
+
     def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         control = read("platform/aws/destroy-demo-control.ps1")
