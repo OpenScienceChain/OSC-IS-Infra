@@ -128,6 +128,10 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertEqual(config["accountId"], "269624229733")
         self.assertEqual(config["primaryRegion"], "us-west-2")
         self.assertEqual(config["schedule"]["maximumRuntimeHours"], 72)
+        self.assertIn(
+            'values = [format("user:RunId$%s", var.run_id)]',
+            read("terraform/usrse26-control/budget.tf"),
+        )
         self.assertEqual(config["costControlsUsd"], {
             "information": 75,
             "warning": 125,
@@ -237,6 +241,18 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertEqual(runner["stateOrder"], ["SCHEDULED", "PREPARING", "OPEN", "READ_ONLY", "CLOSED"])
         self.assertEqual(runner["requiredArtifactInterfaces"]["webApp"], ["sourceRevision", "s3Uri", "sha256"])
         self.assertIn("evidence.sha256", runner["requiredArtifactInterfaces"]["buildCredentialIsolation"])
+
+    def test_disabled_api_cache_policy_has_no_compression_cache_key(self) -> None:
+        edge = read("terraform/usrse26-control/edge.tf")
+        api_policy = edge.split('resource "aws_cloudfront_cache_policy" "api"', 1)[1].split(
+            'resource "aws_cloudfront_origin_request_policy" "api"', 1
+        )[0]
+        self.assertIn("default_ttl = 0", api_policy)
+        self.assertIn("max_ttl     = 0", api_policy)
+        self.assertIn("min_ttl     = 0", api_policy)
+        self.assertNotIn("enable_accept_encoding", api_policy)
+        self.assertEqual(edge.count("enable_accept_encoding_brotli = true"), 1)
+        self.assertEqual(edge.count("enable_accept_encoding_gzip   = true"), 1)
 
     def test_waf_redacts_all_sensitive_request_headers(self) -> None:
         edge = read("terraform/usrse26-control/edge.tf")

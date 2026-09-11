@@ -7,7 +7,7 @@ resource "aws_budgets_budget" "demo" {
 
   cost_filter {
     name   = "TagKeyValue"
-    values = ["user:RunId$${var.run_id}"]
+    values = [format("user:RunId$%s", var.run_id)]
   }
 
   dynamic "notification" {

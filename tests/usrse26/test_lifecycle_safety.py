@@ -154,36 +154,39 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
         self.assertIn('ResultPath = "$.cleanupFailure", Next = "FailedStartDestroyRuntime"', machines)
 
     def test_local_iam_simulation_denies_escape_cases(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            output = Path(temp) / "iam-simulation.json"
-            process = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "platform/aws/simulate_iam_boundary.py"),
-                    "--terraform-root",
-                    str(ROOT / "terraform/usrse26-control"),
-                    "--run-id",
-                    "usrse26r1",
-                    "--output",
-                    str(output),
-                ],
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-            report = __import__("json").loads(output.read_text(encoding="utf-8"))
-            self.assertTrue(report["allPassed"])
-            denied = {item["name"] for item in report["cases"] if item["actual"] != "allowed"}
-            self.assertIn("runtime role creation", denied)
-            self.assertIn("inline policy mutation", denied)
-            self.assertIn("trust policy mutation", denied)
-            self.assertIn("assume altered runtime role", denied)
-            self.assertIn("pass role outside run prefix", denied)
-            self.assertIn("pass role to unapproved service", denied)
-            self.assertIn("unrelated S3 object", denied)
-            self.assertIn("unrelated Secrets Manager secret", denied)
-            self.assertIn("unrelated secret creation", denied)
-            self.assertIn("broad inline policy intersected for unrelated data", denied)
+        for run_id in ("usrse26r1", "a" * 20):
+            with self.subTest(run_id=run_id), tempfile.TemporaryDirectory() as temp:
+                output = Path(temp) / "iam-simulation.json"
+                process = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "platform/aws/simulate_iam_boundary.py"),
+                        "--terraform-root",
+                        str(ROOT / "terraform/usrse26-control"),
+                        "--run-id",
+                        run_id,
+                        "--output",
+                        str(output),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                report = __import__("json").loads(output.read_text(encoding="utf-8"))
+                self.assertTrue(report["allPassed"])
+                self.assertLessEqual(report["boundaryPolicyCharacters"], report["managedPolicyQuotaCharacters"])
+                denied = {item["name"] for item in report["cases"] if item["actual"] != "allowed"}
+                self.assertIn("runtime role creation", denied)
+                self.assertIn("inline policy mutation", denied)
+                self.assertIn("trust policy mutation", denied)
+                self.assertIn("assume altered runtime role", denied)
+                self.assertIn("unlisted same-run pass role", denied)
+                self.assertIn("pass role outside run prefix", denied)
+                self.assertIn("pass role to unapproved service", denied)
+                self.assertIn("unrelated S3 object", denied)
+                self.assertIn("unrelated Secrets Manager secret", denied)
+                self.assertIn("unrelated secret creation", denied)
+                self.assertIn("broad inline policy intersected for unrelated data", denied)
 
 
 if __name__ == "__main__":

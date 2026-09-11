@@ -1,10 +1,12 @@
 {
   "schemaVersion": 1,
-  "simulation": "local permissions-boundary intersection model",
+  "simulation": "local identity-policy and permissions-boundary intersection model",
   "account": "269624229733",
   "region": "us-west-2",
   "runId": "usrse26r1",
   "boundaryArn": "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26r1-runtime-boundary",
+  "boundaryPolicyCharacters": 5802,
+  "managedPolicyQuotaCharacters": 6144,
   "allPassed": true,
   "cases": [
     {
@@ -45,6 +47,14 @@
       "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
       "expected": "allowed",
       "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "unlisted same-run pass role",
+      "action": "iam:PassRole",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-unlisted",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
       "passed": true
     },
     {
@@ -136,5 +146,5 @@
       "passed": true
     }
   ],
-  "limitations": "Local permissions-boundary semantics only. The broad-inline-policy cases model intersection by asking whether the boundary permits the requested action; repeat with AWS IAM simulation during an authorized rehearsal."
+  "limitations": "Local identity-policy and permissions-boundary semantics only; repeat with AWS IAM simulation during an authorized rehearsal."
 }

@@ -13,6 +13,7 @@ from typing import Any
 
 ACCOUNT = "269624229733"
 REGION = "us-west-2"
+MAX_MANAGED_POLICY_CHARACTERS = 6_144
 
 
 def values(value: Any) -> list[str]:
@@ -60,7 +61,7 @@ def decision(policy: dict[str, Any], action: str, resource: str, context: dict[s
     return "allowed" if allowed else "implicitDeny"
 
 
-def render_policy(terraform_root: Path, run_id: str) -> dict[str, Any]:
+def render_policies(terraform_root: Path, run_id: str) -> dict[str, dict[str, Any]]:
     digest = "a" * 64
     arguments = [
         "terraform",
@@ -75,7 +76,7 @@ def render_policy(terraform_root: Path, run_id: str) -> dict[str, Any]:
     ]
     rendered = subprocess.run(
         arguments,
-        input="jsonencode(local.lifecycle_boundary_policy)\n",
+        input="jsonencode({ boundary = local.lifecycle_boundary_policy, identity = local.lifecycle_role_policy })\n",
         text=True,
         capture_output=True,
         check=True,
@@ -83,7 +84,23 @@ def render_policy(terraform_root: Path, run_id: str) -> dict[str, Any]:
     return json.loads(json.loads(rendered))
 
 
-def simulate(policy: dict[str, Any], run_id: str) -> dict[str, Any]:
+def effective_decision(
+    boundary: dict[str, Any],
+    identity: dict[str, Any],
+    action: str,
+    resource: str,
+    context: dict[str, str],
+) -> str:
+    if decision(boundary, action, resource, context) != "allowed":
+        return "implicitDeny"
+    return decision(identity, action, resource, context)
+
+
+def compact_policy_characters(policy: dict[str, Any]) -> int:
+    return len(json.dumps(policy, separators=(",", ":")))
+
+
+def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) -> dict[str, Any]:
     role = f"arn:aws:iam::{ACCOUNT}:role/osc-usrse26-{run_id}-eks-cluster"
     run_bucket = f"arn:aws:s3:::osc-usrse26-{run_id}-control-{ACCOUNT}"
     run_secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:osc-usrse26-{run_id}/api/auth-AbCdEf"
@@ -97,6 +114,7 @@ def simulate(policy: dict[str, Any], run_id: str) -> dict[str, Any]:
         ("trust policy mutation", "iam:UpdateAssumeRolePolicy", role, {}, "implicitDeny"),
         ("assume altered runtime role", "sts:AssumeRole", role, {}, "implicitDeny"),
         ("approved EKS pass role", "iam:PassRole", role, {"iam:PassedToService": "eks.amazonaws.com"}, "allowed"),
+        ("unlisted same-run pass role", "iam:PassRole", f"arn:aws:iam::{ACCOUNT}:role/osc-usrse26-{run_id}-unlisted", {"iam:PassedToService": "eks.amazonaws.com"}, "implicitDeny"),
         ("pass role outside run prefix", "iam:PassRole", f"arn:aws:iam::{ACCOUNT}:role/admin", {"iam:PassedToService": "eks.amazonaws.com"}, "implicitDeny"),
         ("pass role to unapproved service", "iam:PassRole", role, {"iam:PassedToService": "lambda.amazonaws.com"}, "implicitDeny"),
         ("permissions boundary mutation", "iam:DeleteRolePermissionsBoundary", role, {}, "implicitDeny"),
@@ -111,18 +129,21 @@ def simulate(policy: dict[str, Any], run_id: str) -> dict[str, Any]:
     ]
     results = []
     for name, action, resource, context, expected in cases:
-        actual = decision(policy, action, resource, context)
+        actual = effective_decision(boundary, identity, action, resource, context)
         results.append({"name": name, "action": action, "resource": resource, "expected": expected, "actual": actual, "passed": actual == expected})
+    policy_characters = compact_policy_characters(boundary)
     return {
         "schemaVersion": 1,
-        "simulation": "local permissions-boundary intersection model",
+        "simulation": "local identity-policy and permissions-boundary intersection model",
         "account": ACCOUNT,
         "region": REGION,
         "runId": run_id,
         "boundaryArn": f"arn:aws:iam::{ACCOUNT}:policy/osc-usrse26-{run_id}-runtime-boundary",
-        "allPassed": all(item["passed"] for item in results),
+        "boundaryPolicyCharacters": policy_characters,
+        "managedPolicyQuotaCharacters": MAX_MANAGED_POLICY_CHARACTERS,
+        "allPassed": policy_characters <= MAX_MANAGED_POLICY_CHARACTERS and all(item["passed"] for item in results),
         "cases": results,
-        "limitations": "Local permissions-boundary semantics only. The broad-inline-policy cases model intersection by asking whether the boundary permits the requested action; repeat with AWS IAM simulation during an authorized rehearsal.",
+        "limitations": "Local identity-policy and permissions-boundary semantics only; repeat with AWS IAM simulation during an authorized rehearsal.",
     }
 
 
@@ -132,7 +153,8 @@ def main() -> None:
     parser.add_argument("--run-id", default="usrse26r1")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    report = simulate(render_policy(args.terraform_root.resolve(), args.run_id), args.run_id)
+    policies = render_policies(args.terraform_root.resolve(), args.run_id)
+    report = simulate(policies["boundary"], policies["identity"], args.run_id)
     rendered = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -408,9 +408,82 @@ locals {
       Resource = "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:cluster/${local.name_prefix}-*"
     },
   ]
+
+  # AWS caps a managed policy at 6,144 non-whitespace characters. Keep the
+  # lifecycle role's exact grants below as the identity policy, while making
+  # this shared boundary a compact, immutable run-scoped ceiling. Statement
+  # IDs have no authorization semantics. The merged statements have identical
+  # conditions, and every shortened ARN remains anchored to the exact run ID.
+  # PassRole is broader only in the ceiling: the intersecting identity policy
+  # continues to enumerate every fixed role and the runner cannot create or
+  # mutate roles.
+  runtime_boundary_statement_inputs = concat(
+    local.runtime_service_statements,
+    local.runtime_workload_boundary_statements,
+    local.runtime_iam_statements,
+  )
+  runtime_boundary_statement_by_sid = {
+    for statement in local.runtime_boundary_statement_inputs : statement.Sid => statement
+  }
+  runtime_boundary_merged_sids = [
+    "ExactRunS3Objects",
+    "DeleteTaggedCloudFrontRuntimeOrigin",
+    "UpdateTaggedControlDistribution",
+    "EksPodIdentityAgent",
+  ]
+  runtime_boundary_action_overrides = {
+    ExactRunS3Buckets = concat(
+      local.runtime_boundary_statement_by_sid["ExactRunS3Buckets"].Action,
+      local.runtime_boundary_statement_by_sid["ExactRunS3Objects"].Action,
+    )
+    ExactRunEks = concat(
+      local.runtime_boundary_statement_by_sid["ExactRunEks"].Action,
+      local.runtime_boundary_statement_by_sid["EksPodIdentityAgent"].Action,
+    )
+    ReadTaggedCloudFrontResources = concat(
+      local.runtime_boundary_statement_by_sid["DeleteTaggedCloudFrontRuntimeOrigin"].Action,
+      local.runtime_boundary_statement_by_sid["ReadTaggedCloudFrontResources"].Action,
+      local.runtime_boundary_statement_by_sid["UpdateTaggedControlDistribution"].Action,
+    )
+  }
+  runtime_boundary_resource_overrides = {
+    ExactRunS3Buckets = [
+      "arn:aws:s3:::${local.name_prefix}-*",
+      "arn:aws:s3:::${local.name_prefix}-*/*",
+      "arn:aws:s3:::${local.artifact_manifest_bucket}/${local.artifact_manifest_prefix}/*",
+    ]
+    ExactRunDynamoTables = [
+      "arn:aws:dynamodb:${var.aws_region}:${var.authorized_account_id}:table/${local.name_prefix}-*",
+    ]
+    ExactRunEks = [
+      "arn:aws:eks:${var.aws_region}:${var.authorized_account_id}:*/${local.name_prefix}-*",
+    ]
+    ExactRunMq = [
+      "arn:aws:mq:${var.aws_region}:${var.authorized_account_id}:*:${local.name_prefix}-*:*",
+    ]
+    PassOnlyRunRolesToApprovedServices = [
+      "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-*",
+    ]
+  }
   lifecycle_boundary_policy = {
+    Version = "2012-10-17"
+    Statement = [
+      for statement in local.runtime_boundary_statement_inputs : merge(
+        { for key, value in statement : key => value if key != "Sid" },
+        {
+          Action = try(local.runtime_boundary_action_overrides[statement.Sid], statement.Action)
+          Resource = try(
+            local.runtime_boundary_resource_overrides[statement.Sid],
+            tolist(statement.Resource),
+            [statement.Resource],
+          )
+        },
+      ) if !contains(local.runtime_boundary_merged_sids, statement.Sid)
+    ]
+  }
+  lifecycle_role_policy = {
     Version   = "2012-10-17"
-    Statement = concat(local.runtime_service_statements, local.runtime_workload_boundary_statements, local.runtime_iam_statements)
+    Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)
   }
 }
 
@@ -423,6 +496,13 @@ resource "aws_iam_policy" "lifecycle_boundary" {
   name        = "${local.name_prefix}-runtime-boundary"
   description = "Immutable permission ceiling for the lifecycle runner and every disposable runtime role"
   policy      = jsonencode(local.lifecycle_boundary_policy)
+
+  lifecycle {
+    precondition {
+      condition     = length(jsonencode(local.lifecycle_boundary_policy)) <= 6144
+      error_message = "The runtime permissions boundary exceeds AWS IAM's 6,144-character managed-policy quota."
+    }
+  }
 }
 
 resource "aws_iam_role" "lifecycle" {
@@ -434,12 +514,10 @@ resource "aws_iam_role" "lifecycle" {
 }
 
 resource "aws_iam_role_policy" "lifecycle" {
-  name = "bounded-demo-lifecycle"
-  role = aws_iam_role.lifecycle.id
-  policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)
-  })
+  #checkov:skip=CKV_AWS_355: Resource=* is limited to read-only discovery, tagged creation/management, ECR authorization, and exact service-linked-role creation; the run boundary intersects every grant.
+  name   = "bounded-demo-lifecycle"
+  role   = aws_iam_role.lifecycle.id
+  policy = jsonencode(local.lifecycle_role_policy)
 }
 
 resource "aws_codebuild_project" "lifecycle" {
