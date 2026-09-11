@@ -15,6 +15,11 @@ unique attendees.
 | Survey | three ratings, optional escaped comment up to 300 characters | convenience-sample feedback | private; ratings may be aggregated | 30 days maximum |
 | Security logs | operational IP address when necessary, WAF action, timestamp | abuse response | restricted operators | 7 days maximum |
 
+`history viewed` is recorded only after an authenticated server-side history
+read succeeds and the record organization matches the session organization.
+The browser event endpoint cannot submit this event, so a successful read is
+not double-counted by client telemetry.
+
 Never collect or export file bytes, original filenames, names, email
 addresses, demographic data, raw session IDs, cookies, authorization headers,
 Fabric private keys, or application secrets. Feedback is never written to the
@@ -23,6 +28,9 @@ The control-key-protected operational endpoint exposes only totals, confirmation
 latency sample size/p50/p95, and queue totals/oldest-pending age. Monitoring
 stores only those aggregates plus aggregate pod, ALB, Fabric, RabbitMQ, WAF, and
 cost signals; it does not store Kubernetes object names or message payloads.
+WAF logging redacts cookies, authorization, control-key, CSRF, and API-key
+headers. Lifecycle control calls execute inside the API pod rather than
+traversing the public edge.
 
 The S3 lifecycle rules enforce seven-day security-log expiry and 30-day expiry
 for sanitized evidence and runtime state. The final report may retain aggregate

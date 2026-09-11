@@ -81,14 +81,14 @@ put_secret(
     {
         "jwtSecret": secrets.token_hex(32),
         "bootstrapAdminPassword": password(),
-        "listenerApiKey": secrets.token_hex(32),
-        "nsgLedgerToken": secrets.token_hex(32),
-        "citizenScienceLedgerToken": secrets.token_hex(32),
         "demoJwtSecret": secrets.token_hex(32),
         "demoAnalyticsHmacSecret": secrets.token_hex(32),
         "demoControlApiKey": secrets.token_hex(32),
     },
 )
+put_secret(required("LISTENER_SECRET_ARN"), {"apiKey": secrets.token_hex(32)})
+put_secret(required("NSG_TOKEN_SECRET_ARN"), {"token": secrets.token_hex(32)})
+put_secret(required("CITIZEN_TOKEN_SECRET_ARN"), {"token": secrets.token_hex(32)})
 put_secret(
     required("POSTGRES_SECRET_ARN"),
     {"username": "osc_app", "database": "osc_is", "password": password()},
@@ -98,4 +98,4 @@ put_secret(
     {"username": "osc_usrse26", "password": password()},
 )
 
-print("Populated three disposable Secrets Manager values; values were not logged.")
+print("Populated six consumer-scoped Secrets Manager values; values were not logged.")

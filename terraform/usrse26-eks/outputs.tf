@@ -44,11 +44,14 @@ output "ecr_repositories" {
 
 output "secret_arns" {
   value = {
-    application    = aws_secretsmanager_secret.application.arn
-    postgres       = aws_secretsmanager_secret.postgres.arn
-    rabbitmq       = aws_secretsmanager_secret.rabbitmq.arn
-    fabric_nsg     = aws_secretsmanager_secret.fabric_nsg.arn
-    fabric_citizen = aws_secretsmanager_secret.fabric_citizen_science.arn
+    application          = aws_secretsmanager_secret.application.arn
+    listener             = aws_secretsmanager_secret.listener.arn
+    ledger_nsg_token     = aws_secretsmanager_secret.ledger_nsg_token.arn
+    ledger_citizen_token = aws_secretsmanager_secret.ledger_citizen_science_token.arn
+    postgres             = aws_secretsmanager_secret.postgres.arn
+    rabbitmq             = aws_secretsmanager_secret.rabbitmq.arn
+    fabric_nsg           = aws_secretsmanager_secret.fabric_nsg.arn
+    fabric_citizen       = aws_secretsmanager_secret.fabric_citizen_science.arn
   }
 }
 

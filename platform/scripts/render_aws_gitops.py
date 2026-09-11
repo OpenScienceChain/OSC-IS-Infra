@@ -41,7 +41,10 @@ def main() -> None:
         "__AWS_LOAD_BALANCER_CONTROLLER_IMAGE__": external_images[
             "aws-load-balancer-controller"
         ],
-        "__APP_SECRET_NAME__": f"{prefix}/application",
+        "__APP_SECRET_NAME__": f"{prefix}/api",
+        "__LISTENER_SECRET_NAME__": f"{prefix}/listener",
+        "__LEDGER_NSG_TOKEN_SECRET_NAME__": f"{prefix}/ledger-token/nsg",
+        "__LEDGER_CITIZEN_TOKEN_SECRET_NAME__": f"{prefix}/ledger-token/citizen-science",
         "__POSTGRES_SECRET_NAME__": f"{prefix}/postgres",
         "__RABBITMQ_SECRET_NAME__": f"{prefix}/rabbitmq",
         "__FABRIC_NSG_SECRET_NAME__": f"{prefix}/fabric/nsg",

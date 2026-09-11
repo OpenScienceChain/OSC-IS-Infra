@@ -8,6 +8,10 @@
 AWS Secrets Manager stores database credentials, Amazon MQ credentials, and the
 two organization Fabric client credential bundles. Separate secrets and IAM
 policies prevent one workload from reading another organization's Fabric key.
+API authentication/demo-control values, the API-to-listener key, and each
+organization's ledger bearer token are also separate secrets. Secrets Store
+field selection is not treated as an authorization boundary: each Pod Identity
+role can call `GetSecretValue` only on the exact secret ARNs its service uses.
 
 EKS Pod Identity or IRSA provides short-lived AWS authorization to dedicated
 Kubernetes service accounts. Automatic service-account token mounting is
@@ -21,11 +25,15 @@ checksums and expiration, and removes them with the cluster.
 
 ## Policy boundaries
 
-- Gateway: database and its own token-signing material; no Fabric key.
-- Outbox/worker: broker credential and internal Ledger Gateway credential; no
+- Gateway: database, broker, listener key, and its own token-signing/control
+  material; no ledger bearer token or Fabric key.
+- Outbox/worker: broker credential and both organization Ledger Gateway bearer
+  tokens, because it routes organization-bound work; no
   direct Fabric key unless it is the Ledger Gateway process.
-- NSG Ledger Gateway: NSG Fabric client secret only.
-- Citizen Science Ledger Gateway: Citizen Science Fabric client secret only.
+- Listener: broker credential and listener key only.
+- NSG Ledger Gateway: NSG bearer token and NSG Fabric client secret only.
+- Citizen Science Ledger Gateway: Citizen Science bearer token and Citizen
+  Science Fabric client secret only.
 - Deployment automation: permission to update verified image digests and
   declarative revisions; no application secret read.
 

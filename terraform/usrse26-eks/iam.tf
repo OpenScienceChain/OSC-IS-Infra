@@ -216,24 +216,26 @@ locals {
   workload_secret_access = {
     api-gateway = [
       aws_secretsmanager_secret.application.arn,
+      aws_secretsmanager_secret.listener.arn,
       aws_secretsmanager_secret.postgres.arn,
       aws_secretsmanager_secret.rabbitmq.arn,
     ]
     postgres = [aws_secretsmanager_secret.postgres.arn]
     submission-worker = [
-      aws_secretsmanager_secret.application.arn,
+      aws_secretsmanager_secret.ledger_nsg_token.arn,
+      aws_secretsmanager_secret.ledger_citizen_science_token.arn,
       aws_secretsmanager_secret.rabbitmq.arn,
     ]
     submission-listener = [
-      aws_secretsmanager_secret.application.arn,
+      aws_secretsmanager_secret.listener.arn,
       aws_secretsmanager_secret.rabbitmq.arn,
     ]
     ledger-gateway-nsg = [
-      aws_secretsmanager_secret.application.arn,
+      aws_secretsmanager_secret.ledger_nsg_token.arn,
       aws_secretsmanager_secret.fabric_nsg.arn,
     ]
     ledger-gateway-citizen-science = [
-      aws_secretsmanager_secret.application.arn,
+      aws_secretsmanager_secret.ledger_citizen_science_token.arn,
       aws_secretsmanager_secret.fabric_citizen_science.arn,
     ]
   }

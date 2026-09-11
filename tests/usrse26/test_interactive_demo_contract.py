@@ -109,6 +109,22 @@ class RuntimeTopologyTests(unittest.TestCase):
         for name in ("demo-jwt-secret", "demo-analytics-hmac-secret", "demo-control-api-key"):
             self.assertIn(name, secrets)
 
+    def test_workloads_receive_only_consumer_scoped_secret_arns(self) -> None:
+        iam = read("terraform/usrse26-eks/iam.tf")
+        secrets = read("terraform/usrse26-eks/secrets.tf")
+        manifests = read("platform/gitops/aws/namespace-and-secrets.yaml")
+        for resource in (
+            "ledger_nsg_token",
+            "ledger_citizen_science_token",
+            "listener",
+        ):
+            self.assertIn(f'aws_secretsmanager_secret.{resource}.arn', iam)
+            self.assertIn(f'resource "aws_secretsmanager_secret" "{resource}"', secrets)
+        self.assertNotIn('aws_secretsmanager_secret.application.arn,\n      aws_secretsmanager_secret.fabric_nsg.arn', iam)
+        self.assertNotIn('aws_secretsmanager_secret.application.arn,\n      aws_secretsmanager_secret.fabric_citizen_science.arn', iam)
+        self.assertIn("__LEDGER_NSG_TOKEN_SECRET_NAME__", manifests)
+        self.assertIn("__LEDGER_CITIZEN_TOKEN_SECRET_NAME__", manifests)
+
     def test_local_browser_stack_uses_digest_overlay_and_real_history_workers(self) -> None:
         kustomization = read("platform/gitops/local/kustomization.yaml")
         deploy = read("platform/scripts/deploy-local-apps.sh")
@@ -222,6 +238,7 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('resource "aws_ecr_repository" "lifecycle_runner"', lifecycle)
         self.assertIn('controlPlaneResourcesPreserved', runner)
         self.assertNotIn('delete-repository", "--repository-name", runner_repository', runner)
+
     def test_lifecycle_runner_is_source_pinned_scanned_and_non_root(self) -> None:
         dockerfile = read("platform/lifecycle/Dockerfile")
         preparation = read("platform/aws/prepare-aws-artifacts.ps1")
@@ -239,6 +256,11 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("USER 10001:10001", dockerfile)
         self.assertIn("--severity HIGH,CRITICAL", preparation)
         self.assertIn("require a clean committed source tree", preparation)
+        self.assertIn("AWS_EC2_METADATA_DISABLED=true", preparation)
+        self.assertIn("AWS_WEB_IDENTITY_TOKEN_FILE", preparation)
+        self.assertIn("AWS_CONTAINER_CREDENTIALS_FULL_URI", preparation)
+        self.assertIn("AWS profile files", preparation)
+        self.assertIn("credentialIsolation = $credentialIsolationEvidence", preparation)
 
     def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")

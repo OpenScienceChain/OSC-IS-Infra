@@ -37,7 +37,12 @@ release owner places all sibling repositories at the approved revisions.
 
 Prepare the credential-free artifact set only after those revisions are clean
 and frozen. The controller reference must be the reviewed digest, never its
-readable tag:
+readable tag. Run artifact preparation in an isolated job/container account
+with an empty effective `USERPROFILE`/`HOME`, no AWS environment credentials,
+no AWS profile/config files, no OIDC or container credential endpoint, and
+`AWS_EC2_METADATA_DISABLED=true`. The script checks these conditions before it
+executes repository code or build tooling and refuses to emit a
+`credentialFreeBuild` claim when any credential source is present:
 
 ```powershell
 ./platform/aws/prepare-aws-artifacts.ps1 `

@@ -13,6 +13,63 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# The release manifest may claim a credential-free build only after every AWS
+# credential provider available to the build process has been disabled or
+# shown absent. Run this script with an isolated USERPROFILE and metadata
+# disabled; never run it from a deployment shell that has an AWS profile.
+$forbiddenCredentialEnvironment = @(
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
+    'AWS_SECURITY_TOKEN',
+    'AWS_PROFILE',
+    'AWS_DEFAULT_PROFILE',
+    'AWS_SHARED_CREDENTIALS_FILE',
+    'AWS_CONFIG_FILE',
+    'AWS_WEB_IDENTITY_TOKEN_FILE',
+    'AWS_ROLE_ARN',
+    'AWS_ROLE_SESSION_NAME',
+    'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+    'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+    'AWS_CONTAINER_AUTHORIZATION_TOKEN',
+    'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE'
+)
+$presentCredentialEnvironment = @(
+    $forbiddenCredentialEnvironment | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_, 'Process'))
+    }
+)
+if ($presentCredentialEnvironment.Count -ne 0) {
+    throw "Credential-free artifact preparation rejected AWS credential environment sources: $($presentCredentialEnvironment -join ', ')"
+}
+if ([Environment]::GetEnvironmentVariable('AWS_EC2_METADATA_DISABLED', 'Process') -ne 'true') {
+    throw 'Credential-free artifact preparation requires AWS_EC2_METADATA_DISABLED=true.'
+}
+$credentialRoots = @(
+    [Environment]::GetEnvironmentVariable('USERPROFILE', 'Process'),
+    [Environment]::GetEnvironmentVariable('HOME', 'Process')
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
+if ($credentialRoots.Count -eq 0) {
+    throw 'Credential-free artifact preparation requires an explicit isolated USERPROFILE.'
+}
+$credentialFiles = @(
+    foreach ($root in $credentialRoots) {
+        Join-Path $root '.aws/credentials'
+        Join-Path $root '.aws/config'
+    }
+)
+$presentCredentialFiles = @($credentialFiles | Where-Object { Test-Path -LiteralPath $_ })
+if ($presentCredentialFiles.Count -ne 0) {
+    throw "Credential-free artifact preparation rejected AWS profile files: $($presentCredentialFiles -join ', ')"
+}
+$credentialIsolationEvidence = [ordered]@{
+    enforced = $true
+    awsCredentialEnvironmentAbsent = $true
+    awsProfileFilesAbsent = $true
+    instanceMetadataDisabled = $true
+    effectiveProfileRootCount = $credentialRoots.Count
+}
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $worktreeRoot = (Resolve-Path (Join-Path $infraRoot '..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
@@ -214,6 +271,7 @@ try {
         expiresAt = $ExpiresAt.ToString('o')
         createdAt = [DateTimeOffset]::UtcNow.ToString('o')
         credentialFreeBuild = $true
+        credentialIsolation = $credentialIsolationEvidence
         webApp = [ordered]@{
             sourceRevision = $webRevision
             archive = $webBundleArchive
