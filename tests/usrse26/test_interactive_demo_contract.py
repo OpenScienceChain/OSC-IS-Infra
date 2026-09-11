@@ -141,6 +141,17 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertEqual(config["schedule"]["maximumRuntimeHours"], 72)
         self.assertFalse((ROOT / "terraform/usrse26-control/budget.tf").exists())
         lifecycle = read("terraform/usrse26-control/lifecycle.tf")
+        edge = read("terraform/usrse26-control/edge.tf")
+        self.assertEqual(
+            lifecycle.count('blocked_encryption_types = ["SSE-C"]')
+            + edge.count('blocked_encryption_types = ["SSE-C"]'),
+            2,
+        )
+        self.assertEqual(
+            lifecycle.count("bucket_key_enabled       = false")
+            + edge.count("bucket_key_enabled       = false"),
+            2,
+        )
         control_locals = read("terraform/usrse26-control/locals.tf")
         self.assertIn('COST_CONTROL_MODE             = var.cost_control_mode', control_locals)
         self.assertIn('LIFECYCLE_CODEBUILD_PROJECT', control_locals)
