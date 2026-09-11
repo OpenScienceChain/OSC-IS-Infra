@@ -9,7 +9,6 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $terraformRoot = Join-Path $repoRoot 'terraform\usrse26-eks'
 $runRoot = Join-Path $repoRoot "platform\.generated\aws\$RunId"
-$statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $metadataPath = Join-Path $runRoot 'run-metadata.json'
@@ -33,9 +32,16 @@ try {
     Push-Location $terraformRoot
     try {
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
-        terraform apply -input=false -auto-approve "-state=$statePath" $planPath
+        terraform init -input=false -reconfigure `
+            "-backend-config=bucket=osc-usrse26-$RunId-control-269624229733" `
+            "-backend-config=key=runtime-state/$RunId/terraform.tfstate" `
+            '-backend-config=region=us-west-2' `
+            "-backend-config=dynamodb_table=osc-usrse26-$RunId-terraform-locks" `
+            '-backend-config=encrypt=true'
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform backend initialization failed.' }
+        terraform apply -input=false -auto-approve $planPath
         if ($LASTEXITCODE -ne 0) { throw 'Terraform apply failed.' }
-        terraform output "-state=$statePath" -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
+        terraform output -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
     }
     finally {
         Pop-Location

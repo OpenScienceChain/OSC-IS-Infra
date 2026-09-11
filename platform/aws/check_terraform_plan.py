@@ -24,6 +24,16 @@ FORBIDDEN_TYPES = {
     "aws_alb",
     "aws_elb",
 }
+RUNTIME_ECR_REPOSITORIES = {
+    "api-gateway",
+    "chaincode",
+    "gitops-repository",
+    "history-worker",
+    "ledger-gateway",
+    "submission-listener",
+    "submission-worker",
+    "webapp",
+}
 
 
 def after(change: dict[str, Any]) -> dict[str, Any]:
@@ -36,6 +46,44 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
         errors.append(message)
 
 
+def check_ecr_import_reconciliation(
+    resource: dict[str, Any], plan: dict[str, Any], errors: list[str]
+) -> None:
+    """Allow only the exact state-adoption update for staged runtime images."""
+    address = resource.get("address", "unknown")
+    change = resource.get("change", {})
+    before = change.get("before") or {}
+    planned = after(change)
+    run_id = plan.get("variables", {}).get("run_id", {}).get("value")
+    expires_at = plan.get("variables", {}).get("expires_at", {}).get("value")
+    expected_tags = {
+        **REQUIRED_TAGS,
+        "RunId": run_id,
+        "ExpiresAt": expires_at,
+    }
+    match = re.fullmatch(r'aws_ecr_repository\.experiment\["([a-z-]+)"\]', address)
+    repository = match.group(1) if match else None
+    expected_name = f"osc-usrse26-{run_id}/{repository}" if repository else None
+    changed_fields = {
+        key
+        for key in set(before) | set(planned)
+        if before.get(key) != planned.get(key)
+    }
+
+    require(repository in RUNTIME_ECR_REPOSITORIES, f"{address} is not an approved runtime repository", errors)
+    require(planned.get("name") == expected_name, f"{address} has an unexpected repository name", errors)
+    require(
+        changed_fields == {"force_delete", "tags", "tags_all"},
+        f"{address} changes fields outside the approved import reconciliation: {sorted(changed_fields)}",
+        errors,
+    )
+    require(before.get("force_delete") is None, f"{address} was not imported from an unmanaged repository", errors)
+    require(planned.get("force_delete") is True, f"{address} is not runtime-destroyable", errors)
+    require(planned.get("tags") == {}, f"{address} has unexpected explicit tags", errors)
+    require(planned.get("tags_all") == expected_tags, f"{address} tags do not match the reviewed run", errors)
+    require(change.get("after_unknown", {}) == {}, f"{address} has unknown post-apply values", errors)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("plan_json", type=Path)
@@ -43,6 +91,11 @@ def main() -> None:
     plan = json.loads(args.plan_json.read_text(encoding="utf-8"))
     errors: list[str] = []
     creates = 0
+    ecr_import_reconciliations = 0
+    configuration_resources = {
+        resource.get("address"): resource
+        for resource in plan.get("configuration", {}).get("root_module", {}).get("resources", [])
+    }
 
     for resource in plan.get("resource_changes", []):
         address = resource.get("address", "unknown")
@@ -50,8 +103,12 @@ def main() -> None:
         actions = resource.get("change", {}).get("actions", [])
         if actions == ["create"]:
             creates += 1
+        is_ecr_import_reconciliation = resource_type == "aws_ecr_repository" and actions == ["update"]
+        if is_ecr_import_reconciliation:
+            ecr_import_reconciliations += 1
+            check_ecr_import_reconciliation(resource, plan, errors)
         require(
-            actions in (["create"], ["read"], ["no-op"]),
+            actions in (["create"], ["read"], ["no-op"]) or is_ecr_import_reconciliation,
             f"{address} has forbidden actions: {actions}",
             errors,
         )
@@ -101,10 +158,27 @@ def main() -> None:
         if resource_type == "aws_cloudformation_stack":
             template = json.loads(planned.get("template_body", "{}"))
             broker = template.get("Resources", {}).get("Broker", {}).get("Properties", {})
+            parameter_references = (
+                configuration_resources.get(address, {})
+                .get("expressions", {})
+                .get("parameters", {})
+                .get("references", [])
+            )
+            broker_size = (
+                plan.get("variables", {})
+                .get("rabbitmq_instance_type", {})
+                .get("value")
+            )
             require(broker.get("PubliclyAccessible") is False, f"{address} creates a public broker", errors)
             require(broker.get("DeploymentMode") == "CLUSTER_MULTI_AZ", f"{address} must use a three-broker Multi-AZ cluster", errors)
             require(broker.get("EngineType") == "RABBITMQ", f"{address} is not RabbitMQ", errors)
-            require(broker.get("HostInstanceType") == "mq.m7g.medium", f"{address} broker size is outside the reviewed bound", errors)
+            require(
+                broker.get("HostInstanceType") == {"Ref": "HostInstanceType"}
+                and "var.rabbitmq_instance_type" in parameter_references
+                and broker_size == "mq.m7g.medium",
+                f"{address} broker size is outside the reviewed bound",
+                errors,
+            )
             serialized = json.dumps(template)
             require("{{resolve:secretsmanager:" in serialized, f"{address} does not resolve its password from Secrets Manager", errors)
 
@@ -119,7 +193,10 @@ def main() -> None:
             print(f"- {error}")
         raise SystemExit(1)
 
-    print(f"Terraform plan policy check passed: {creates} creates, zero updates, zero deletes.")
+    print(
+        "Terraform plan policy check passed: "
+        f"{creates} creates, {ecr_import_reconciliations} exact ECR import reconciliations, zero deletes."
+    )
 
 
 if __name__ == "__main__":

@@ -24,7 +24,6 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $terraformRoot = Join-Path $repoRoot 'terraform\usrse26-eks'
 $runRoot = Join-Path $repoRoot "platform\.generated\aws\$RunId"
-$statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $tfvarsPath = Join-Path $runRoot 'run.tfvars'
@@ -87,14 +86,39 @@ try {
 
     Push-Location $terraformRoot
     try {
-        terraform init -backend=false -input=false
+        terraform init -input=false -reconfigure `
+            "-backend-config=bucket=osc-usrse26-$RunId-control-269624229733" `
+            "-backend-config=key=runtime-state/$RunId/terraform.tfstate" `
+            '-backend-config=region=us-west-2' `
+            "-backend-config=dynamodb_table=osc-usrse26-$RunId-terraform-locks" `
+            '-backend-config=encrypt=true'
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform backend initialization failed.' }
         terraform validate
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform validation failed.' }
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
+        $runtimeRepositories = @(
+            'api-gateway',
+            'chaincode',
+            'gitops-repository',
+            'history-worker',
+            'ledger-gateway',
+            'submission-listener',
+            'submission-worker',
+            'webapp'
+        )
+        $stateEntries = @(terraform state list 2>$null)
+        foreach ($name in $runtimeRepositories) {
+            $address = 'aws_ecr_repository.experiment["{0}"]' -f $name
+            if ($stateEntries -notcontains $address) {
+                terraform import -input=false "-var-file=$tfvarsPath" `
+                    $address "osc-usrse26-$RunId/$name"
+                if ($LASTEXITCODE -ne 0) { throw "Could not import the exact runtime repository for $name." }
+            }
+        }
         $planArgs = @(
             'plan'
             '-input=false'
             '-lock=true'
-            "-state=$statePath"
             "-var-file=$tfvarsPath"
             "-out=$planPath"
         )
@@ -109,6 +133,7 @@ try {
     }
 
     python platform/aws/check_terraform_plan.py $planJsonPath
+    if ($LASTEXITCODE -ne 0) { throw 'Terraform plan policy check failed.' }
     Write-Host "AWS evidence plan is ready for review: $planPath"
     Write-Host "It expires at $($expiresAt.ToString('o')); do not apply it after that time."
 }

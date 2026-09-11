@@ -21,7 +21,9 @@ saved Terraform plan, and rejects
 destructive, public, mutable, untagged, or out-of-scope resources.
 `apply-run.ps1` only applies that reviewed plan before its configured expiry.
 `destroy-run.ps1` destroys runtime and fails unless the final inventory has
-exact baseline parity.
+exact baseline parity. These three runtime wrappers use the control-owned,
+run-scoped S3 backend and DynamoDB lock table, matching the scheduled lifecycle
+runner instead of relying on state stored only on the operator's laptop.
 
 The persistent status edge and automated lifecycle use the separate guarded
 `prepare-demo-control.ps1`, `apply-demo-control.ps1`, and

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -160,6 +161,20 @@ class LifecycleContractTests(unittest.TestCase):
             lifecycle.count('CODEBUILD_PROJECT=\\"$LIFECYCLE_CODEBUILD_PROJECT\\"'),
             2,
         )
+
+        for script_name in ("prepare-run.ps1", "apply-run.ps1", "destroy-run.ps1"):
+            script = read(f"platform/aws/{script_name}")
+            self.assertIn('runtime-state/$RunId/terraform.tfstate', script)
+            self.assertIn('osc-usrse26-$RunId-terraform-locks', script)
+            self.assertIn("-reconfigure", script)
+            self.assertNotIn('"-state=$statePath"', script)
+        self.assertIn(
+            "if ($LASTEXITCODE -ne 0) { throw 'Terraform plan policy check failed.' }",
+            read("platform/aws/prepare-run.ps1"),
+        )
+        prepare_run = read("platform/aws/prepare-run.ps1")
+        self.assertIn('aws_ecr_repository.experiment["{0}"]', prepare_run)
+        self.assertIn('terraform import -input=false', prepare_run)
         self.assertIn('variable "cost_control_mode"', read("terraform/usrse26-control/variables.tf"))
         self.assertIn('default = "TIME_BOUNDED"', read("terraform/usrse26-control/variables.tf"))
         self.assertEqual(config["costControl"]["mode"], "TIME_BOUNDED")
@@ -479,7 +494,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
                 "PubliclyAccessible": False,
                 "DeploymentMode": "CLUSTER_MULTI_AZ",
                 "EngineType": "RABBITMQ",
-                "HostInstanceType": "mq.m7g.medium",
+                "HostInstanceType": {"Ref": "HostInstanceType"},
                 "Users": [{"Password": "{{resolve:secretsmanager:exact-run}}"}],
             }}},
         }
@@ -504,6 +519,13 @@ class RenderingAndPolicyTests(unittest.TestCase):
                 },
             ],
             "planned_values": {"outputs": {"account_id": {"value": "269624229733"}}},
+            "variables": {"rabbitmq_instance_type": {"value": "mq.m7g.medium"}},
+            "configuration": {"root_module": {"resources": [{
+                "address": "aws_cloudformation_stack.rabbitmq",
+                "expressions": {"parameters": {
+                    "references": ["var.rabbitmq_instance_type"],
+                }},
+            }]}},
         }
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "runtime-plan.json"
@@ -516,11 +538,129 @@ class RenderingAndPolicyTests(unittest.TestCase):
             unbounded_nodes = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(unbounded_nodes.returncode, 0)
             plan["resource_changes"][0]["change"]["after"]["scaling_config"][0]["max_size"] = 3
-            broker_template["Resources"]["Broker"]["Properties"]["HostInstanceType"] = "mq.m7g.large"
-            plan["resource_changes"][1]["change"]["after"]["template_body"] = json.dumps(broker_template)
+            plan["variables"]["rabbitmq_instance_type"]["value"] = "mq.m7g.large"
             path.write_text(json.dumps(plan), encoding="utf-8")
             oversized_broker = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(oversized_broker.returncode, 0)
+            plan["variables"]["rabbitmq_instance_type"]["value"] = "mq.m7g.medium"
+            plan["configuration"]["root_module"]["resources"][0]["expressions"][
+                "parameters"
+            ]["references"] = []
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            unwired_broker_size = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(unwired_broker_size.returncode, 0)
+
+    def test_runtime_plan_allows_only_exact_ecr_import_reconciliation(self) -> None:
+        tags = {
+            "Project": "OSC-IS", "Purpose": "USRSE26-Interactive-Demo",
+            "Environment": "ephemeral", "ManagedBy": "Terraform", "Owner": "ofgarzon",
+            "RunId": "usrse26r1", "ExpiresAt": "2026-09-12T03:40:29Z",
+        }
+        before = {
+            "name": "osc-usrse26-usrse26r1/api-gateway",
+            "force_delete": None,
+            "image_tag_mutability": "IMMUTABLE",
+            "image_scanning_configuration": [{"scan_on_push": True}],
+            "encryption_configuration": [{"encryption_type": "AES256", "kms_key": ""}],
+            "tags": {"ExpiresAt": "2026-09-14T18:50:12Z"},
+            "tags_all": {**tags, "ExpiresAt": "2026-09-14T18:50:12Z"},
+        }
+        after = {
+            **before,
+            "force_delete": True,
+            "tags": {},
+            "tags_all": tags,
+        }
+        plan = {
+            "resource_changes": [
+                {
+                    "address": "terraform_data.anchor",
+                    "type": "terraform_data",
+                    "change": {"actions": ["create"], "after": {}},
+                },
+                {
+                    "address": 'aws_ecr_repository.experiment["api-gateway"]',
+                    "type": "aws_ecr_repository",
+                    "change": {
+                        "actions": ["update"],
+                        "before": before,
+                        "after": after,
+                        "after_unknown": {},
+                    },
+                },
+            ],
+            "planned_values": {"outputs": {
+                "account_id": {"value": "269624229733"},
+                "required_tags": {"value": tags},
+            }},
+            "variables": {
+                "run_id": {"value": "usrse26r1"},
+                "expires_at": {"value": "2026-09-12T03:40:29Z"},
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "runtime-plan.json"
+            command = [sys.executable, str(ROOT / "platform/aws/check_terraform_plan.py"), str(path)]
+
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            accepted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+            invalid_plans = []
+            mutable = copy.deepcopy(plan)
+            mutable["resource_changes"][1]["change"]["after"]["image_tag_mutability"] = "MUTABLE"
+            invalid_plans.append(mutable)
+            unexpected_drift = copy.deepcopy(plan)
+            unexpected_drift["resource_changes"][1]["change"]["after"]["name"] = "other"
+            invalid_plans.append(unexpected_drift)
+            wrong_expiry = copy.deepcopy(plan)
+            wrong_expiry["resource_changes"][1]["change"]["after"]["tags_all"]["ExpiresAt"] = "2026-09-13T03:40:29Z"
+            invalid_plans.append(wrong_expiry)
+            destructive = copy.deepcopy(plan)
+            destructive["resource_changes"][1]["change"]["actions"] = ["delete", "create"]
+            invalid_plans.append(destructive)
+
+            for invalid in invalid_plans:
+                path.write_text(json.dumps(invalid), encoding="utf-8")
+                rejected = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+
+    def test_inventory_parity_allows_baseline_control_resources_only(self) -> None:
+        prefix = "osc-usrse26-usrse26demo"
+        baseline = {
+            "account": "269624229733",
+            "region": "us-west-2",
+            "resources": {
+                "ecr_repositories": [f"{prefix}/api-gateway"],
+                "osc_is_tagged_arns": [f"arn:aws:s3:::{prefix}-control-269624229733"],
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            baseline_path = temp_root / "baseline.json"
+            final_path = temp_root / "final.json"
+            report_path = temp_root / "report.json"
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+            final_path.write_text(json.dumps(baseline), encoding="utf-8")
+            command = [
+                sys.executable,
+                str(ROOT / "platform/aws/compare_inventories.py"),
+                str(baseline_path),
+                str(final_path),
+                "--run-id",
+                "usrse26demo",
+                "--output",
+                str(report_path),
+            ]
+            accepted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            self.assertEqual(json.loads(report_path.read_text(encoding="utf-8"))["runRemnants"], {})
+
+            final = json.loads(json.dumps(baseline))
+            final["resources"]["eks_clusters"] = [f"{prefix}-eks"]
+            final_path.write_text(json.dumps(final), encoding="utf-8")
+            rejected = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(rejected.returncode, 0)
 
     def test_gitops_renders_with_only_immutable_images(self) -> None:
         digest = "a" * 64
