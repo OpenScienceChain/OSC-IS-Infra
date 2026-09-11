@@ -37,7 +37,7 @@ try {
         artifact_manifest_s3_uri = $ArtifactManifestS3Uri
         artifact_manifest_sha256 = $ArtifactManifestSha256
         planning_cost_usd = $PlanningCostUsd
-        notification_email = $NotificationEmail
+        notification_email = if ([string]::IsNullOrWhiteSpace($NotificationEmail)) { $null } else { $NotificationEmail }
     }
     $lines = foreach ($entry in $values.GetEnumerator()) {
         if ($null -eq $entry.Value) { "$($entry.Key) = null" }

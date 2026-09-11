@@ -137,6 +137,15 @@ class LifecycleContractTests(unittest.TestCase):
         for script in ("prepare-demo-control.ps1", "apply-demo-control.ps1", "destroy-demo-control.ps1"):
             self.assertIn("platform/aws/aws_guard.py", read(f"platform/aws/{script}"))
 
+    def test_first_control_plan_has_static_certificate_keys_and_null_optional_email(self) -> None:
+        edge = read("terraform/usrse26-control/edge.tf")
+        preparation = read("platform/aws/prepare-demo-control.ps1")
+        self.assertIn("for_each = toset([var.public_hostname])", edge)
+        self.assertIn("one(aws_acm_certificate.edge.domain_validation_options)", edge)
+        self.assertNotIn("for option in aws_acm_certificate.edge.domain_validation_options", edge)
+        self.assertIn("[string]::IsNullOrWhiteSpace($NotificationEmail)", preparation)
+        self.assertIn("{ $null } else { $NotificationEmail }", preparation)
+
     def test_state_machines_have_retry_canary_drain_backup_and_sweep(self) -> None:
         machines = read("terraform/usrse26-control/state-machines.tf")
         schedules = read("terraform/usrse26-control/schedules.tf")

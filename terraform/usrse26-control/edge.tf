@@ -139,17 +139,11 @@ resource "aws_acm_certificate" "edge" {
 }
 
 resource "aws_route53_record" "certificate" {
-  for_each = {
-    for option in aws_acm_certificate.edge.domain_validation_options : option.domain_name => {
-      name   = option.resource_record_name
-      record = option.resource_record_value
-      type   = option.resource_record_type
-    }
-  }
+  for_each        = toset([var.public_hostname])
   zone_id         = var.hosted_zone_id
-  name            = each.value.name
-  type            = each.value.type
-  records         = [each.value.record]
+  name            = one(aws_acm_certificate.edge.domain_validation_options).resource_record_name
+  type            = one(aws_acm_certificate.edge.domain_validation_options).resource_record_type
+  records         = [one(aws_acm_certificate.edge.domain_validation_options).resource_record_value]
   ttl             = 60
   allow_overwrite = true
 }
