@@ -22,7 +22,9 @@ writing to AWS:
 - API Gateway, RabbitMQ, and Fabric peer recovery checks passed with no duplicate
   ledger revisions; and
 - Argo CD self-heal, digest rollout, and rollback checks passed (1 s, 13 s, and
-  10 s respectively) without storing Git credentials.
+  10 s respectively) without storing Git credentials; and
+- `fabric-down.sh` removed the exact `osc-usrse26-infra` Kind cluster and local
+  registry and verified both were absent.
 
 These checks establish local behavior and configuration validity only. They do
 not establish an AWS deployment, production readiness, adoption, or measured
