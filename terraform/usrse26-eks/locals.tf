@@ -31,5 +31,6 @@ locals {
     "submission-listener",
     "chaincode",
     "gitops-repository",
+    "webapp",
   ])
 }

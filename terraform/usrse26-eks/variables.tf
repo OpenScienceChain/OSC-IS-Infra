@@ -10,8 +10,19 @@ variable "authorized_account_id" {
 }
 
 variable "aws_profile" {
-  type    = string
-  default = "default"
+  type     = string
+  default  = null
+  nullable = true
+}
+
+variable "runner_public_cidr" {
+  description = "Ephemeral CodeBuild egress /32 used only while the runner moves into the runtime VPC."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.runner_public_cidr, 0)) && endswith(var.runner_public_cidr, "/32") && var.runner_public_cidr != "0.0.0.0/0"
+    error_message = "runner_public_cidr must be one explicit IPv4 /32."
+  }
 }
 
 variable "aws_region" {

@@ -29,7 +29,7 @@ resource "aws_eks_cluster" "experiment" {
     subnet_ids              = aws_subnet.private[*].id
     endpoint_private_access = true
     endpoint_public_access  = true
-    public_access_cidrs     = [var.admin_cidr]
+    public_access_cidrs     = distinct([var.admin_cidr, var.runner_public_cidr])
   }
 
   depends_on = [
@@ -37,6 +37,29 @@ resource "aws_eks_cluster" "experiment" {
     aws_iam_role_policy_attachment.eks_cluster,
     aws_route.private_internet,
   ]
+}
+
+resource "aws_security_group" "lifecycle_runner" {
+  name        = "${local.name_prefix}-lifecycle-runner"
+  description = "Egress-only security group for the lifecycle CodeBuild ENI"
+  vpc_id      = aws_vpc.experiment.id
+
+  egress {
+    description = "Runner access to AWS APIs, package mirrors, and the private EKS endpoint"
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "eks_from_lifecycle_runner" {
+  security_group_id            = aws_eks_cluster.experiment.vpc_config[0].cluster_security_group_id
+  referenced_security_group_id = aws_security_group.lifecycle_runner.id
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+  description                  = "Private Kubernetes API access from the lifecycle runner"
 }
 
 resource "aws_launch_template" "eks_nodes" {

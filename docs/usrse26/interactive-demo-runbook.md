@@ -42,13 +42,30 @@ readable tag:
 ```powershell
 ./platform/aws/prepare-aws-artifacts.ps1 `
   -RunId usrse26demo `
-  -AlbControllerImage 'public.ecr.aws/eks/aws-load-balancer-controller@sha256:REVIEWED'
+  -AlbControllerImage 'public.ecr.aws/eks/aws-load-balancer-controller@sha256:REVIEWED' `
+  -ExpiresAt '2026-10-23T15:00:00Z'
 ```
 
-The release manifest consumed by the lifecycle runner must additionally carry
-the reviewed WebApp bundle's source revision, S3 URI, and SHA-256. `START`
-copies that bundle to the private edge bucket; the product UI remains a release
-owner input and is not synthesized by infrastructure.
+This command builds and scans the WebApp OCI image, extracts its production
+files, injects the fixed demo runtime configuration, and creates a deterministic
+static archive. It also builds the lifecycle runner from commit-pinned Fabric,
+Fabric CA, Terraform, and Kubernetes sources against a content-addressed Amazon
+Linux repository snapshot;
+the build stops unless every source repository is clean and every image has zero
+HIGH or CRITICAL findings. No AWS credential is present during any build. After
+reviewing the scan, SBOM, source revisions, and estimated expiry, publish the
+exact artifacts to an existing versioned release bucket:
+
+```powershell
+./platform/aws/push-aws-artifacts.ps1 `
+  -RunId usrse26demo `
+  -ReleaseBucket 'REVIEWED-VERSIONED-RELEASE-BUCKET' `
+  -ExpiresAt '2026-10-23T15:00:00Z'
+```
+
+The resulting `ecr-deployment.json` supplies the versioned manifest URI and
+SHA-256 for `prepare-demo-control.ps1`. `START` verifies both the manifest and
+the WebApp archive before copying the site to the private edge bucket.
 
 ## Prepare and apply the persistent shell
 
@@ -61,8 +78,7 @@ were executed in this implementation task:
   -HostedZoneId ZREVIEWED `
   -AdminCidr 203.0.113.10/32 `
   -LifecycleRunnerImage 'REPOSITORY@sha256:REVIEWED' `
-  -LifecyclePermissionsBoundaryArn 'arn:aws:iam::269624229733:policy/REVIEWED' `
-  -ArtifactManifestS3Uri 's3://RELEASE-BUCKET/releases/usrse26demo/manifest.json' `
+  -ArtifactManifestS3Uri 's3://RELEASE-BUCKET/releases/usrse26demo/artifacts.json' `
   -ArtifactManifestSha256 'REVIEWED_SHA256'
 
 ./platform/aws/apply-demo-control.ps1 -RunId usrse26demo
@@ -82,17 +98,25 @@ confirms an artifact, workflow, history, and cross-organization denial.
 
 During the window, inspect request failures, confirmation p50/p95, queue depth
 and age, pod readiness, ALB target health, WAF actions, Fabric state, and cost.
-At persistent service error or unsafe queue state, set `READ_ONLY`. At $150,
-the monitor must set read-only and start stop; $200 is an absolute no-provision
-boundary.
+The runner records only aggregate application metrics behind the control-key
+guard; it never records record/session identifiers or queue payloads. Two
+consecutive service/readiness/queue/latency safety failures automatically start
+the stop state machine. Cost notices are sent once at $75 and $125; at $150 the
+monitor sets read-only and starts stop. $200 is an absolute no-provision boundary.
 
 ## Stop and teardown
 
 The stop state machine writes `READ_ONLY`, drains for 15 minutes, exports only
 allowlisted evidence, detaches the CloudFront VPC origin, destroys runtime,
-and performs an all-tag sweep. The static page remains. Treat any remaining
+and performs an all-tag sweep using the exact Project, Purpose, Environment,
+RunId, and runtime ExpiresAt values. The static page remains. Treat any remaining
 resource as a failed teardown and use the backup stop; never broaden the sweep
 to pre-existing or partially tagged resources.
+
+Runtime removal uses two jobs: the in-VPC job deletes Kubernetes workloads and
+resets future lifecycle jobs to public placement; after that job exits and its
+network interface is released, a fresh out-of-VPC job destroys the Terraform
+runtime. This ordering prevents the runner from trying to delete its own VPC.
 
 After billing settles for 48 hours, fill `cost-report-template.json`. After the
 30-day retention window and only with `runtime-teardown-proof.json` showing
@@ -102,4 +126,8 @@ zero tagged resources:
 ./platform/aws/destroy-demo-control.ps1 -RunId usrse26demo
 ```
 
-The hosted zone is an input and is never deleted by either Terraform root.
+The final command downloads and validates the runtime proof before removing the
+control plane, deletes every version under the exact `releases/<RunId>/` prefix,
+checks both runtime and global-control regions for residual run-tagged resources,
+and writes `control-plane-teardown-proof.json` locally. The hosted zone is an
+input and is never deleted by either Terraform root.

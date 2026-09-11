@@ -68,7 +68,14 @@ def main() -> None:
             cidrs = vpc.get("public_access_cidrs", [])
             require(vpc.get("endpoint_private_access") is True, f"{address} lacks private API access", errors)
             require(vpc.get("endpoint_public_access") is True, f"{address} public API state is unexpected", errors)
-            require(len(cidrs) == 1 and re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}/32", cidrs[0] or "") is not None, f"{address} must use one /32 API CIDR", errors)
+            require(
+                1 <= len(cidrs) <= 2 and len(set(cidrs)) == len(cidrs) and all(
+                    re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}/32", cidr or "") is not None
+                    for cidr in cidrs
+                ),
+                f"{address} must use no more than two distinct administrator/runner /32 API CIDRs",
+                errors,
+            )
             require(cidrs != ["0.0.0.0/0"], f"{address} exposes the API publicly", errors)
 
         if resource_type == "aws_ecr_repository":

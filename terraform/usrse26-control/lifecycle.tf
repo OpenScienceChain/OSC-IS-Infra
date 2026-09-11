@@ -99,6 +99,40 @@ resource "aws_cloudwatch_log_group" "lifecycle" {
   retention_in_days = 7
 }
 
+# The lifecycle image is prepared and pushed before this control plane exists.
+# Importing this exact run-scoped repository makes the surviving backup-stop
+# dependency part of the control plane and removes it only during final control
+# teardown, after runtime teardown evidence has passed.
+resource "aws_ecr_repository" "lifecycle_runner" {
+  name                 = "${local.name_prefix}/lifecycle-runner"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "lifecycle_runner" {
+  repository = aws_ecr_repository.lifecycle_runner.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Retain only the five most recent control images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 5
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 data "aws_iam_policy_document" "codebuild_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -109,10 +143,36 @@ data "aws_iam_policy_document" "codebuild_assume" {
   }
 }
 
+resource "aws_iam_policy" "lifecycle_boundary" {
+  name        = "${local.name_prefix}-lifecycle-boundary"
+  description = "Maximum AWS service surface for the disposable US-RSE lifecycle runner"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "autoscaling:*", "budgets:ViewBudget", "cloudformation:*", "cloudfront:*",
+        "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "codebuild:UpdateProject",
+        "dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
+        "ec2:*", "ecr:*", "eks:*", "elasticloadbalancing:*",
+        "iam:AttachRolePolicy", "iam:CreateOpenIDConnectProvider", "iam:CreateRole", "iam:CreateServiceLinkedRole",
+        "iam:DeleteOpenIDConnectProvider", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:DetachRolePolicy",
+        "iam:GetOpenIDConnectProvider", "iam:GetRole", "iam:GetRolePolicy", "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole", "iam:ListOpenIDConnectProviders", "iam:ListRolePolicies", "iam:PassRole",
+        "iam:PutRolePolicy", "iam:TagOpenIDConnectProvider", "iam:TagRole", "iam:UntagOpenIDConnectProvider", "iam:UntagRole",
+        "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
+        "mq:*", "resourcegroupstaggingapi:GetResources", "s3:*", "secretsmanager:*", "sns:Publish",
+        "states:StartExecution", "sts:GetCallerIdentity"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 resource "aws_iam_role" "lifecycle" {
   name                 = "${local.name_prefix}-lifecycle"
   assume_role_policy   = data.aws_iam_policy_document.codebuild_assume.json
-  permissions_boundary = var.lifecycle_permissions_boundary_arn
+  permissions_boundary = aws_iam_policy.lifecycle_boundary.arn
 }
 
 resource "aws_iam_role_policy" "lifecycle" {
@@ -137,7 +197,7 @@ resource "aws_iam_role_policy" "lifecycle" {
         Sid      = "ExactControlObjects"
         Effect   = "Allow"
         Action   = ["s3:GetBucketVersioning", "s3:ListBucket"]
-        Resource = aws_s3_bucket.control.arn
+        Resource = [aws_s3_bucket.control.arn, aws_s3_bucket.edge.arn]
       },
       {
         Sid      = "VersionedReleaseArtifacts"
@@ -170,6 +230,18 @@ resource "aws_iam_role_policy" "lifecycle" {
         Resource = [aws_sns_topic.lifecycle.arn, aws_sfn_state_machine.stop.arn]
       },
       {
+        Sid      = "UpdateOwnNetworkPlacement"
+        Effect   = "Allow"
+        Action   = ["codebuild:UpdateProject"]
+        Resource = "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle"
+      },
+      {
+        Sid      = "ObserveSafetySignals"
+        Effect   = "Allow"
+        Action   = ["budgets:ViewBudget", "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "resourcegroupstaggingapi:GetResources"]
+        Resource = "*"
+      },
+      {
         Sid      = "CloudFrontRuntimeOrigin"
         Effect   = "Allow"
         Action   = ["cloudfront:CreateVpcOrigin", "cloudfront:DeleteVpcOrigin", "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig", "cloudfront:GetVpcOrigin", "cloudfront:ListVpcOrigins", "cloudfront:UpdateDistribution"]
@@ -193,10 +265,13 @@ resource "aws_iam_role_policy" "lifecycle" {
         Action = [
           "autoscaling:*", "cloudformation:*", "ec2:*", "ecr:*", "eks:*",
           "elasticloadbalancing:*", "iam:CreatePolicy", "iam:CreateRole", "iam:DeletePolicy",
-          "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:GetPolicy", "iam:GetRole",
-          "iam:GetRolePolicy", "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole",
+          "iam:AttachRolePolicy", "iam:CreateOpenIDConnectProvider", "iam:CreateServiceLinkedRole",
+          "iam:DeleteOpenIDConnectProvider", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:DetachRolePolicy",
+          "iam:GetOpenIDConnectProvider", "iam:GetPolicy", "iam:GetRole", "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:ListOpenIDConnectProviders",
           "iam:ListPolicyVersions", "iam:ListRolePolicies", "iam:PassRole", "iam:PutRolePolicy",
-          "iam:TagPolicy", "iam:TagRole", "iam:UntagPolicy", "iam:UntagRole",
+          "iam:TagOpenIDConnectProvider", "iam:TagPolicy", "iam:TagRole",
+          "iam:UntagOpenIDConnectProvider", "iam:UntagPolicy", "iam:UntagRole",
           "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
           "mq:*", "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret",
           "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"

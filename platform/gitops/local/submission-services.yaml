@@ -4,7 +4,7 @@ metadata:
   name: submission-worker
   namespace: osc-apps
 spec:
-  replicas: 1
+  replicas: 4
   selector:
     matchLabels: {app.kubernetes.io/name: submission-worker}
   template:

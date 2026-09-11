@@ -163,7 +163,22 @@ resource "aws_sfn_state_machine" "start" {
             { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }
           ]
         }
-        Next = "NotifyFailure"
+        Retry = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
+        Next  = "WaitForFailedStartNetworkRelease"
+      }
+      WaitForFailedStartNetworkRelease = { Type = "Wait", Seconds = 120, Next = "FailedStartDestroyRuntime" }
+      FailedStartDestroyRuntime = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::codebuild:startBuild.sync"
+        Parameters = {
+          ProjectName = aws_codebuild_project.lifecycle.name
+          EnvironmentVariablesOverride = [
+            { Name = "ACTION", Value = "DESTROY_RUNTIME", Type = "PLAINTEXT" },
+            { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }
+          ]
+        }
+        Retry = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 120, BackoffRate = 2, MaxAttempts = 3 }]
+        Next  = "NotifyFailure"
       }
       NotifyFailure = {
         Type       = "Task"
@@ -194,10 +209,29 @@ resource "aws_sfn_state_machine" "stop" {
       VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = {
         Type    = "Choice"
-        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "ReadOnly" }]
+        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "ReadRun" }]
         Default = "Unauthorized"
       }
       Unauthorized = { Type = "Fail", Error = "UnauthorizedAccount", Cause = "Expected AWS account 269624229733" }
+      ReadRun = {
+        Type       = "Task"
+        Resource   = "arn:aws:states:::dynamodb:getItem"
+        Parameters = { TableName = aws_dynamodb_table.lifecycle.name, Key = { runId = { "S.$" = "$.runId" } }, ConsistentRead = true }
+        ResultPath = "$.existing"
+        Next       = "AlreadyClosed"
+      }
+      AlreadyClosed = {
+        Type = "Choice"
+        Choices = [{
+          And = [
+            { Variable = "$.existing.Item.status.S", IsPresent = true },
+            { Variable = "$.existing.Item.status.S", StringEquals = "CLOSED" }
+          ]
+          Next = "StopComplete"
+        }]
+        Default = "ReadOnly"
+      }
+      StopComplete = { Type = "Succeed" }
       ReadOnly = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "READ_ONLY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
@@ -213,6 +247,13 @@ resource "aws_sfn_state_machine" "stop" {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
+        Next       = "WaitForRunnerNetworkRelease"
+      }
+      WaitForRunnerNetworkRelease = { Type = "Wait", Seconds = 120, Next = "DestroyRuntime" }
+      DestroyRuntime = {
+        Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
+        Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY_RUNTIME", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 120, BackoffRate = 2, MaxAttempts = 3 }]
         Next       = "Sweep"
       }
       Sweep = {

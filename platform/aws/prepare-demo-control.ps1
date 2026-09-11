@@ -4,7 +4,6 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^Z[A-Z0-9]+$')][string]$HostedZoneId,
     [Parameter(Mandatory = $true)][ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}/32$')][string]$AdminCidr,
     [Parameter(Mandatory = $true)][ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')][string]$LifecycleRunnerImage,
-    [Parameter(Mandatory = $true)][ValidatePattern('^arn:aws:iam::269624229733:policy/[A-Za-z0-9+=,.@_/-]+$')][string]$LifecyclePermissionsBoundaryArn,
     [Parameter(Mandatory = $true)][ValidatePattern('^s3://[a-z0-9.-]+/.+/.+\.json$')][string]$ArtifactManifestS3Uri,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ArtifactManifestSha256,
     [ValidateRange(0, 200)][decimal]$PlanningCostUsd = 120,
@@ -21,6 +20,9 @@ $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $tfvarsPath = Join-Path $runRoot 'control.tfvars'
 
 if ($AdminCidr -in @('0.0.0.0/0', '0.0.0.0/32')) { throw 'AdminCidr must identify one trusted IPv4 address.' }
+if ($LifecycleRunnerImage -notmatch "^269624229733[.]dkr[.]ecr[.]us-west-2[.]amazonaws[.]com/osc-usrse26-$RunId/lifecycle-runner@sha256:[0-9a-f]{64}$") {
+    throw 'LifecycleRunnerImage must be the immutable image in this exact run-scoped ECR repository.'
+}
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 
 Push-Location $repoRoot
@@ -32,7 +34,6 @@ try {
         hosted_zone_id = $HostedZoneId
         admin_cidr = $AdminCidr
         lifecycle_runner_image = $LifecycleRunnerImage
-        lifecycle_permissions_boundary_arn = $LifecyclePermissionsBoundaryArn
         artifact_manifest_s3_uri = $ArtifactManifestS3Uri
         artifact_manifest_sha256 = $ArtifactManifestSha256
         planning_cost_usd = $PlanningCostUsd
@@ -51,6 +52,20 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed.' }
         terraform validate
         if ($LASTEXITCODE -ne 0) { throw 'Terraform validation failed.' }
+        $lifecycleRepository = "osc-usrse26-$RunId/lifecycle-runner"
+        python (Join-Path $repoRoot 'platform/aws/aws_guard.py') | Out-Null
+        aws ecr describe-repositories `
+            --repository-names $lifecycleRepository `
+            --profile default `
+            --region us-west-2 `
+            --no-cli-pager | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'The reviewed lifecycle-runner ECR repository must exist before control-plane planning.' }
+        $stateEntries = @(terraform state list "-state=$statePath" 2>$null)
+        if ($stateEntries -notcontains 'aws_ecr_repository.lifecycle_runner') {
+            terraform import -input=false "-state=$statePath" "-var-file=$tfvarsPath" `
+                aws_ecr_repository.lifecycle_runner $lifecycleRepository
+            if ($LASTEXITCODE -ne 0) { throw 'Could not import the exact lifecycle-runner repository into control state.' }
+        }
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py') | Out-Null
         terraform plan -input=false -lock=true "-state=$statePath" "-var-file=$tfvarsPath" "-out=$planPath"
         if ($LASTEXITCODE -ne 0) { throw 'Terraform control-plane plan failed.' }

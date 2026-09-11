@@ -1,4 +1,5 @@
 run_id    = "20260902a"
 expires_at = "2026-09-02T16:00:00Z"
 admin_cidr = "203.0.113.10/32"
+runner_public_cidr = "203.0.113.10/32"
 alb_controller_image = "public.ecr.aws/eks/aws-load-balancer-controller@sha256:REPLACE_WITH_REVIEWED_DIGEST"

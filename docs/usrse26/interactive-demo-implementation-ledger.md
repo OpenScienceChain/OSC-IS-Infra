@@ -2,9 +2,10 @@
 
 ## Implemented locally
 
-- Disposable runtime now spans three AZs, fixes the worker count at three, and
+- Disposable runtime now spans three AZs, fixes the submission and history
+  worker counts at four, and
   requests a three-broker Multi-AZ Amazon MQ RabbitMQ deployment.
-- GitOps workloads use two replicas, node/zone spreading, disruption budgets,
+- GitOps workloads use multiple replicas, node/zone spreading, disruption budgets,
   non-root containers, immutable image placeholders, narrowed network paths,
   two organization-scoped Ledger Gateways, and two history-worker paths.
 - AWS Load Balancer Controller uses a dedicated IRSA role; the application
@@ -18,6 +19,9 @@
   monitor executions, and exhausted scheduler invocations.
 - The lifecycle contract requires a checksum-bound WebApp bundle for the S3
   edge and immutable digests for every runtime image before `START` may write.
+- The control root owns the lifecycle role's permissions boundary and imports
+  the exact lifecycle-runner ECR repository so the backup stop survives until
+  final control teardown.
 
 ## Release-owner inputs still required
 
@@ -30,7 +34,7 @@
 | Public UI demo route/status behavior | WebApp owner | QR/browser gate fails |
 | Artifact/workflow canary and organization-denial commands | E2E owner | start cleanup runs instead of OPEN |
 | Hosted zone ID and notification endpoints | authorized operator | control plan is not created or notifications remain unconfirmed |
-| Account-owned lifecycle IAM permissions boundary | AWS owner | rehearsal requires explicit IAM review before apply |
+| Reviewed lifecycle IAM plan and Terraform-owned permissions boundary | Infra release owner | control plan policy and independent review must pass before apply |
 
 ## Evidence boundary
 

@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from typing import Any
 
 AUTHORIZED_ACCOUNT = "269624229733"
-AUTHORIZED_PROFILE = "default"
 AUTHORIZED_REGION = "us-west-2"
 
 
@@ -17,17 +17,12 @@ class AwsCommandError(RuntimeError):
 
 
 def aws_json(*args: str) -> Any:
-    command = [
-        "aws",
-        *args,
-        "--profile",
-        AUTHORIZED_PROFILE,
-        "--region",
-        AUTHORIZED_REGION,
-        "--output",
-        "json",
-        "--no-cli-pager",
-    ]
+    command = ["aws", *args]
+    if profile := os.environ.get("AWS_PROFILE"):
+        command.extend(["--profile", profile])
+    command.extend(
+        ["--region", AUTHORIZED_REGION, "--output", "json", "--no-cli-pager"]
+    )
     process = subprocess.run(command, capture_output=True, text=True)
     if process.returncode != 0:
         stderr = process.stderr.strip() or "AWS CLI command failed"

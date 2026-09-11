@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NETWORK_DIR="${PLATFORM_DIR}/.generated/fabric-network-eks"
-CHAINCODE_DIR="$(cd "${PLATFORM_DIR}/../../OSC-Chaincode/chaincode-go" && pwd)"
+CHAINCODE_DIR="${CHAINCODE_DIR:-$(cd "${PLATFORM_DIR}/../../OSC-Chaincode/chaincode-go" && pwd)}"
 
 : "${RUN_ID:?RUN_ID is required}"
 : "${CHAINCODE_IMAGE:?CHAINCODE_IMAGE is required}"

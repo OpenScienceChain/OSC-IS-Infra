@@ -19,6 +19,10 @@ Never collect or export file bytes, original filenames, names, email
 addresses, demographic data, raw session IDs, cookies, authorization headers,
 Fabric private keys, or application secrets. Feedback is never written to the
 ledger or displayed publicly. Export must fail when a field is not allowlisted.
+The control-key-protected operational endpoint exposes only totals, confirmation
+latency sample size/p50/p95, and queue totals/oldest-pending age. Monitoring
+stores only those aggregates plus aggregate pod, ALB, Fabric, RabbitMQ, WAF, and
+cost signals; it does not store Kubernetes object names or message payloads.
 
 The S3 lifecycle rules enforce seven-day security-log expiry and 30-day expiry
 for sanitized evidence and runtime state. The final report may retain aggregate

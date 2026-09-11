@@ -46,6 +46,7 @@ try {
         "run_id = `"$RunId`""
         "expires_at = `"$($expiresAt.ToString('o'))`""
         "admin_cidr = `"$AdminCidr`""
+        "runner_public_cidr = `"$AdminCidr`""
         "maximum_runtime_hours = $Hours"
         "alb_controller_image = `"$AlbControllerImage`""
     ) -join [Environment]::NewLine

@@ -28,8 +28,16 @@ if ! kind get clusters | grep -Fxq "${CLUSTER_NAME}"; then
 fi
 
 rm -rf "${GENERATED_DIR}"
-mkdir -p "${SOURCE_DIR}/manifests" "${SITE_DIR}"
-cp -a "${PLATFORM_DIR}/gitops/local/." "${SOURCE_DIR}/manifests/"
+mkdir -p "${SOURCE_DIR}/manifests/base" "${SITE_DIR}"
+LOCAL_IMAGE_OVERLAY="${PLATFORM_DIR}/.generated/local-images"
+if [[ ! -f "${LOCAL_IMAGE_OVERLAY}/kustomization.yaml" ]]; then
+  echo "Local immutable image overlay is absent; run build-local-images.sh first" >&2
+  exit 1
+fi
+cp -a "${PLATFORM_DIR}/gitops/local/." "${SOURCE_DIR}/manifests/base/"
+sed 's#../../gitops/local#base#' \
+  "${LOCAL_IMAGE_OVERLAY}/kustomization.yaml" \
+  > "${SOURCE_DIR}/manifests/kustomization.yaml"
 
 git -C "${SOURCE_DIR}" init --initial-branch=main >/dev/null
 git -C "${SOURCE_DIR}" config user.name "OSC US-RSE evidence"
@@ -43,7 +51,7 @@ ROLLOUT_ID="${ROLLOUT_ID}" SOURCE_DIR="${SOURCE_DIR}" python3 - <<'PY'
 import os
 from pathlib import Path
 
-manifest = Path(os.environ["SOURCE_DIR"]) / "manifests" / "api-gateway.yaml"
+manifest = Path(os.environ["SOURCE_DIR"]) / "manifests" / "base" / "api-gateway.yaml"
 text = manifest.read_text(encoding="utf-8")
 needle = "  template:\n    metadata:\n      labels:\n"
 replacement = (
@@ -58,7 +66,7 @@ if text.count(needle) != 1:
 manifest.write_text(text.replace(needle, replacement), encoding="utf-8")
 PY
 
-git -C "${SOURCE_DIR}" add manifests/api-gateway.yaml
+git -C "${SOURCE_DIR}" add manifests/base/api-gateway.yaml
 git -C "${SOURCE_DIR}" commit -m "gitops: stage controlled API rollout" >/dev/null
 ROLLOUT_REVISION="$(git -C "${SOURCE_DIR}" rev-parse HEAD)"
 

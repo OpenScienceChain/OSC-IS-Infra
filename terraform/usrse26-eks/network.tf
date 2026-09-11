@@ -11,6 +11,33 @@ resource "aws_internet_gateway" "experiment" {
   tags   = { Name = "${local.name_prefix}-igw" }
 }
 
+data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+resource "aws_security_group" "cloudfront_origin" {
+  name        = "${local.name_prefix}-cloudfront-origin"
+  description = "Only CloudFront VPC origins may reach the internal demo ALB"
+  vpc_id      = aws_vpc.experiment.id
+
+  egress {
+    description = "ALB traffic to Kubernetes pod targets"
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = [aws_vpc.experiment.cidr_block]
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "cloudfront_to_origin" {
+  security_group_id = aws_security_group.cloudfront_origin.id
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  description       = "HTTP from the AWS-managed CloudFront origin-facing prefix list"
+}
+
 resource "aws_subnet" "public" {
   count = 3
 
@@ -66,7 +93,7 @@ resource "aws_route" "public_internet" {
 }
 
 resource "aws_route_table_association" "public" {
-  count = 2
+  count = 3
 
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
@@ -84,7 +111,7 @@ resource "aws_route" "private_internet" {
 }
 
 resource "aws_route_table_association" "private" {
-  count = 2
+  count = 3
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id

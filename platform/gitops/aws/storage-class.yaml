@@ -11,6 +11,8 @@ parameters:
   tagSpecification_3: Environment=ephemeral
   tagSpecification_4: ManagedBy=EKS-EBS-CSI
   tagSpecification_5: RunId=__RUN_ID__
+  tagSpecification_6: Owner=ofgarzon
+  tagSpecification_7: ExpiresAt=__EXPIRES_AT__
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

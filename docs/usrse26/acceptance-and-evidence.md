@@ -63,7 +63,8 @@ Each `platform-evidence/<run-id>/` directory must contain:
 Stop before AWS apply when any of these is true:
 
 - STS account is not `269624229733`.
-- Expected campaign spend exceeds USD 75 or a run exceeds USD 15.
+- The reviewed planning estimate exceeds the USD 200 absolute ceiling, or the
+  live run reaches the USD 150 read-only-and-teardown threshold.
 - Terraform plans to change an untagged or pre-existing resource.
 - A required secret must be placed in source, state input, an image, or evidence.
 - Local provenance, authorization, recovery, GitOps, or teardown gates fail.

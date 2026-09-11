@@ -127,12 +127,3 @@ variable "planning_cost_usd" {
     error_message = "The planning estimate may not exceed the USD 200 provisioning ceiling."
   }
 }
-
-variable "lifecycle_permissions_boundary_arn" {
-  description = "Required account-owned permissions boundary for the lifecycle CodeBuild role."
-  type        = string
-  validation {
-    condition     = can(regex("^arn:aws:iam::269624229733:policy/[A-Za-z0-9+=,.@_/-]+$", var.lifecycle_permissions_boundary_arn))
-    error_message = "The permissions boundary must be an IAM policy in account 269624229733."
-  }
-}

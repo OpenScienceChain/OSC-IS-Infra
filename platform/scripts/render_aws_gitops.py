@@ -25,10 +25,14 @@ def main() -> None:
         raise SystemExit("Artifact manifest run ID mismatch")
 
     prefix = f"osc-usrse26-{args.run_id}"
+    expires_at = artifacts.get("expiresAt")
+    if not isinstance(expires_at, str) or not expires_at:
+        raise SystemExit("Artifact manifest is missing expiresAt")
     images = artifacts["images"]
     external_images = artifacts["externalImages"]
     replacements = {
         "__RUN_ID__": args.run_id,
+        "__EXPIRES_AT__": expires_at,
         "__API_GATEWAY_IMAGE__": images["api-gateway"]["ecrReference"],
         "__LEDGER_GATEWAY_IMAGE__": images["ledger-gateway"]["ecrReference"],
         "__SUBMISSION_WORKER_IMAGE__": images["submission-worker"]["ecrReference"],

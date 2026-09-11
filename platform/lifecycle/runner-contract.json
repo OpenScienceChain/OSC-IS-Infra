@@ -61,7 +61,15 @@
     "DESTROY": {
       "steps": [
         "detach the CloudFront VPC origin",
-        "destroy the tagged runtime Terraform state",
+        "remove Kubernetes workloads and volumes",
+        "move future lifecycle jobs out of the runtime VPC",
+        "preserve the static edge and control plane"
+      ]
+    },
+    "DESTROY_RUNTIME": {
+      "steps": [
+        "start only after the in-VPC destroy job has exited",
+        "destroy the tagged runtime Terraform state from outside the runtime VPC",
         "preserve the static edge and control plane"
       ]
     },
@@ -77,7 +85,8 @@
       "steps": [
         "keep the static fallback reachable",
         "detach a partially attached runtime origin",
-        "destroy only the incomplete tagged runtime",
+        "remove incomplete Kubernetes workloads and move future jobs out of the runtime VPC",
+        "run DESTROY_RUNTIME from a fresh out-of-VPC job",
         "record the failed gate and cleanup result"
       ]
     }
@@ -101,6 +110,10 @@
       "history-worker",
       "chaincode",
       "gitops-repository",
+      "webapp",
+      "lifecycle-runner"
+    ],
+    "externalImages": [
       "aws-load-balancer-controller"
     ]
   }

@@ -19,14 +19,18 @@ def required(name: str) -> str:
     return value
 
 
-PROFILE = required("AWS_PROFILE")
+PROFILE = os.environ.get("AWS_PROFILE")
 REGION = required("AWS_REGION")
 AUTHORIZED_ACCOUNT = required("AUTHORIZED_ACCOUNT")
 
 
 def aws(*args: str) -> str:
+    command = ["aws", *args]
+    if PROFILE:
+        command.extend(["--profile", PROFILE])
+    command.extend(["--region", REGION, "--output", "json"])
     process = subprocess.run(
-        ["aws", *args, "--profile", PROFILE, "--region", REGION, "--output", "json"],
+        command,
         check=True,
         capture_output=True,
         text=True,

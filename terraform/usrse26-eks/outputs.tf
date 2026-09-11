@@ -34,6 +34,10 @@ output "private_subnet_ids" {
   value = aws_subnet.private[*].id
 }
 
+output "lifecycle_runner_security_group_id" {
+  value = aws_security_group.lifecycle_runner.id
+}
+
 output "ecr_repositories" {
   value = { for name, repository in aws_ecr_repository.experiment : name => repository.repository_url }
 }

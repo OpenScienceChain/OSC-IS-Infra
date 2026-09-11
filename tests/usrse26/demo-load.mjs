@@ -86,7 +86,7 @@ function artifactRequest(sessionIndex, artifactIndex) {
       .digest('hex'),
     sizeBytes: 128 + artifactIndex,
     extension: ['csv', 'json', 'txt'][artifactIndex % 3],
-    researchContext: ['RESEARCH_DATASET', 'SOFTWARE_RELEASE', 'METHODS_NOTE'][artifactIndex % 3],
+    researchContext: ['RESEARCH_DATASET', 'SOFTWARE_RELEASE', 'REPRODUCIBLE_ANALYSIS'][artifactIndex % 3],
   };
 }
 

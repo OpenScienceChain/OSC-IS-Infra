@@ -37,13 +37,15 @@ class RuntimeTopologyTests(unittest.TestCase):
         ):
             text = read(f"platform/gitops/aws/{manifest}")
             self.assertNotIn("replicas: 1", text)
-            self.assertIn("replicas: 2", text)
+            self.assertRegex(text, r"replicas: [2-9]")
             self.assertIn("topologySpreadConstraints", text)
         availability = read("platform/gitops/aws/availability.yaml")
         self.assertEqual(availability.count("kind: PodDisruptionBudget"), 7)
         ingress = read("platform/gitops/aws/internal-ingress.yaml")
         self.assertIn("alb.ingress.kubernetes.io/scheme: internal", ingress)
         self.assertIn("alb.ingress.kubernetes.io/target-type: ip", ingress)
+        self.assertIn("alb.ingress.kubernetes.io/security-groups: osc-usrse26-__RUN_ID__-cloudfront-origin", ingress)
+        self.assertIn('alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"', ingress)
         self.assertNotIn("NodePort", ingress)
 
     def test_fabric_contract_is_three_orderers_two_peers_per_org(self) -> None:
@@ -142,15 +144,41 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('Value = "CANARY"', machines)
         self.assertIn('Seconds = 900', machines)
         self.assertIn('Value = "SWEEP"', machines)
+        self.assertIn('Value = "DESTROY_RUNTIME"', machines)
+        self.assertIn('WaitForRunnerNetworkRelease', machines)
         self.assertIn('backup-stop', schedules)
         self.assertIn('America/Los_Angeles', schedules)
+        self.assertIn('StringEquals = "CLOSED"', machines)
+        self.assertIn('StopComplete = { Type = "Succeed" }', machines)
 
     def test_monitoring_covers_lifecycle_failures(self) -> None:
         monitoring = read("terraform/usrse26-control/monitoring.tf")
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         self.assertIn('metric_name         = "FailedBuilds"', monitoring)
         self.assertIn('metric_name         = "ExecutionsFailed"', monitoring)
         self.assertIn('metric_name         = "ApproximateNumberOfMessagesVisible"', monitoring)
         self.assertEqual(monitoring.count("alarm_actions"), 3)
+        for signal in (
+            "applicationMetrics",
+            "podReadiness",
+            "albTargets",
+            "rabbitMq",
+            "waf",
+            "persistent-safety-failure",
+        ):
+            self.assertIn(signal, runner)
+        for metric in (
+            "MessageCount",
+            "MessageReadyCount",
+            "MessageUnacknowledgedCount",
+            "PublishRate",
+            "ConfirmRate",
+            "AckRate",
+            "AllowedRequests",
+            "BlockedRequests",
+        ):
+            self.assertIn(metric, runner)
+        self.assertIn('WEB_ACL_NAME', read("terraform/usrse26-control/locals.tf"))
 
     def test_static_fallback_and_retention_survive_runtime_contract(self) -> None:
         edge = read("terraform/usrse26-control/edge.tf")
@@ -171,6 +199,40 @@ class LifecycleContractTests(unittest.TestCase):
         for forbidden in ("npm install", "npm ci", "pip install", "docker build"):
             self.assertNotIn(forbidden, lifecycle)
 
+    def test_lifecycle_image_is_control_owned_until_final_teardown(self) -> None:
+        lifecycle = read("terraform/usrse26-control/lifecycle.tf")
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
+        self.assertIn('resource "aws_ecr_repository" "lifecycle_runner"', lifecycle)
+        self.assertIn('controlPlaneResourcesPreserved', runner)
+        self.assertNotIn('delete-repository", "--repository-name", runner_repository', runner)
+    def test_lifecycle_runner_is_source_pinned_scanned_and_non_root(self) -> None:
+        dockerfile = read("platform/lifecycle/Dockerfile")
+        preparation = read("platform/aws/prepare-aws-artifacts.ps1")
+        for commit in (
+            "f871cf92a026aba7b12e6f06d71ded3e6e659d71",
+            "991439f8f01d3f7a31ef77111afadf67a93f8c9d",
+            "82e042fb6372443813f6759056308d6adc642fa1",
+            "1c2e10a409eb1b03f2f28f401ce935312e20d9fb",
+        ):
+            self.assertIn(commit, dockerfile)
+        self.assertIn(
+            "AL2023_REPOSITORY_GUID=59479e247947fb5165d81aa2364f556030fe518713c50b111a30f75cb118dc0f",
+            dockerfile,
+        )
+        self.assertIn("USER 10001:10001", dockerfile)
+        self.assertIn("--severity HIGH,CRITICAL", preparation)
+        self.assertIn("require a clean committed source tree", preparation)
+
+    def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
+        control = read("platform/aws/destroy-demo-control.ps1")
+        self.assertIn('"resourcegroupstaggingapi", "get-resources"', runner)
+        self.assertIn('"remainingTaggedResources": 0', runner)
+        self.assertIn('"status": "DESTROYED_AND_VERIFIED"', runner)
+        self.assertIn('evidence/$RunId/runtime-teardown-proof.json', control)
+        self.assertIn('list-object-versions', control)
+        self.assertIn('CONTROL_DESTROYED_AND_VERIFIED', control)
+
 
 class RenderingAndPolicyTests(unittest.TestCase):
     def test_gitops_renders_with_only_immutable_images(self) -> None:
@@ -186,6 +248,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
             images[name] = {"ecrReference": f"269624229733.dkr.ecr.us-west-2.amazonaws.com/{name}@sha256:{digest}"}
         payload = {
             "runId": "usrse26demo",
+            "expiresAt": "2026-10-23T15:00:00Z",
             "images": images,
             "externalImages": {
                 "aws-load-balancer-controller": f"public.ecr.aws/eks/aws-load-balancer-controller@sha256:{digest}"

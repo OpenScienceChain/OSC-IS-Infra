@@ -9,3 +9,5 @@ output "stop_state_machine_arn" { value = aws_sfn_state_machine.stop.arn }
 output "monitor_state_machine_arn" { value = aws_sfn_state_machine.monitor.arn }
 output "notification_topic_arn" { value = aws_sns_topic.lifecycle.arn }
 output "required_tags" { value = local.required_tags }
+output "api_cache_policy_id" { value = aws_cloudfront_cache_policy.api.id }
+output "api_origin_request_policy_id" { value = aws_cloudfront_origin_request_policy.api.id }

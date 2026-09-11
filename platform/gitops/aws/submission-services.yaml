@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: submission-worker, namespace: osc-apps}
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels: {app.kubernetes.io/name: submission-worker}
   template:

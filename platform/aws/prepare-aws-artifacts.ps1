@@ -6,7 +6,10 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')]
-    [string]$AlbControllerImage
+    [string]$AlbControllerImage,
+
+    [Parameter(Mandatory = $true)]
+    [datetimeoffset]$ExpiresAt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,15 +20,22 @@ $artifactRoot = Join-Path $runRoot 'artifacts'
 $sbomRoot = Join-Path $artifactRoot 'sbom'
 $scanRoot = Join-Path $artifactRoot 'scans'
 $archiveRoot = Join-Path $artifactRoot 'archives'
+$webBundleRoot = Join-Path $artifactRoot 'webapp-root'
+$webBundleArchive = Join-Path $archiveRoot 'webapp-static.tar.gz'
 $gitRoot = Join-Path $runRoot 'gitops-source'
 $gitImageRoot = Join-Path $runRoot 'gitops-image'
 $manifestPath = Join-Path $artifactRoot 'artifacts.json'
+$lifecycleContext = Join-Path $infraRoot 'platform\.generated\lifecycle-context'
 $registryName = 'osc-usrse26-aws-artifacts'
 $registry = 'localhost:5018'
 $trivyCache = "osc-usrse26-trivy-$RunId"
+$webContainer = $null
 $account = '269624229733'
 $region = 'us-west-2'
 $ecrRoot = "$account.dkr.ecr.$region.amazonaws.com/osc-usrse26-$RunId"
+if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]::UtcNow.AddHours(72)) {
+    throw 'ExpiresAt must be in the future and no more than 72 hours from now.'
+}
 $trivyLine = Get-Content -LiteralPath (Join-Path $infraRoot 'platform/versions.env') | Where-Object { $_.StartsWith('TRIVY_IMAGE=') }
 if ($trivyLine.Count -ne 1) { throw 'The immutable Trivy image is not defined exactly once.' }
 $trivyImage = $trivyLine.Substring('TRIVY_IMAGE='.Length)
@@ -38,6 +48,23 @@ $contexts = [ordered]@{
     'submission-listener' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\submission_listener'; Dockerfile = 'Dockerfile' }
     'history-worker' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\get_history_worker'; Dockerfile = 'Dockerfile' }
     'chaincode' = @{ Path = Join-Path $worktreeRoot 'OSC-Chaincode\chaincode-go'; Dockerfile = 'Dockerfile' }
+    'webapp' = @{ Path = Join-Path $worktreeRoot 'OSC-WebApp'; Dockerfile = 'Dockerfile' }
+    'lifecycle-runner' = @{ Path = $infraRoot; Dockerfile = 'platform\lifecycle\Dockerfile' }
+}
+
+$sourceRepositories = @(
+    (Join-Path $worktreeRoot 'OSC-APIGateway'),
+    (Join-Path $worktreeRoot 'OSC-Artifact-Submission'),
+    (Join-Path $worktreeRoot 'OSC-Chaincode'),
+    (Join-Path $worktreeRoot 'OSC-WebApp'),
+    $infraRoot
+) | Sort-Object -Unique
+foreach ($repository in $sourceRepositories) {
+    $changes = @(git -C $repository status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw "Could not inspect source repository $repository." }
+    if ($changes.Count -ne 0) {
+        throw "Credential-free artifact builds require a clean committed source tree: $repository"
+    }
 }
 
 foreach ($generatedPath in @($artifactRoot, $gitRoot, $gitImageRoot)) {
@@ -66,6 +93,20 @@ python (Join-Path $infraRoot 'platform/scripts/validate_fabric_topology.py') `
     --network (Join-Path $infraRoot 'platform/.generated/fabric-network-eks') `
     --deploy-script (Join-Path $infraRoot 'platform/scripts/deploy_aws_fabric.sh')
 if ($LASTEXITCODE -ne 0) { throw 'Fabric topology contract failed.' }
+
+if (Test-Path -LiteralPath $lifecycleContext) {
+    $resolvedLifecycleContext = (Resolve-Path -LiteralPath $lifecycleContext).Path
+    $expectedLifecycleContext = [IO.Path]::GetFullPath((Join-Path $infraRoot 'platform\.generated\lifecycle-context'))
+    if ($resolvedLifecycleContext -ne $expectedLifecycleContext) {
+        throw "Refusing to remove unexpected lifecycle build context: $resolvedLifecycleContext"
+    }
+    Remove-Item -LiteralPath $resolvedLifecycleContext -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $lifecycleContext | Out-Null
+$lifecycleChaincode = Join-Path $lifecycleContext 'chaincode-go'
+New-Item -ItemType Directory -Force -Path $lifecycleChaincode | Out-Null
+Copy-Item -LiteralPath (Join-Path $worktreeRoot 'OSC-Chaincode\chaincode-go\go.mod') `
+    -Destination (Join-Path $lifecycleChaincode 'go.mod')
 
 function Invoke-Checked {
     param([Parameter(Mandatory = $true)][scriptblock]$Command, [Parameter(Mandatory = $true)][string]$Failure)
@@ -147,18 +188,45 @@ try {
         $images[$name] = Get-ImageEvidence -Name $name -Reference $reference
     }
 
+    $webRevision = (git -C (Join-Path $worktreeRoot 'OSC-WebApp') rev-parse HEAD).Trim()
+    if ($webRevision -notmatch '^[0-9a-f]{40}$') { throw 'Could not resolve the WebApp source revision.' }
+    New-Item -ItemType Directory -Force -Path $webBundleRoot | Out-Null
+    $webContainer = (docker create $images['webapp'].localReference).Trim()
+    if ($LASTEXITCODE -ne 0 -or $webContainer -notmatch '^[0-9a-f]{64}$') {
+        throw 'Could not create the WebApp extraction container.'
+    }
+    Invoke-Checked {
+        docker cp "${webContainer}:/usr/share/nginx/html/." $webBundleRoot
+    } 'Could not extract the reviewed WebApp build.'
+    docker rm $webContainer | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not remove the WebApp extraction container.' }
+    $webContainer = $null
+    python (Join-Path $infraRoot 'platform/aws/package_webapp_bundle.py') `
+        --source $webBundleRoot `
+        --output $webBundleArchive `
+        --source-revision $webRevision
+    if ($LASTEXITCODE -ne 0) { throw 'Could not package the deterministic WebApp bundle.' }
+    $webBundleSha = (Get-FileHash -LiteralPath $webBundleArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+
     $manifest = [ordered]@{
         schemaVersion = 1
         runId = $RunId
+        expiresAt = $ExpiresAt.ToString('o')
         createdAt = [DateTimeOffset]::UtcNow.ToString('o')
         credentialFreeBuild = $true
+        webApp = [ordered]@{
+            sourceRevision = $webRevision
+            archive = $webBundleArchive
+            sha256 = $webBundleSha
+            objectKey = "releases/$RunId/webapp-static.tar.gz"
+        }
         images = $images
         externalImages = [ordered]@{
             'aws-load-balancer-controller' = $AlbControllerImage
         }
         sourceCommits = [ordered]@{
             infra = (git -C $infraRoot rev-parse HEAD).Trim()
-            webApp = (git -C (Join-Path $worktreeRoot 'OSC-WebApp') rev-parse HEAD).Trim()
+            webApp = $webRevision
             apiGateway = (git -C (Join-Path $worktreeRoot 'OSC-APIGateway') rev-parse HEAD).Trim()
             artifactSubmission = (git -C (Join-Path $worktreeRoot 'OSC-Artifact-Submission') rev-parse HEAD).Trim()
             chaincode = (git -C (Join-Path $worktreeRoot 'OSC-Chaincode') rev-parse HEAD).Trim()
@@ -214,13 +282,23 @@ try {
         rolloutRevision = $rolloutRevision
     }
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8) + [Environment]::NewLine)
-    Write-Host "Prepared seven scanned, non-root, digest-addressed OCI artifacts at $artifactRoot"
+    Write-Host "Prepared nine scanned, non-root OCI artifacts and one deterministic WebApp bundle at $artifactRoot"
 }
 finally {
+    if ($webContainer -and (docker ps -a --format '{{.ID}}' | Select-String -SimpleMatch $webContainer -Quiet)) {
+        docker rm --force $webContainer | Out-Null
+    }
     if (docker ps -a --format '{{.Names}}' | Select-String -SimpleMatch $registryName -Quiet) {
         docker rm --force $registryName | Out-Null
     }
     if (docker volume ls --format '{{.Name}}' | Select-String -SimpleMatch $trivyCache -Quiet) {
         docker volume rm --force $trivyCache | Out-Null
+    }
+    if (Test-Path -LiteralPath $lifecycleContext) {
+        $resolvedLifecycleContext = (Resolve-Path -LiteralPath $lifecycleContext).Path
+        $expectedLifecycleContext = [IO.Path]::GetFullPath((Join-Path $infraRoot 'platform\.generated\lifecycle-context'))
+        if ($resolvedLifecycleContext -eq $expectedLifecycleContext) {
+            Remove-Item -LiteralPath $resolvedLifecycleContext -Recurse -Force
+        }
     }
 }

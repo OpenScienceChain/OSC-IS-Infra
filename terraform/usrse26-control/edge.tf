@@ -102,6 +102,30 @@ resource "aws_cloudfront_cache_policy" "edge" {
   }
 }
 
+resource "aws_cloudfront_cache_policy" "api" {
+  name        = "${local.name_prefix}-api-disabled"
+  default_ttl = 0
+  max_ttl     = 0
+  min_ttl     = 0
+  parameters_in_cache_key_and_forwarded_to_origin {
+    cookies_config { cookie_behavior = "none" }
+    headers_config { header_behavior = "none" }
+    query_strings_config { query_string_behavior = "none" }
+    enable_accept_encoding_brotli = true
+    enable_accept_encoding_gzip   = true
+  }
+}
+
+resource "aws_cloudfront_origin_request_policy" "api" {
+  name = "${local.name_prefix}-api-viewer"
+  cookies_config { cookie_behavior = "all" }
+  headers_config {
+    header_behavior = "allExcept"
+    headers { items = ["host"] }
+  }
+  query_strings_config { query_string_behavior = "all" }
+}
+
 resource "aws_acm_certificate" "edge" {
   provider          = aws.edge
   domain_name       = var.public_hostname
