@@ -178,7 +178,11 @@ def validate_waf_logging(
     if "aws_wafv2_web_acl.edge.arn" not in acl_references:
         errors.append("WAF logging must attach to aws_wafv2_web_acl.edge")
     log_references = expressions.get("log_destination_configs", {}).get("references", [])
-    if "aws_cloudwatch_log_group.waf.arn" not in log_references:
+    if (
+        not isinstance(log_references, list)
+        or len(log_references) != 1
+        or set(log_references) != {"aws_cloudwatch_log_group.waf.arn"}
+    ):
         errors.append("WAF logging must use the restricted WAF CloudWatch log group")
 
 

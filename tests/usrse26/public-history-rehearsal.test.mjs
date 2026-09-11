@@ -8,7 +8,22 @@ import {
   maximumRollingStarts,
   runPool,
   runRehearsal,
+  validateTargets,
 } from '../../platform/aws/public-history-rehearsal.mjs';
+
+const cookie = '__Host-osc_demo=sensitive-signed-session';
+const identifiers = [
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+];
+const targets = [
+  { organization: 'neuroscience-gateway', path: `/demo/artifacts/${identifiers[0]}/history`, cookie },
+  { organization: 'neuroscience-gateway', path: `/demo/workflows/${identifiers[1]}/history`, cookie },
+  { organization: 'citizen-science', path: `/demo/artifacts/${identifiers[2]}/history`, cookie },
+  { organization: 'citizen-science', path: `/demo/workflows/${identifiers[3]}/history`, cookie },
+];
 
 test('rolling limiter never admits more than 300 starts in 60 seconds', async () => {
   let clock = 0;
@@ -44,26 +59,32 @@ test('rate-limit phase pacer reserves starts no faster than ten per second', asy
     wait: async milliseconds => { clock += milliseconds; },
   });
   const starts = [];
-  for (let index = 0; index < 4; index += 1) starts.push(await pacer.acquire());
+  for (let index = 0; index < 4; index += 1) {
+    const permit = await pacer.acquire();
+    starts.push(permit.startedEpochMs);
+    permit.release();
+  }
   assert.deepEqual(starts, [0, 100, 200, 300]);
+});
+
+test('fixture validation requires all four organization and resource combinations', () => {
+  const incomplete = {
+    schemaVersion: 1,
+    runId: 'usrse26r1',
+    targets: [
+      targets[0],
+      targets[0],
+      targets[2],
+      targets[3],
+    ],
+  };
+  assert.throws(() => validateTargets(incomplete), /artifact and workflow histories in both organizations/);
+  assert.equal(validateTargets({ schemaVersion: 1, runId: 'usrse26r1', targets }).length, 4);
 });
 
 test('rehearsal separates success, approximate 429 transition, and recovery without identifiers', async () => {
   let clock = Date.parse('2026-09-11T19:00:00Z');
   let recoveryAttempt = 0;
-  const cookie = '__Host-osc_demo=sensitive-signed-session';
-  const identifiers = [
-    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
-    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
-    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
-    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
-  ];
-  const targets = [
-    { organization: 'neuroscience-gateway', path: `/demo/artifacts/${identifiers[0]}/history`, cookie },
-    { organization: 'neuroscience-gateway', path: `/demo/workflows/${identifiers[1]}/history`, cookie },
-    { organization: 'citizen-science', path: `/demo/artifacts/${identifiers[2]}/history`, cookie },
-    { organization: 'citizen-science', path: `/demo/workflows/${identifiers[3]}/history`, cookie },
-  ];
   const evidence = await runRehearsal({
     targets,
     successCount: 12,
@@ -100,4 +121,55 @@ test('rehearsal separates success, approximate 429 transition, and recovery with
   const serialized = JSON.stringify(evidence);
   assert.equal(serialized.includes(cookie), false);
   for (const identifier of identifiers) assert.equal(serialized.includes(identifier), false);
+});
+
+test('rehearsal rejects a same-timestamp rate burst even when it sees a 429 transition', async () => {
+  const clock = Date.parse('2026-09-11T20:00:00Z');
+  const evidence = await runRehearsal({
+    targets,
+    successCount: 12,
+    rateCount: 305,
+    clearWaitMs: 0,
+    recoveryAttempts: 1,
+    now: () => clock,
+    wait: async () => {},
+    ratePacer: { acquire: async () => clock },
+    request: async (phase, index) => ({
+      startedEpochMs: clock,
+      startedAt: new Date(clock).toISOString(),
+      durationMs: 1,
+      status: phase === 'read-only-rate-limit' && index >= 300 ? 429 : 200,
+      error: null,
+    }),
+  });
+  assert.equal(evidence.passed, false);
+  assert.equal(evidence.failures.includes('rate-limit-phase-pacing-not-observed'), true);
+});
+
+test('rehearsal rejects a rate phase that never exceeds 300 starts per rolling minute', async () => {
+  let clock = Date.parse('2026-09-11T21:00:00Z');
+  const evidence = await runRehearsal({
+    targets,
+    successCount: 12,
+    rateCount: 305,
+    clearWaitMs: 60_001,
+    recoveryAttempts: 1,
+    rateStartIntervalMs: 1_000,
+    now: () => clock,
+    wait: async milliseconds => { clock += milliseconds; },
+    request: async (phase, index) => {
+      const startedEpochMs = clock;
+      clock += 1;
+      return {
+        startedEpochMs,
+        startedAt: new Date(startedEpochMs).toISOString(),
+        durationMs: 1,
+        status: phase === 'read-only-rate-limit' && index >= 300 ? 429 : 200,
+        error: null,
+      };
+    },
+  });
+  assert.equal(evidence.passed, false);
+  assert.equal(evidence.phases.rateLimit.maximumStartsInRollingMinute <= 300, true);
+  assert.equal(evidence.failures.includes('rate-limit-phase-did-not-exceed-waf-threshold'), true);
 });

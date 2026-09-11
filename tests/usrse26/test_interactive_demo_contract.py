@@ -772,10 +772,16 @@ class RenderingAndPolicyTests(unittest.TestCase):
                     "text_transformation", [{"priority": 0, "type": "LOWERCASE"}]
                 )),
                 ("incorrect threshold", lambda candidate: rate_statement(candidate).__setitem__("limit", 5000)),
+                ("incorrect evaluation window", lambda candidate: rate_statement(candidate).__setitem__(
+                    "evaluation_window_sec", 120
+                )),
                 ("incorrect priority", lambda candidate: history_rule(candidate).__setitem__("priority", 30)),
                 ("incorrect aggregate key", lambda candidate: rate_statement(candidate).__setitem__(
                     "aggregate_key_type", "IP"
                 )),
+                ("incorrect HTTP response", lambda candidate: history_rule(candidate)["action"][0][
+                    "block"
+                ][0]["custom_response"][0].__setitem__("response_code", 403)),
                 ("rule sampling enabled", lambda candidate: history_rule(candidate)[
                     "visibility_config"
                 ][0].__setitem__("sampled_requests_enabled", True)),
@@ -801,6 +807,19 @@ class RenderingAndPolicyTests(unittest.TestCase):
                     "root_module"
                 ]["resources"][1]["expressions"]["resource_arn"].__setitem__(
                     "references", ["aws_wafv2_web_acl.other.arn"]
+                )),
+                ("incorrect logging destination", lambda candidate: candidate["configuration"][
+                    "root_module"
+                ]["resources"][1]["expressions"]["log_destination_configs"].__setitem__(
+                    "references", ["aws_cloudwatch_log_group.other.arn"]
+                )),
+                ("extra logging destination", lambda candidate: candidate["configuration"][
+                    "root_module"
+                ]["resources"][1]["expressions"]["log_destination_configs"].__setitem__(
+                    "references", [
+                        "aws_cloudwatch_log_group.waf.arn",
+                        "aws_cloudwatch_log_group.other.arn",
+                    ]
                 )),
             )
             for label, mutate in waf_mutations:

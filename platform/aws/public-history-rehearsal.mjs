@@ -73,15 +73,33 @@ export class IntervalStartPacer {
     this.intervalMs = intervalMs;
     this.now = now;
     this.wait = wait;
-    this.nextStart = 0;
+    this.lastStart = null;
+    this.tail = Promise.resolve();
   }
 
   async acquire() {
+    const previous = this.tail;
+    let release;
+    this.tail = new Promise(resolveRelease => { release = resolveRelease; });
+    await previous;
     const current = this.now();
-    const permitted = Math.max(current, this.nextStart);
-    this.nextStart = permitted + this.intervalMs;
-    if (permitted > current) await this.wait(permitted - current);
-    return permitted;
+    const earliestStart = this.lastStart === null ? current : this.lastStart + this.intervalMs;
+    if (current < earliestStart) await this.wait(earliestStart - current);
+    const started = this.now();
+    this.lastStart = started;
+    let released = false;
+    return {
+      startedEpochMs: started,
+      markStarted: observedStart => {
+        if (Number.isFinite(observedStart) && observedStart >= started) this.lastStart = observedStart;
+      },
+      release: () => {
+        if (!released) {
+          released = true;
+          release();
+        }
+      },
+    };
   }
 }
 
@@ -94,6 +112,16 @@ export function maximumRollingStarts(records, windowMs = RATE_WINDOW_MS) {
     maximum = Math.max(maximum, right - left + 1);
   }
   return maximum;
+}
+
+export function minimumAdjacentStartInterval(records) {
+  const starts = records.map(record => record.startedEpochMs).sort((left, right) => left - right);
+  if (starts.length < 2) return null;
+  let minimum = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < starts.length; index += 1) {
+    minimum = Math.min(minimum, starts[index] - starts[index - 1]);
+  }
+  return minimum;
 }
 
 export async function runPool(count, concurrency, operation) {
@@ -122,13 +150,12 @@ export async function runPool(count, concurrency, operation) {
   return { results, maximumConcurrency };
 }
 
-function validateTargets(payload) {
+export function validateTargets(payload) {
   if (payload?.schemaVersion !== 1 || payload?.runId !== RUN_ID || !Array.isArray(payload.targets)) {
     throw new Error(`The fixture must be schema version 1 for ${RUN_ID}`);
   }
   if (payload.targets.length < 4) throw new Error('The fixture must provide both history types for both organizations');
-  const organizations = new Set();
-  const resources = new Set();
+  const combinations = new Set();
   for (const target of payload.targets) {
     if (!['neuroscience-gateway', 'citizen-science'].includes(target?.organization)) {
       throw new Error('Every target must use one reviewed organization');
@@ -138,17 +165,26 @@ function validateTargets(payload) {
     if (typeof target.cookie !== 'string' || !target.cookie.startsWith('__Host-osc_demo=')) {
       throw new Error('Every target must include its matching host-only guest cookie');
     }
-    organizations.add(target.organization);
-    resources.add(match[1]);
+    combinations.add(`${target.organization}:${match[1]}`);
   }
-  if (organizations.size !== 2 || resources.size !== 2) {
+  const expectedCombinations = new Set([
+    'neuroscience-gateway:artifacts',
+    'neuroscience-gateway:workflows',
+    'citizen-science:artifacts',
+    'citizen-science:workflows',
+  ]);
+  if (
+    combinations.size !== expectedCombinations.size
+    || [...expectedCombinations].some(combination => !combinations.has(combination))
+  ) {
     throw new Error('The fixture must cover artifact and workflow histories in both organizations');
   }
   return payload.targets;
 }
 
-async function publicHistoryRequest(target) {
+async function publicHistoryRequest(target, onStarted = null) {
   const startedEpochMs = Date.now();
+  if (typeof onStarted === 'function') onStarted(startedEpochMs);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -186,8 +222,19 @@ async function publicHistoryRequest(target) {
 async function runPhase({ name, count, concurrency, targets, request, limiter = null }) {
   const phaseStartedAt = new Date().toISOString();
   const { results, maximumConcurrency } = await runPool(count, concurrency, async index => {
-    if (limiter) await limiter.acquire();
-    const record = await request(name, index, targets[index % targets.length]);
+    const permit = limiter ? await limiter.acquire() : null;
+    let recordPromise;
+    try {
+      recordPromise = request(
+        name,
+        index,
+        targets[index % targets.length],
+        startedEpochMs => permit?.markStarted?.(startedEpochMs),
+      );
+    } finally {
+      if (permit && typeof permit.release === 'function') permit.release();
+    }
+    const record = await recordPromise;
     return { sequence: index + 1, ...record };
   });
   return {
@@ -197,6 +244,7 @@ async function runPhase({ name, count, concurrency, targets, request, limiter = 
     requested: count,
     maximumConcurrency,
     maximumStartsInRollingMinute: maximumRollingStarts(results),
+    minimumAdjacentStartIntervalMs: minimumAdjacentStartInterval(results),
     statusCounts: Object.fromEntries(
       [...new Set(results.map(record => String(record.status ?? record.error)))].sort().map(status => [
         status,
@@ -218,7 +266,8 @@ export async function runRehearsal({
   rateStartIntervalMs = RATE_START_INTERVAL_MS,
   now = Date.now,
   wait = sleep,
-  request = (_phase, _index, target) => publicHistoryRequest(target),
+  ratePacer = null,
+  request = (_phase, _index, target, onStarted) => publicHistoryRequest(target, onStarted),
 } = {}) {
   if (!Number.isInteger(successCount) || successCount < 1 || successCount > SUCCESS_START_LIMIT) {
     throw new Error(`successCount must be between 1 and ${SUCCESS_START_LIMIT}`);
@@ -240,7 +289,6 @@ export async function runRehearsal({
     concurrency,
     targets,
     request,
-    limiter: new IntervalStartPacer({ intervalMs: rateStartIntervalMs, now, wait }),
     limiter: new RollingStartLimiter({ now, wait }),
   });
   await wait(clearWaitMs);
@@ -250,6 +298,7 @@ export async function runRehearsal({
     concurrency,
     targets,
     request,
+    limiter: ratePacer || new IntervalStartPacer({ intervalMs: rateStartIntervalMs, now, wait }),
   });
   await wait(clearWaitMs);
 
@@ -265,6 +314,7 @@ export async function runRehearsal({
     requested: recoveryRequests.length,
     maximumConcurrency: 1,
     maximumStartsInRollingMinute: maximumRollingStarts(recoveryRequests),
+    minimumAdjacentStartIntervalMs: minimumAdjacentStartInterval(recoveryRequests),
     statusCounts: Object.fromEntries(
       [...new Set(recoveryRequests.map(record => String(record.status ?? record.error)))].sort().map(status => [
         status,
@@ -280,6 +330,12 @@ export async function runRehearsal({
   if (success.requests.some(record => record.status !== 200)) failures.push('success-cohort-not-all-200');
   if (success.requests.some(record => record.durationMs >= APPLICATION_TIMEOUT_MS)) failures.push('success-history-reached-application-timeout');
   if (rateLimit.maximumConcurrency > MAX_CONCURRENCY) failures.push('rate-limit-concurrency-exceeded');
+  if (rateLimit.maximumStartsInRollingMinute <= SUCCESS_START_LIMIT) {
+    failures.push('rate-limit-phase-did-not-exceed-waf-threshold');
+  }
+  if (minimumAdjacentStartInterval(rateLimit.requests) < rateStartIntervalMs) {
+    failures.push('rate-limit-phase-pacing-not-observed');
+  }
   if (rateLimit.requests.some(record => ![200, 429].includes(record.status))) failures.push('rate-limit-unexpected-status');
   const firstRate429 = rateLimit.requests.findIndex(record => record.status === 429);
   if (firstRate429 < 1 || !rateLimit.requests.slice(0, firstRate429).some(record => record.status === 200)) {
