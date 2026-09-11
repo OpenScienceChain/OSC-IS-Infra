@@ -316,6 +316,7 @@ class Lifecycle:
                 "admin_cidr": required("ADMIN_CIDR"),
                 "runner_public_cidr": f"{public_ip}/32",
                 "alb_controller_image": manifest["externalImages"]["aws-load-balancer-controller"],
+                "permissions_boundary_arn": required("RUNTIME_PERMISSIONS_BOUNDARY_ARN"),
             }
             variables.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
             aws(
@@ -479,16 +480,35 @@ class Lifecycle:
         run(["bash", "platform/scripts/seed-local-data.sh"], cwd=ROOT, env=environment, capture=False)
         self.set_api_state("PREPARING", "Automated public canary has not completed")
 
+    def private_control_json(self, path: str, *, method: str = "GET", body: Any = None) -> Any:
+        if not path.startswith("/api/v1/demo/internal/"):
+            raise RuntimeError("Private control requests are limited to demo internal endpoints")
+        self.configure_kubectl()
+        script = """
+const [method,path,body]=process.argv.slice(1);
+const options={method,headers:{'Accept':'application/json','X-Demo-Control-Key':process.env.DEMO_CONTROL_API_KEY}};
+if(body){options.headers['Content-Type']='application/json';options.body=body;}
+fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.text();if(!r.ok)throw new Error(`${r.status} ${text.slice(0,500)}`);process.stdout.write(text||'null');}).catch(e=>{console.error(e.message);process.exit(1)});
+""".strip()
+        output = self.kubectl(
+            "-n", "osc-apps", "exec", "deployment/api-gateway", "--", "node", "-e", script,
+            method, path, json.dumps(body, separators=(",", ":")) if body is not None else "",
+        )
+        return json.loads(output or "null")
+
     def set_api_state(self, state: str, reason: str) -> None:
         expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
         opens = expires - timedelta(hours=int(required("MAX_RUNTIME_HOURS")))
-        script = """
-const [state,runId,reason,opensAt,closesAt]=process.argv.slice(1);
-fetch('http://127.0.0.1:3000/api/v1/demo/internal/status',{method:'PUT',headers:{'Content-Type':'application/json','X-Demo-Control-Key':process.env.DEMO_CONTROL_API_KEY},body:JSON.stringify({state,runId,reason,opensAt,closesAt})}).then(async r=>{if(!r.ok)throw new Error(`${r.status} ${await r.text()}`)}).catch(e=>{console.error(e.message);process.exit(1)});
-""".strip()
-        self.kubectl(
-            "-n", "osc-apps", "exec", "deployment/api-gateway", "--", "node", "-e", script,
-            state, self.run_id, reason, opens.isoformat(), expires.isoformat(),
+        self.private_control_json(
+            "/api/v1/demo/internal/status",
+            method="PUT",
+            body={
+                "state": state,
+                "runId": self.run_id,
+                "reason": reason,
+                "opensAt": opens.isoformat(),
+                "closesAt": expires.isoformat(),
+            },
         )
 
     def wait_for_alb(self) -> dict[str, Any]:
@@ -713,17 +733,9 @@ fetch('http://127.0.0.1:3000/api/v1/demo/internal/status',{method:'PUT',headers:
         self.set_api_state("READ_ONLY", "Scheduled close or safety threshold")
         self.update_lifecycle_record("READ_ONLY")
 
-    def application_secret(self) -> dict[str, str]:
-        response = aws_json("secretsmanager", "get-secret-value", "--secret-id", f"osc-usrse26-{self.run_id}/application")
-        return json.loads(response["SecretString"])
-
     def export(self) -> None:
         self.load_manifest()
-        opener = urllib.request.build_opener()
-        exported = self.http_json(
-            opener, "/api/v1/demo/internal/export",
-            headers={"X-Demo-Control-Key": self.application_secret()["demoControlApiKey"]},
-        )
+        exported = self.private_control_json("/api/v1/demo/internal/export")
         forbidden = ("email", "filename", "privateComment", "token", "secret", "sessionId")
         serialized = json.dumps(exported)
         if any(term.lower() in serialized.lower() for term in forbidden):
@@ -826,18 +838,30 @@ fetch('http://127.0.0.1:3000/api/v1/demo/internal/status',{method:'PUT',headers:
         raise RuntimeError("Tagged EBS volumes did not become removable")
 
     def destroy(self) -> None:
-        self.load_manifest()
-        self.detach_origin()
-        self.restore_fallback()
-        self.delete_workloads()
-        self.reset_codebuild_network()
+        failures: list[str] = []
+        try:
+            self.load_manifest()
+            for operation in (self.detach_origin, self.restore_fallback, self.delete_workloads):
+                try:
+                    operation()
+                except Exception as error:
+                    failures.append(f"{operation.__name__}: {error}")
+        finally:
+            try:
+                self.reset_codebuild_network()
+            except Exception as error:
+                failures.append(f"reset_codebuild_network: {error}")
         self.put_json(
             f"evidence/{self.run_id}/workload-destroy.json",
             {
                 "schemaVersion": 1, "runId": self.run_id, "completedAt": iso_now(),
-                "staticFallbackPreserved": True, "runnerVpcPlacementRemoved": True,
+                "staticFallbackPreserved": not any(item.startswith("restore_fallback:") for item in failures),
+                "runnerVpcPlacementRemoved": not any(item.startswith("reset_codebuild_network:") for item in failures),
+                "failures": failures,
             },
         )
+        if failures:
+            raise RuntimeError("; ".join(failures))
 
     def destroy_runtime(self) -> None:
         state_object = run([
@@ -883,11 +907,17 @@ fetch('http://127.0.0.1:3000/api/v1/demo/internal/status',{method:'PUT',headers:
 
     def failed_start_cleanup(self) -> None:
         failures: list[str] = []
-        for operation in (self.detach_origin, self.restore_fallback, self.delete_workloads, self.reset_codebuild_network):
+        try:
+            for operation in (self.detach_origin, self.restore_fallback, self.delete_workloads):
+                try:
+                    operation()
+                except Exception as error:
+                    failures.append(f"{operation.__name__}: {error}")
+        finally:
             try:
-                operation()
-            except Exception as error:  # cleanup continues so Terraform still gets a chance
-                failures.append(f"{operation.__name__}: {error}")
+                self.reset_codebuild_network()
+            except Exception as error:
+                failures.append(f"reset_codebuild_network: {error}")
         self.put_json(
             f"evidence/{self.run_id}/failed-start-cleanup.json",
             {"schemaVersion": 1, "runId": self.run_id, "completedAt": iso_now(), "failures": failures},
@@ -1040,10 +1070,7 @@ fetch('http://127.0.0.1:3000/api/v1/demo/internal/status',{method:'PUT',headers:
         health = collect("serviceHealth", lambda: self.http_json(urllib.request.build_opener(), "/api/v1/health"))
         metrics = collect(
             "applicationMetrics",
-            lambda: self.http_json(
-                urllib.request.build_opener(), "/api/v1/demo/internal/metrics",
-                headers={"X-Demo-Control-Key": self.application_secret()["demoControlApiKey"]},
-            ),
+            lambda: self.private_control_json("/api/v1/demo/internal/metrics"),
         )
         readiness = collect("podReadiness", self.kubernetes_readiness)
         targets = collect("albTargets", self.alb_health)

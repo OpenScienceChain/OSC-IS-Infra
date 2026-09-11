@@ -131,6 +131,16 @@ variable "alb_controller_image" {
   }
 }
 
+variable "permissions_boundary_arn" {
+  description = "Exact control-owned permissions boundary required on every disposable runtime IAM role."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be the exact run-scoped boundary in account 269624229733."
+  }
+}
+
 variable "rabbitmq_instance_type" {
   type    = string
   default = "mq.m7g.medium"

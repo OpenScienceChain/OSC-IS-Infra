@@ -7,6 +7,7 @@ output "terraform_lock_table" { value = aws_dynamodb_table.terraform_locks.name 
 output "start_state_machine_arn" { value = aws_sfn_state_machine.start.arn }
 output "stop_state_machine_arn" { value = aws_sfn_state_machine.stop.arn }
 output "monitor_state_machine_arn" { value = aws_sfn_state_machine.monitor.arn }
+output "outside_vpc_cleanup_project" { value = aws_codebuild_project.cleanup.name }
 output "notification_topic_arn" { value = aws_sns_topic.lifecycle.arn }
 output "required_tags" { value = local.required_tags }
 output "api_cache_policy_id" { value = aws_cloudfront_cache_policy.api.id }

@@ -9,8 +9,9 @@ data "aws_iam_policy_document" "eks_cluster_assume" {
 }
 
 resource "aws_iam_role" "eks_cluster" {
-  name               = "${local.name_prefix}-eks-cluster"
-  assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume.json
+  name                 = "${local.name_prefix}-eks-cluster"
+  assume_role_policy   = data.aws_iam_policy_document.eks_cluster_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster" {
@@ -29,8 +30,9 @@ data "aws_iam_policy_document" "ec2_assume" {
 }
 
 resource "aws_iam_role" "eks_nodes" {
-  name               = "${local.name_prefix}-eks-nodes"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
+  name                 = "${local.name_prefix}-eks-nodes"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "eks_nodes" {
@@ -80,8 +82,9 @@ data "aws_iam_policy_document" "alb_controller_assume" {
 }
 
 resource "aws_iam_role" "alb_controller" {
-  name               = "${local.name_prefix}-alb-controller"
-  assume_role_policy = data.aws_iam_policy_document.alb_controller_assume.json
+  name                 = "${local.name_prefix}-alb-controller"
+  assume_role_policy   = data.aws_iam_policy_document.alb_controller_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy" "alb_controller" {
@@ -239,8 +242,9 @@ locals {
 resource "aws_iam_role" "workload_secrets" {
   for_each = local.workload_secret_access
 
-  name               = "${local.name_prefix}-${each.key}"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  name                 = "${local.name_prefix}-${each.key}"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy" "workload_secrets" {
@@ -271,8 +275,9 @@ resource "aws_eks_pod_identity_association" "workload_secrets" {
 }
 
 resource "aws_iam_role" "ebs_csi" {
-  name               = "${local.name_prefix}-ebs-csi"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  name                 = "${local.name_prefix}-ebs-csi"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_assume.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {

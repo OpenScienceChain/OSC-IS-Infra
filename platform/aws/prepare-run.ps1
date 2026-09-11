@@ -13,7 +13,11 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')]
-    [string]$AlbControllerImage
+    [string]$AlbControllerImage,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$')]
+    [string]$PermissionsBoundaryArn
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +53,7 @@ try {
         "runner_public_cidr = `"$AdminCidr`""
         "maximum_runtime_hours = $Hours"
         "alb_controller_image = `"$AlbControllerImage`""
+        "permissions_boundary_arn = `"$PermissionsBoundaryArn`""
     ) -join [Environment]::NewLine
     [IO.File]::WriteAllText($tfvarsPath, $tfvars + [Environment]::NewLine)
 

@@ -1,6 +1,10 @@
 resource "aws_cloudwatch_metric_alarm" "codebuild_failed" {
-  alarm_name          = "${local.name_prefix}-lifecycle-build-failed"
-  alarm_description   = "Lifecycle CodeBuild failed; the static fallback must remain available."
+  for_each = {
+    lifecycle = aws_codebuild_project.lifecycle.name
+    cleanup   = aws_codebuild_project.cleanup.name
+  }
+  alarm_name          = "${local.name_prefix}-${each.key}-build-failed"
+  alarm_description   = "${each.key} CodeBuild failed; lifecycle teardown evidence requires review."
   namespace           = "AWS/CodeBuild"
   metric_name         = "FailedBuilds"
   statistic           = "Sum"
@@ -9,7 +13,7 @@ resource "aws_cloudwatch_metric_alarm" "codebuild_failed" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
-  dimensions          = { ProjectName = aws_codebuild_project.lifecycle.name }
+  dimensions          = { ProjectName = each.value }
   alarm_actions       = [aws_sns_topic.lifecycle.arn]
 }
 

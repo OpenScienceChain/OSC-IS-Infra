@@ -158,36 +158,143 @@ data "aws_iam_policy_document" "codebuild_assume" {
   }
 }
 
-resource "aws_iam_policy" "lifecycle_boundary" {
-  #checkov:skip=CKV_AWS_286: The boundary permits credential-management APIs only inside an exact account/region/run-tag guard enforced by the runner.
-  #checkov:skip=CKV_AWS_287: The boundary permits write APIs only inside an exact account/region/run-tag guard enforced by the runner.
-  #checkov:skip=CKV_AWS_288: The boundary permits data APIs only inside an exact account/region/run-tag guard enforced by the runner.
-  #checkov:skip=CKV_AWS_289: The boundary permits permissions APIs needed to create and tear down run-scoped roles; the attached role policy is narrower.
-  #checkov:skip=CKV_AWS_290: Service-level wildcards are the maximum boundary, while the attached role policy and fail-closed runtime guard restrict targets.
-  #checkov:skip=CKV_AWS_355: The lifecycle runner must enumerate and sweep all supported run-tagged resource types; exact ownership tags are checked before mutation.
-  name        = "${local.name_prefix}-lifecycle-boundary"
-  description = "Maximum AWS service surface for the disposable US-RSE lifecycle runner"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
+locals {
+  runtime_boundary_arn     = "arn:aws:iam::${var.authorized_account_id}:policy/${local.name_prefix}-runtime-boundary"
+  runtime_role_arn_pattern = "arn:aws:iam::${var.authorized_account_id}:role/${local.name_prefix}-*"
+  runtime_oidc_arn_pattern = "arn:aws:iam::${var.authorized_account_id}:oidc-provider/oidc.eks.${var.aws_region}.amazonaws.com/id/*"
+  runtime_managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+    "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+    "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy",
+  ]
+  runtime_passed_to_services = [
+    "ec2.amazonaws.com",
+    "eks.amazonaws.com",
+    "pods.eks.amazonaws.com",
+  ]
+  runtime_iam_statements = [
+    {
+      Sid      = "CreateOnlyBoundedRuntimeRoles"
+      Effect   = "Allow"
+      Action   = ["iam:CreateRole"]
+      Resource = local.runtime_role_arn_pattern
+      Condition = {
+        StringEquals = {
+          "iam:PermissionsBoundary"    = local.runtime_boundary_arn
+          "aws:RequestTag/Project"     = "OSC-IS"
+          "aws:RequestTag/Purpose"     = "USRSE26-Interactive-Demo"
+          "aws:RequestTag/Environment" = "ephemeral"
+          "aws:RequestTag/RunId"       = var.run_id
+        }
+      }
+    },
+    {
+      Sid    = "ManageOnlyRunPrefixedRoles"
       Effect = "Allow"
       Action = [
-        "autoscaling:*", "budgets:ViewBudget", "cloudformation:*", "cloudfront:*",
-        "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "codebuild:UpdateProject",
-        "dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
-        "ec2:*", "ecr:*", "eks:*", "elasticloadbalancing:*",
-        "iam:AttachRolePolicy", "iam:CreateOpenIDConnectProvider", "iam:CreateRole", "iam:CreateServiceLinkedRole",
-        "iam:DeleteOpenIDConnectProvider", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:DetachRolePolicy",
-        "iam:GetOpenIDConnectProvider", "iam:GetRole", "iam:GetRolePolicy", "iam:ListAttachedRolePolicies",
-        "iam:ListInstanceProfilesForRole", "iam:ListOpenIDConnectProviders", "iam:ListRolePolicies", "iam:PassRole",
-        "iam:PutRolePolicy", "iam:TagOpenIDConnectProvider", "iam:TagRole", "iam:UntagOpenIDConnectProvider", "iam:UntagRole",
-        "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
-        "mq:*", "resourcegroupstaggingapi:GetResources", "s3:*", "secretsmanager:*", "sns:Publish",
-        "states:StartExecution", "sts:GetCallerIdentity"
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRolePolicies",
+        "iam:PutRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
       ]
+      Resource = local.runtime_role_arn_pattern
+    },
+    {
+      Sid      = "AttachOnlyApprovedManagedPolicies"
+      Effect   = "Allow"
+      Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+      Resource = local.runtime_role_arn_pattern
+      Condition = {
+        ArnEquals = {
+          "iam:PolicyARN" = local.runtime_managed_policy_arns
+        }
+      }
+    },
+    {
+      Sid      = "ReadOnlyApprovedManagedPolicies"
+      Effect   = "Allow"
+      Action   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
+      Resource = local.runtime_managed_policy_arns
+    },
+    {
+      Sid      = "PassOnlyRunRolesToApprovedServices"
+      Effect   = "Allow"
+      Action   = ["iam:PassRole"]
+      Resource = local.runtime_role_arn_pattern
+      Condition = {
+        StringEquals = {
+          "iam:PassedToService" = local.runtime_passed_to_services
+        }
+      }
+    },
+    {
+      Sid      = "ManageOnlyRegionalEksOidcProvider"
+      Effect   = "Allow"
+      Action   = ["iam:CreateOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider", "iam:GetOpenIDConnectProvider", "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider"]
+      Resource = local.runtime_oidc_arn_pattern
+    },
+    {
+      Sid      = "ListOidcProviders"
+      Effect   = "Allow"
+      Action   = ["iam:ListOpenIDConnectProviders"]
       Resource = "*"
-    }]
-  })
+    },
+    {
+      Sid      = "CreateOnlyRequiredServiceLinkedRoles"
+      Effect   = "Allow"
+      Action   = ["iam:CreateServiceLinkedRole"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "iam:AWSServiceName" = [
+            "autoscaling.amazonaws.com",
+            "elasticloadbalancing.amazonaws.com",
+            "eks.amazonaws.com",
+            "mq.amazonaws.com",
+          ]
+        }
+      }
+    },
+  ]
+  lifecycle_boundary_policy = {
+    Version = "2012-10-17"
+    Statement = concat([
+      {
+        Sid    = "RuntimeAndControlServices"
+        Effect = "Allow"
+        Action = [
+          "autoscaling:*", "budgets:ViewBudget", "cloudformation:*", "cloudfront:*",
+          "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "codebuild:UpdateProject",
+          "dynamodb:DeleteItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
+          "ec2:*", "ecr:*", "eks:*", "elasticloadbalancing:*",
+          "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
+          "mq:*", "resourcegroupstaggingapi:GetResources", "s3:*", "secretsmanager:*", "sns:Publish",
+          "states:StartExecution", "sts:GetCallerIdentity",
+        ]
+        Resource = "*"
+      },
+    ], local.runtime_iam_statements)
+  }
+}
+
+resource "aws_iam_policy" "lifecycle_boundary" {
+  #checkov:skip=CKV_AWS_286: The boundary permits credential APIs only for the disposable runtime; exact role policy and run ownership checks are narrower.
+  #checkov:skip=CKV_AWS_287: The boundary is the maximum runtime service surface; exact role policy and run ownership checks are narrower.
+  #checkov:skip=CKV_AWS_288: The boundary permits disposable runtime data APIs; exact role policy and run ownership checks are narrower.
+  #checkov:skip=CKV_AWS_290: Service wildcards exclude IAM and are intersected with the narrower lifecycle role policy.
+  #checkov:skip=CKV_AWS_355: Resource=* is limited to non-IAM runtime services and APIs that do not support resource scoping.
+  name        = "${local.name_prefix}-runtime-boundary"
+  description = "Immutable permission ceiling for the lifecycle runner and every disposable runtime role"
+  policy      = jsonencode(local.lifecycle_boundary_policy)
 }
 
 resource "aws_iam_role" "lifecycle" {
@@ -201,7 +308,7 @@ resource "aws_iam_role_policy" "lifecycle" {
   role = aws_iam_role.lifecycle.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid      = "AccountGuard"
         Effect   = "Allow"
@@ -285,21 +392,14 @@ resource "aws_iam_role_policy" "lifecycle" {
         Effect = "Allow"
         Action = [
           "autoscaling:*", "cloudformation:*", "ec2:*", "ecr:*", "eks:*",
-          "elasticloadbalancing:*", "iam:CreatePolicy", "iam:CreateRole", "iam:DeletePolicy",
-          "iam:AttachRolePolicy", "iam:CreateOpenIDConnectProvider", "iam:CreateServiceLinkedRole",
-          "iam:DeleteOpenIDConnectProvider", "iam:DeleteRole", "iam:DeleteRolePolicy", "iam:DetachRolePolicy",
-          "iam:GetOpenIDConnectProvider", "iam:GetPolicy", "iam:GetRole", "iam:GetRolePolicy",
-          "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:ListOpenIDConnectProviders",
-          "iam:ListPolicyVersions", "iam:ListRolePolicies", "iam:PassRole", "iam:PutRolePolicy",
-          "iam:TagOpenIDConnectProvider", "iam:TagPolicy", "iam:TagRole",
-          "iam:UntagOpenIDConnectProvider", "iam:UntagPolicy", "iam:UntagRole",
+          "elasticloadbalancing:*",
           "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups", "logs:PutRetentionPolicy",
           "mq:*", "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret",
           "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"
         ]
         Resource = "*"
       }
-    ]
+    ], local.runtime_iam_statements)
   })
 }
 
@@ -342,6 +442,52 @@ resource "aws_codebuild_project" "lifecycle" {
     cloudwatch_logs {
       group_name  = aws_cloudwatch_log_group.lifecycle.name
       stream_name = var.run_id
+    }
+  }
+}
+
+# This project is never attached to the disposable VPC. It remains able to
+# destroy Terraform state and verify the tag inventory even when an in-VPC
+# lifecycle action or network reset fails.
+resource "aws_codebuild_project" "cleanup" {
+  name           = "${local.name_prefix}-cleanup"
+  service_role   = aws_iam_role.lifecycle.arn
+  build_timeout  = 120
+  queued_timeout = 15
+
+  artifacts { type = "NO_ARTIFACTS" }
+  source {
+    type = "NO_SOURCE"
+    buildspec = yamlencode({
+      version = 0.2
+      phases = {
+        pre_build = { commands = [
+          "test \"$(aws sts get-caller-identity --query Account --output text)\" = \"$EXPECTED_ACCOUNT_ID\"",
+          "test \"$AWS_DEFAULT_REGION\" = \"$EXPECTED_REGION\"",
+          "test \"$ACTION\" = \"DESTROY_RUNTIME\" -o \"$ACTION\" = \"SWEEP\""
+        ] }
+        build = { commands = ["/usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
+      }
+    })
+  }
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                       = var.lifecycle_runner_image
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "SERVICE_ROLE"
+    dynamic "environment_variable" {
+      for_each = merge(local.lifecycle_environment, { PLANNING_COST_USD = tostring(var.planning_cost_usd) })
+      content {
+        name  = environment_variable.key
+        value = environment_variable.value
+        type  = "PLAINTEXT"
+      }
+    }
+  }
+  logs_config {
+    cloudwatch_logs {
+      group_name  = aws_cloudwatch_log_group.lifecycle.name
+      stream_name = "${var.run_id}-cleanup"
     }
   }
 }

@@ -278,6 +278,15 @@ resource "aws_wafv2_web_acl_logging_configuration" "edge" {
   redacted_fields {
     single_header { name = "authorization" }
   }
+  redacted_fields {
+    single_header { name = "x-demo-control-key" }
+  }
+  redacted_fields {
+    single_header { name = "x-demo-csrf" }
+  }
+  redacted_fields {
+    single_header { name = "x-api-key" }
+  }
 }
 
 resource "aws_cloudfront_distribution" "edge" {

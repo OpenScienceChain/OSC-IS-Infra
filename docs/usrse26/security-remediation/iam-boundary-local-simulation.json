@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "simulation": "local permissions-boundary intersection model",
+  "account": "269624229733",
+  "region": "us-west-2",
+  "runId": "usrse26r1",
+  "boundaryArn": "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26r1-runtime-boundary",
+  "allPassed": true,
+  "cases": [
+    {
+      "name": "bounded run role creation",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "unbounded run role creation",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "role creation outside run prefix",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::269624229733:role/admin",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "arbitrary inline admin capability",
+      "action": "iam:CreateUser",
+      "resource": "arn:aws:iam::269624229733:user/escape",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "approved managed policy attachment",
+      "action": "iam:AttachRolePolicy",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "administrator managed policy attachment",
+      "action": "iam:AttachRolePolicy",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "approved EKS pass role",
+      "action": "iam:PassRole",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "pass role outside run prefix",
+      "action": "iam:PassRole",
+      "resource": "arn:aws:iam::269624229733:role/admin",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "pass role to unapproved service",
+      "action": "iam:PassRole",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "permissions boundary mutation",
+      "action": "iam:DeleteRolePermissionsBoundary",
+      "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    }
+  ],
+  "limitations": "Local policy semantics only; repeat with AWS IAM simulation during the authorized rehearsal."
+}

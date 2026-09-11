@@ -150,6 +150,7 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('America/Los_Angeles', schedules)
         self.assertIn('StringEquals = "CLOSED"', machines)
         self.assertIn('StopComplete = { Type = "Succeed" }', machines)
+        self.assertIn('resource "aws_codebuild_project" "cleanup"', read("terraform/usrse26-control/lifecycle.tf"))
 
     def test_monitoring_covers_lifecycle_failures(self) -> None:
         monitoring = read("terraform/usrse26-control/monitoring.tf")
@@ -191,6 +192,22 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("preserve the static edge and control plane", runner["actions"]["DESTROY"]["steps"])
         self.assertEqual(runner["stateOrder"], ["SCHEDULED", "PREPARING", "OPEN", "READ_ONLY", "CLOSED"])
         self.assertEqual(runner["requiredArtifactInterfaces"]["webApp"], ["sourceRevision", "s3Uri", "sha256"])
+
+    def test_waf_redacts_all_sensitive_request_headers(self) -> None:
+        edge = read("terraform/usrse26-control/edge.tf")
+        for header in ("authorization", "cookie", "x-demo-control-key", "x-demo-csrf", "x-api-key"):
+            self.assertIn(f'single_header {{ name = "{header}" }}', edge)
+        runner = read("platform/lifecycle/osc_demo_lifecycle.py")
+        self.assertIn("def private_control_json", runner)
+        self.assertNotIn('headers={"X-Demo-Control-Key"', runner)
+
+    def test_every_runtime_role_uses_the_exact_boundary(self) -> None:
+        iam = read("terraform/usrse26-eks/iam.tf")
+        self.assertEqual(iam.count("permissions_boundary = var.permissions_boundary_arn"), 5)
+        control = read("terraform/usrse26-control/lifecycle.tf")
+        self.assertIn('"iam:PermissionsBoundary"', control)
+        self.assertIn("local.runtime_role_arn_pattern", control)
+        self.assertNotIn('"iam:CreateRole", "iam:CreateServiceLinkedRole"', control)
 
     def test_codebuild_has_no_install_or_source_build_step(self) -> None:
         lifecycle = read("terraform/usrse26-control/lifecycle.tf")
