@@ -120,6 +120,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.16.2"
+      - name: Initialize control providers without remote state
+        run: terraform -chdir=terraform/usrse26-control init -backend=false -input=false -lockfile=readonly
       - run: python3 -m unittest discover -s tests/usrse26 -v
 
   secret-scan:
