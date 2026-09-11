@@ -122,18 +122,29 @@ try {
         if ($repositoryData.imageTagMutability -ne 'IMMUTABLE' -or -not $repositoryData.imageScanningConfiguration.scanOnPush -or $repositoryData.encryptionConfiguration.encryptionType -ne 'AES256') {
             throw "Pre-existing repository $repository does not match the immutable release contract."
         }
-        $tags = aws ecr list-tags-for-resource `
-            --resource-arn $repositoryData.repositoryArn `
-            --query 'tags' `
-            --output json `
-            --profile default `
-            --region us-west-2 `
-            --no-cli-pager | ConvertFrom-Json
-        $tagMap = @{}
-        foreach ($tag in @($tags)) { $tagMap[$tag.Key] = $tag.Value }
         $expectedTags = @{Project='OSC-IS'; Purpose='USRSE26-Interactive-Demo'; Environment='ephemeral'; ManagedBy='Terraform'; Owner='ofgarzon'; RunId=$RunId; ExpiresAt=$repositoryExpiresAt}
-        foreach ($entry in $expectedTags.GetEnumerator()) {
-            if ($tagMap[$entry.Key] -ne $entry.Value) { throw "Repository $repository is missing exact tag $($entry.Key)." }
+        $tagMismatches = @('tag reconciliation has not run')
+        for ($tagReadAttempt = 1; $tagReadAttempt -le 6; $tagReadAttempt++) {
+            $tagsJson = aws ecr list-tags-for-resource `
+                --resource-arn $repositoryData.repositoryArn `
+                --query 'tags' `
+                --output json `
+                --profile default `
+                --region us-west-2 `
+                --no-cli-pager
+            if ($LASTEXITCODE -eq 0) {
+                $tagMap = @{}
+                foreach ($tag in @(($tagsJson | ConvertFrom-Json))) { $tagMap[$tag.Key] = $tag.Value }
+                $tagMismatches = @($expectedTags.GetEnumerator() | Where-Object { $tagMap[$_.Key] -ne $_.Value })
+                if ($tagMismatches.Count -eq 0) { break }
+            } else {
+                $tagMismatches = @('AWS tag read failed')
+            }
+            if ($tagReadAttempt -lt 6) { Start-Sleep -Seconds ([Math]::Min(2 * $tagReadAttempt, 10)) }
+        }
+        if ($tagMismatches.Count -ne 0) {
+            $missingKeys = @($tagMismatches | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Key } }) -join ', '
+            throw "Repository $repository is missing exact tags after bounded reconciliation: $missingKeys."
         }
         aws ecr put-lifecycle-policy `
             --repository-name $repository `

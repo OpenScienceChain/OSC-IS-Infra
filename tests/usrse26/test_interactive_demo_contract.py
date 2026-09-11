@@ -275,6 +275,13 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('--tags "file://$repositoryTagsPath"', publisher)
         self.assertNotIn("Key=ExpiresAt,Value=$repositoryExpiresAt", publisher)
 
+    def test_ecr_repository_tag_reconciliation_retries_but_remains_strict(self) -> None:
+        publisher = read("platform/aws/push-aws-artifacts.ps1")
+        self.assertIn("$tagReadAttempt -le 6", publisher)
+        self.assertIn("if ($tagMismatches.Count -eq 0) { break }", publisher)
+        self.assertIn("missing exact tags after bounded reconciliation", publisher)
+        self.assertNotIn("aws ecr tag-resource", publisher)
+
     def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         control = read("platform/aws/destroy-demo-control.ps1")
