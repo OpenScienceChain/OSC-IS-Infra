@@ -7,7 +7,7 @@ parameters:
   type: gp3
   encrypted: "true"
   tagSpecification_1: Project=OSC-IS
-  tagSpecification_2: Purpose=USRSE26-Evidence
+  tagSpecification_2: Purpose=USRSE26-Interactive-Demo
   tagSpecification_3: Environment=ephemeral
   tagSpecification_4: ManagedBy=EKS-EBS-CSI
   tagSpecification_5: RunId=__RUN_ID__

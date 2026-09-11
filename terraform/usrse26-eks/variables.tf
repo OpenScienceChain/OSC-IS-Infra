@@ -35,12 +35,34 @@ variable "run_id" {
 }
 
 variable "expires_at" {
-  description = "RFC3339 expiry no more than eight hours after apply."
+  description = "RFC3339 hard expiry for the disposable runtime."
   type        = string
 
   validation {
     condition     = can(timecmp(var.expires_at, timestamp()))
     error_message = "expires_at must be an RFC3339 timestamp."
+  }
+}
+
+variable "maximum_runtime_hours" {
+  description = "Absolute disposable-runtime duration ceiling."
+  type        = number
+  default     = 72
+
+  validation {
+    condition     = var.maximum_runtime_hours > 0 && var.maximum_runtime_hours <= 72
+    error_message = "maximum_runtime_hours must be between 1 and the approved 72-hour ceiling."
+  }
+}
+
+variable "provisioning_ceiling_usd" {
+  description = "Absolute campaign provisioning ceiling enforced before apply."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.provisioning_ceiling_usd == 200
+    error_message = "The approved absolute provisioning ceiling is USD 200."
   }
 }
 
@@ -86,6 +108,16 @@ variable "node_count" {
 variable "rabbitmq_engine_version" {
   type    = string
   default = "4.2"
+}
+
+variable "alb_controller_image" {
+  description = "Reviewed AWS Load Balancer Controller image reference, pinned by sha256 digest."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^[:space:]]+@sha256:[0-9a-f]{64}$", var.alb_controller_image))
+    error_message = "alb_controller_image must be an immutable image digest."
+  }
 }
 
 variable "rabbitmq_instance_type" {

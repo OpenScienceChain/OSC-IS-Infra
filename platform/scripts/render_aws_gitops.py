@@ -26,12 +26,17 @@ def main() -> None:
 
     prefix = f"osc-usrse26-{args.run_id}"
     images = artifacts["images"]
+    external_images = artifacts["externalImages"]
     replacements = {
         "__RUN_ID__": args.run_id,
         "__API_GATEWAY_IMAGE__": images["api-gateway"]["ecrReference"],
         "__LEDGER_GATEWAY_IMAGE__": images["ledger-gateway"]["ecrReference"],
         "__SUBMISSION_WORKER_IMAGE__": images["submission-worker"]["ecrReference"],
         "__SUBMISSION_LISTENER_IMAGE__": images["submission-listener"]["ecrReference"],
+        "__HISTORY_WORKER_IMAGE__": images["history-worker"]["ecrReference"],
+        "__AWS_LOAD_BALANCER_CONTROLLER_IMAGE__": external_images[
+            "aws-load-balancer-controller"
+        ],
         "__APP_SECRET_NAME__": f"{prefix}/application",
         "__POSTGRES_SECRET_NAME__": f"{prefix}/postgres",
         "__RABBITMQ_SECRET_NAME__": f"{prefix}/rabbitmq",

@@ -8,7 +8,7 @@ resource "aws_cloudformation_stack" "rabbitmq" {
     BrokerName       = "${local.name_prefix}-rabbitmq"
     EngineVersion    = var.rabbitmq_engine_version
     HostInstanceType = var.rabbitmq_instance_type
-    SubnetId         = aws_subnet.private[0].id
+    SubnetIds        = join(",", aws_subnet.private[*].id)
     SecurityGroupId  = aws_security_group.rabbitmq.id
     SecretName       = "${local.name_prefix}/rabbitmq"
     ProjectTag       = local.required_tags.Project

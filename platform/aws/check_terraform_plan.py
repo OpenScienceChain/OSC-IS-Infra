@@ -12,7 +12,7 @@ from typing import Any
 AUTHORIZED_ACCOUNT = "269624229733"
 REQUIRED_TAGS = {
     "Project": "OSC-IS",
-    "Purpose": "USRSE26-Evidence",
+    "Purpose": "USRSE26-Interactive-Demo",
     "Environment": "ephemeral",
     "ManagedBy": "Terraform",
     "Owner": "ofgarzon",
@@ -80,7 +80,7 @@ def main() -> None:
             template = json.loads(planned.get("template_body", "{}"))
             broker = template.get("Resources", {}).get("Broker", {}).get("Properties", {})
             require(broker.get("PubliclyAccessible") is False, f"{address} creates a public broker", errors)
-            require(broker.get("DeploymentMode") == "SINGLE_INSTANCE", f"{address} has an unreviewed deployment mode", errors)
+            require(broker.get("DeploymentMode") == "CLUSTER_MULTI_AZ", f"{address} must use a three-broker Multi-AZ cluster", errors)
             require(broker.get("EngineType") == "RABBITMQ", f"{address} is not RabbitMQ", errors)
             serialized = json.dumps(template)
             require("{{resolve:secretsmanager:" in serialized, f"{address} does not resolve its password from Secrets Manager", errors)

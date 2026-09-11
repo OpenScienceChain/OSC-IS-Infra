@@ -8,8 +8,12 @@ param(
     [ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}/32$')]
     [string]$AdminCidr,
 
-    [ValidateRange(1, 8)]
-    [int]$Hours = 8
+    [ValidateRange(1, 72)]
+    [int]$Hours = 72,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')]
+    [string]$AlbControllerImage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +46,8 @@ try {
         "run_id = `"$RunId`""
         "expires_at = `"$($expiresAt.ToString('o'))`""
         "admin_cidr = `"$AdminCidr`""
+        "maximum_runtime_hours = $Hours"
+        "alb_controller_image = `"$AlbControllerImage`""
     ) -join [Environment]::NewLine
     [IO.File]::WriteAllText($tfvarsPath, $tfvars + [Environment]::NewLine)
 

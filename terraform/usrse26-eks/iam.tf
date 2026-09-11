@@ -54,6 +54,161 @@ data "aws_iam_policy_document" "pod_identity_assume" {
   }
 }
 
+resource "aws_iam_openid_connect_provider" "eks" {
+  url            = aws_eks_cluster.experiment.identity[0].oidc[0].issuer
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+data "aws_iam_policy_document" "alb_controller_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "alb_controller" {
+  name               = "${local.name_prefix}-alb-controller"
+  assume_role_policy = data.aws_iam_policy_document.alb_controller_assume.json
+}
+
+resource "aws_iam_role_policy" "alb_controller" {
+  name = "manage-tagged-internal-albs"
+  role = aws_iam_role.alb_controller.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "CreateElasticLoadBalancingServiceRole"
+        Effect   = "Allow"
+        Action   = "iam:CreateServiceLinkedRole"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "ReadOnlyDiscovery"
+        Effect = "Allow"
+        Action = [
+          "acm:DescribeCertificate",
+          "acm:ListCertificates",
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeCoipPools",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeIpamPools",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeTags",
+          "ec2:DescribeVpcPeeringConnections",
+          "ec2:DescribeVpcs",
+          "ec2:GetCoipPoolUsage",
+          "ec2:GetSecurityGroupsForVpc",
+          "elasticloadbalancing:DescribeCapacityReservation",
+          "elasticloadbalancing:DescribeListenerAttributes",
+          "elasticloadbalancing:DescribeListenerCertificates",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeRules",
+          "elasticloadbalancing:DescribeSSLPolicies",
+          "elasticloadbalancing:DescribeTags",
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:DescribeTrustStores",
+          "iam:GetServerCertificate",
+          "iam:ListServerCertificates",
+          "shield:GetSubscriptionState",
+          "shield:ListProtections",
+          "waf-regional:GetWebACLForResource",
+          "waf-regional:GetWebACL",
+          "waf-regional:ListResourcesForWebACL",
+          "waf-regional:ListWebACLs",
+          "wafv2:GetWebACLForResource",
+          "wafv2:GetWebACL",
+          "wafv2:ListResourcesForWebACL",
+          "wafv2:ListWebACLs"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CreateTaggedLoadBalancers"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSecurityGroup",
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:CreateTargetGroup"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/RunId"   = var.run_id
+            "aws:RequestTag/Project" = "OSC-IS"
+          }
+        }
+      },
+      {
+        Sid    = "ManageTaggedLoadBalancers"
+        Effect = "Allow"
+        Action = [
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:DeleteSecurityGroup",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:CreateRule",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteRule",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:ModifyListenerAttributes",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyRule",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:RemoveTags",
+          "elasticloadbalancing:SetIpAddressType",
+          "elasticloadbalancing:SetRulePriorities",
+          "elasticloadbalancing:SetSecurityGroups",
+          "elasticloadbalancing:SetSubnets"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/RunId"   = var.run_id
+            "aws:ResourceTag/Project" = "OSC-IS"
+          }
+        }
+      }
+    ]
+  })
+}
+
 locals {
   workload_secret_access = {
     api-gateway = [

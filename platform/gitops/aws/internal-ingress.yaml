@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: osc-demo-api
+  namespace: osc-apps
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /api/v1/health
+    alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false,routing.http.drop_invalid_header_fields.enabled=true
+    alb.ingress.kubernetes.io/tags: Project=OSC-IS,Purpose=USRSE26-Interactive-Demo,Environment=ephemeral,ManagedBy=Kubernetes,RunId=__RUN_ID__
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: {name: api-gateway, port: {number: 3000}}
+          - path: /demo
+            pathType: Prefix
+            backend:
+              service: {name: api-gateway, port: {number: 3000}}

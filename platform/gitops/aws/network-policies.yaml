@@ -21,14 +21,27 @@ spec:
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: application-paths, namespace: osc-apps}
+metadata: {name: alb-to-api, namespace: osc-apps}
 spec:
-  podSelector: {}
-  policyTypes: [Ingress, Egress]
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: api-gateway}
+  policyTypes: [Ingress]
   ingress:
-    - from: [{podSelector: {}}]
+    - from: [{ipBlock: {cidr: 10.73.0.0/16}}]
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-to-postgres, namespace: osc-apps}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: api-gateway}
+  policyTypes: [Egress]
   egress:
-    - to: [{podSelector: {}}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: postgres}
+      ports: [{protocol: TCP, port: 5432}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -43,6 +56,112 @@ spec:
   egress:
     - to: [{ipBlock: {cidr: 10.73.0.0/16}}]
       ports: [{protocol: TCP, port: 5671}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: internal-service-ingress, namespace: osc-apps}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [postgres, ledger-gateway-nsg, ledger-gateway-citizen-science]
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: worker-to-ledger-gateways, namespace: osc-apps}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: submission-worker}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [ledger-gateway-nsg, ledger-gateway-citizen-science]
+      ports: [{protocol: TCP, port: 4000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: listener-to-api, namespace: osc-apps}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: submission-listener}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: api-gateway}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: internal-api-ingress, namespace: osc-apps}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: api-gateway}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: submission-listener}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-to-history-workers, namespace: osc-apps}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: api-gateway}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [history-worker-nsg, history-worker-citizen-science]
+      ports: [{protocol: TCP, port: 8002}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: history-worker-ingress, namespace: osc-apps}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [history-worker-nsg, history-worker-citizen-science]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: api-gateway}
+      ports: [{protocol: TCP, port: 8002}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: history-workers-to-ledger, namespace: osc-apps}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [history-worker-nsg, history-worker-citizen-science]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [ledger-gateway-nsg, ledger-gateway-citizen-science]
+      ports: [{protocol: TCP, port: 4000}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

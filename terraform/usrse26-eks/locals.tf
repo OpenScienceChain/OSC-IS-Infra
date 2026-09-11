@@ -4,7 +4,7 @@ locals {
 
   required_tags = {
     Project     = "OSC-IS"
-    Purpose     = "USRSE26-Evidence"
+    Purpose     = "USRSE26-Interactive-Demo"
     Environment = "ephemeral"
     ManagedBy   = "Terraform"
     Owner       = "ofgarzon"
@@ -12,7 +12,7 @@ locals {
     ExpiresAt   = var.expires_at
   }
 
-  availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
+  availability_zones = slice(data.aws_availability_zones.available.names, 0, 3)
 
   addon_versions = {
     kube-proxy                            = "v1.35.3-eksbuild.21"
@@ -25,6 +25,7 @@ locals {
 
   ecr_repositories = toset([
     "api-gateway",
+    "history-worker",
     "ledger-gateway",
     "submission-worker",
     "submission-listener",

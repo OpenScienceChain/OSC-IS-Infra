@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: submission-worker, namespace: osc-apps}
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app.kubernetes.io/name: submission-worker}
   template:
@@ -10,6 +10,17 @@ spec:
       labels: {app.kubernetes.io/name: submission-worker, app.kubernetes.io/part-of: osc-is}
     spec:
       serviceAccountName: submission-worker
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-worker}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-worker}
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -61,7 +72,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: submission-listener, namespace: osc-apps}
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app.kubernetes.io/name: submission-listener}
   template:
@@ -69,6 +80,17 @@ spec:
       labels: {app.kubernetes.io/name: submission-listener, app.kubernetes.io/part-of: osc-is}
     spec:
       serviceAccountName: submission-listener
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-listener}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-listener}
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

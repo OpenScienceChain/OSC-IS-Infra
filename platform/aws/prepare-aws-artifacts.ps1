@@ -2,7 +2,11 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[a-z0-9]{8,20}$')]
-    [string]$RunId
+    [string]$RunId,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')]
+    [string]$AlbControllerImage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,6 +36,7 @@ $contexts = [ordered]@{
     'ledger-gateway' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\fabric-bridge'; Dockerfile = 'Dockerfile' }
     'submission-worker' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\submission_worker'; Dockerfile = 'Dockerfile' }
     'submission-listener' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\submission_listener'; Dockerfile = 'Dockerfile' }
+    'history-worker' = @{ Path = Join-Path $worktreeRoot 'OSC-Artifact-Submission\get_history_worker'; Dockerfile = 'Dockerfile' }
     'chaincode' = @{ Path = Join-Path $worktreeRoot 'OSC-Chaincode\chaincode-go'; Dockerfile = 'Dockerfile' }
 }
 
@@ -57,6 +62,10 @@ python (Join-Path $infraRoot 'platform/scripts/patch_fabric_network.py') `
     --versions (Join-Path $infraRoot 'platform/versions.env') `
     --runtime eks
 if ($LASTEXITCODE -ne 0) { throw 'EKS Fabric network preparation failed.' }
+python (Join-Path $infraRoot 'platform/scripts/validate_fabric_topology.py') `
+    --network (Join-Path $infraRoot 'platform/.generated/fabric-network-eks') `
+    --deploy-script (Join-Path $infraRoot 'platform/scripts/deploy_aws_fabric.sh')
+if ($LASTEXITCODE -ne 0) { throw 'Fabric topology contract failed.' }
 
 function Invoke-Checked {
     param([Parameter(Mandatory = $true)][scriptblock]$Command, [Parameter(Mandatory = $true)][string]$Failure)
@@ -144,8 +153,12 @@ try {
         createdAt = [DateTimeOffset]::UtcNow.ToString('o')
         credentialFreeBuild = $true
         images = $images
+        externalImages = [ordered]@{
+            'aws-load-balancer-controller' = $AlbControllerImage
+        }
         sourceCommits = [ordered]@{
             infra = (git -C $infraRoot rev-parse HEAD).Trim()
+            webApp = (git -C (Join-Path $worktreeRoot 'OSC-WebApp') rev-parse HEAD).Trim()
             apiGateway = (git -C (Join-Path $worktreeRoot 'OSC-APIGateway') rev-parse HEAD).Trim()
             artifactSubmission = (git -C (Join-Path $worktreeRoot 'OSC-Artifact-Submission') rev-parse HEAD).Trim()
             chaincode = (git -C (Join-Path $worktreeRoot 'OSC-Chaincode') rev-parse HEAD).Trim()
@@ -201,7 +214,7 @@ try {
         rolloutRevision = $rolloutRevision
     }
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8) + [Environment]::NewLine)
-    Write-Host "Prepared six scanned, non-root, digest-addressed artifacts at $artifactRoot"
+    Write-Host "Prepared seven scanned, non-root, digest-addressed OCI artifacts at $artifactRoot"
 }
 finally {
     if (docker ps -a --format '{{.Names}}' | Select-String -SimpleMatch $registryName -Quiet) {

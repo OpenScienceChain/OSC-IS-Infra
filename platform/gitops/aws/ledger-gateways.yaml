@@ -9,7 +9,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: ledger-gateway-nsg, namespace: osc-apps}
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
   template:
@@ -17,6 +17,17 @@ spec:
       labels: {app.kubernetes.io/name: ledger-gateway-nsg, app.kubernetes.io/part-of: osc-is}
     spec:
       serviceAccountName: ledger-gateway-nsg
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -73,7 +84,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: ledger-gateway-citizen-science, namespace: osc-apps}
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
   template:
@@ -81,6 +92,17 @@ spec:
       labels: {app.kubernetes.io/name: ledger-gateway-citizen-science, app.kubernetes.io/part-of: osc-is}
     spec:
       serviceAccountName: ledger-gateway-citizen-science
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

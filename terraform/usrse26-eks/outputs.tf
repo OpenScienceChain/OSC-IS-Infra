@@ -56,3 +56,11 @@ output "rabbitmq_amqps_endpoint" {
 output "required_tags" {
   value = local.required_tags
 }
+
+output "alb_controller_role_arn" {
+  value = aws_iam_role.alb_controller.arn
+}
+
+output "alb_controller_image" {
+  value = var.alb_controller_image
+}

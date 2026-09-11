@@ -133,6 +133,11 @@ try {
     kubectl -n osc-apps create configmap aws-runtime-endpoints `
         --from-literal="rabbitmq-host=$($rabbitUri.Host)" `
         --dry-run=client -o yaml | kubectl apply -f - | Out-Null
+    $vpcId = terraform -chdir=terraform/usrse26-eks output -raw "-state=$statePath" vpc_id
+    if ($LASTEXITCODE -ne 0 -or $vpcId -notmatch '^vpc-[0-9a-f]+$') { throw 'Could not resolve the guarded runtime VPC.' }
+    kubectl -n kube-system create configmap osc-runtime `
+        --from-literal="vpc-id=$($vpcId.Trim())" `
+        --dry-run=client -o yaml | kubectl apply -f - | Out-Null
 
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - | Out-Null
     kubectl label namespace argocd `
@@ -166,7 +171,7 @@ try {
     if ($sync -ne 'Synced' -or $health -ne 'Healthy') { throw 'Argo CD did not reach Synced and Healthy.' }
 
     kubectl -n osc-apps rollout status statefulset/postgres --timeout=10m | Out-Null
-    foreach ($deployment in @('api-gateway', 'ledger-gateway-nsg', 'ledger-gateway-citizen-science', 'submission-worker', 'submission-listener')) {
+    foreach ($deployment in @('api-gateway', 'ledger-gateway-nsg', 'ledger-gateway-citizen-science', 'submission-worker', 'submission-listener', 'history-worker-nsg', 'history-worker-citizen-science')) {
         kubectl -n osc-apps rollout status "deployment/$deployment" --timeout=10m | Out-Null
     }
     kubectl get nodes -o wide

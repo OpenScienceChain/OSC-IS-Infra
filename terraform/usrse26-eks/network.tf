@@ -12,7 +12,7 @@ resource "aws_internet_gateway" "experiment" {
 }
 
 resource "aws_subnet" "public" {
-  count = 2
+  count = 3
 
   vpc_id                  = aws_vpc.experiment.id
   availability_zone       = local.availability_zones[count.index]
@@ -26,7 +26,7 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
-  count = 2
+  count = 3
 
   vpc_id                  = aws_vpc.experiment.id
   availability_zone       = local.availability_zones[count.index]

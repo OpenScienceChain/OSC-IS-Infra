@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - aws-load-balancer-controller-v3.3.0.yaml
   - namespace-and-secrets.yaml
   - storage-class.yaml
   - certificates.yaml
@@ -8,4 +9,8 @@ resources:
   - api-gateway.yaml
   - ledger-gateways.yaml
   - submission-services.yaml
+  - history-workers.yaml
+  - availability.yaml
+  - internal-ingress.yaml
+  - load-balancer-controller.yaml
   - network-policies.yaml
