@@ -5,7 +5,7 @@
   "region": "us-west-2",
   "runId": "usrse26r1",
   "boundaryArn": "arn:aws:iam::269624229733:policy/osc-usrse26-usrse26r1-runtime-boundary",
-  "boundaryPolicyCharacters": 5802,
+  "boundaryPolicyCharacters": 5827,
   "managedPolicyQuotaCharacters": 6144,
   "allPassed": true,
   "cases": [
@@ -77,6 +77,30 @@
       "name": "permissions boundary mutation",
       "action": "iam:DeleteRolePermissionsBoundary",
       "resource": "arn:aws:iam::269624229733:role/osc-usrse26-usrse26r1-eks-cluster",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny",
+      "passed": true
+    },
+    {
+      "name": "view exact run budget",
+      "action": "budgets:ViewBudget",
+      "resource": "arn:aws:budgets::269624229733:budget/osc-usrse26-usrse26r1-absolute-ceiling",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "supporting billing view",
+      "action": "aws-portal:ViewBilling",
+      "resource": "*",
+      "expected": "allowed",
+      "actual": "allowed",
+      "passed": true
+    },
+    {
+      "name": "budget mutation",
+      "action": "budgets:ModifyBudget",
+      "resource": "arn:aws:budgets::269624229733:budget/osc-usrse26-usrse26r1-absolute-ceiling",
       "expected": "implicitDeny",
       "actual": "implicitDeny",
       "passed": true

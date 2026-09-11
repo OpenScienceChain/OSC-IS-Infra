@@ -102,6 +102,7 @@ def compact_policy_characters(policy: dict[str, Any]) -> int:
 
 def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) -> dict[str, Any]:
     role = f"arn:aws:iam::{ACCOUNT}:role/osc-usrse26-{run_id}-eks-cluster"
+    budget = f"arn:aws:budgets::{ACCOUNT}:budget/osc-usrse26-{run_id}-absolute-ceiling"
     run_bucket = f"arn:aws:s3:::osc-usrse26-{run_id}-control-{ACCOUNT}"
     run_secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:osc-usrse26-{run_id}/api/auth-AbCdEf"
     creation_tags = {
@@ -118,6 +119,9 @@ def simulate(boundary: dict[str, Any], identity: dict[str, Any], run_id: str) ->
         ("pass role outside run prefix", "iam:PassRole", f"arn:aws:iam::{ACCOUNT}:role/admin", {"iam:PassedToService": "eks.amazonaws.com"}, "implicitDeny"),
         ("pass role to unapproved service", "iam:PassRole", role, {"iam:PassedToService": "lambda.amazonaws.com"}, "implicitDeny"),
         ("permissions boundary mutation", "iam:DeleteRolePermissionsBoundary", role, {}, "implicitDeny"),
+        ("view exact run budget", "budgets:ViewBudget", budget, {}, "allowed"),
+        ("supporting billing view", "aws-portal:ViewBilling", "*", {}, "allowed"),
+        ("budget mutation", "budgets:ModifyBudget", budget, {}, "implicitDeny"),
         ("run-scoped S3 object", "s3:GetObject", f"{run_bucket}/runtime-state/{run_id}/terraform.tfstate", {}, "allowed"),
         ("unrelated S3 object", "s3:GetObject", "arn:aws:s3:::unrelated-account-data/private.txt", {}, "implicitDeny"),
         ("run-scoped secret", "secretsmanager:GetSecretValue", run_secret, {}, "allowed"),

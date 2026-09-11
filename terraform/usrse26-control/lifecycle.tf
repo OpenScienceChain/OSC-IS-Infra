@@ -212,7 +212,7 @@ locals {
       Effect = "Allow"
       Action = [
         "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
-        "budgets:ViewBudget", "cloudfront:ListVpcOrigins",
+        "aws-portal:ViewBilling", "budgets:ViewBudget", "cloudfront:ListVpcOrigins",
         "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
         "ec2:GetCoipPoolUsage", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
         "eks:List*", "elasticloadbalancing:Describe*",

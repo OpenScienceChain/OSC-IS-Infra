@@ -21,11 +21,11 @@ was performed.
 - Terraform validation: control and runtime modules pass.
 - Checkov 3.3.9 pinned by digest: control `249 passed / 0 failed / 35 skipped`;
   runtime `70 passed / 0 failed / 35 skipped`.
-- IAM local model: all 17 allow/deny cases pass, including an unlisted same-run
-  role, unrelated S3 and Secrets Manager data, role/trust mutation, assume-role,
-  and broad inline
-  policy intersection scenarios. The boundary is 5,802 characters for `usrse26r1`
-  and 6,033 characters for the longest permitted run ID, below IAM's 6,144-character
+- IAM local model: all 20 allow/deny cases pass, including an unlisted same-run
+  role, budget read versus mutation, unrelated S3 and Secrets Manager data,
+  role/trust mutation, assume-role, and broad inline policy intersection
+  scenarios. The boundary is 5,827 characters for `usrse26r1` and 6,058
+  characters for the longest permitted run ID, below IAM's 6,144-character
   managed-policy quota.
 - Complete US-RSE Python contract suite: 43 tests pass; one test is skipped on
   Windows only
