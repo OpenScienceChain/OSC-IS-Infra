@@ -154,11 +154,26 @@ try {
             --no-cli-pager | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Could not apply the bounded lifecycle policy to $repository." }
 
-        $tagged = "$registry/$repository`:$RunId"
-        docker tag $image.Value.localReference $tagged
-        if ($LASTEXITCODE -ne 0) { throw "Could not tag $name for ECR." }
-        docker push $tagged | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not push $name to ECR." }
+        $existingDigest = (aws ecr describe-images `
+            --repository-name $repository `
+            --image-ids "imageTag=$RunId" `
+            --query 'imageDetails[0].imageDigest' `
+            --output text `
+            --profile default `
+            --region us-west-2 `
+            --no-cli-pager 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            $existingDigest = $existingDigest.Trim()
+            if ($existingDigest -ne $image.Value.localDigest) {
+                throw "Immutable ECR tag mismatch for ${name}: expected $($image.Value.localDigest), got $existingDigest"
+            }
+        } else {
+            $tagged = "$registry/$repository`:$RunId"
+            docker tag $image.Value.localReference $tagged
+            if ($LASTEXITCODE -ne 0) { throw "Could not tag $name for ECR." }
+            docker push $tagged | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not push $name to ECR." }
+        }
 
         python platform/aws/aws_guard.py | Out-Null
         $actualDigest = (aws ecr describe-images `

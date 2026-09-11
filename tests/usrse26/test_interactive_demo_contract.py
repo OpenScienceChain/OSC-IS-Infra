@@ -282,6 +282,13 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("missing exact tags after bounded reconciliation", publisher)
         self.assertNotIn("aws ecr tag-resource", publisher)
 
+    def test_ecr_publication_resumes_only_for_an_exact_immutable_digest(self) -> None:
+        publisher = read("platform/aws/push-aws-artifacts.ps1")
+        self.assertIn("$existingDigest -ne $image.Value.localDigest", publisher)
+        self.assertIn("Immutable ECR tag mismatch", publisher)
+        self.assertIn("if ($LASTEXITCODE -eq 0)", publisher)
+        self.assertIn("docker push $tagged", publisher)
+
     def test_runtime_and_control_teardown_proofs_are_tag_complete(self) -> None:
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         control = read("platform/aws/destroy-demo-control.ps1")
