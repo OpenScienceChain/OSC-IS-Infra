@@ -123,6 +123,7 @@ jobs:
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "1.16.2"
+          terraform_wrapper: false
       - name: Initialize control providers without remote state
         run: terraform -chdir=terraform/usrse26-control init -backend=false -input=false -lockfile=readonly
       - run: python3 -m unittest discover -s tests/usrse26 -v
