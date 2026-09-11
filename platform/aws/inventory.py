@@ -33,7 +33,7 @@ def active_stacks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-EC2_TAG_INDEX_TYPES = {
+EC2_TAG_INDEX_INVENTORY_TYPES = {
     "instance": "ec2_instances",
     "volume": "ebs_volumes",
     "snapshot": "ebs_snapshots_owned",
@@ -42,7 +42,7 @@ EC2_TAG_INDEX_TYPES = {
 }
 
 
-def tag_index_entry_is_active(arn: str, resources: dict[str, list[str]]) -> bool:
+def tag_index_entry_is_active(arn: str, active_ec2_ids: dict[str, set[str]]) -> bool:
     """Ignore Resource Groups entries that EC2 already reports as deleted."""
     match = re.fullmatch(
         rf"arn:aws:ec2:{re.escape(AUTHORIZED_REGION)}:{AUTHORIZED_ACCOUNT}:([^/]+)/(.+)",
@@ -51,10 +51,10 @@ def tag_index_entry_is_active(arn: str, resources: dict[str, list[str]]) -> bool
     if not match:
         return True
     resource_type, resource_id = match.groups()
-    authoritative_inventory = EC2_TAG_INDEX_TYPES.get(resource_type)
-    if authoritative_inventory is None:
+    authoritative_ids = active_ec2_ids.get(resource_type)
+    if authoritative_ids is None:
         return True
-    return resource_id in resources[authoritative_inventory]
+    return resource_id in authoritative_ids
 
 
 def collect() -> dict[str, Any]:
@@ -81,6 +81,25 @@ def collect() -> dict[str, Any]:
     for name, command, selector in queries:
         resources[name] = sorted_unique(selector(aws_json(*command)))
 
+    active_ec2_ids = {
+        resource_type: set(resources[inventory_name])
+        for resource_type, inventory_name in EC2_TAG_INDEX_INVENTORY_TYPES.items()
+    }
+    active_ec2_ids.update({
+        "subnet": {
+            item.get("SubnetId", "")
+            for item in aws_json("ec2", "describe-subnets").get("Subnets", [])
+        },
+        "security-group": {
+            item.get("GroupId", "")
+            for item in aws_json("ec2", "describe-security-groups").get("SecurityGroups", [])
+        },
+        "security-group-rule": {
+            item.get("SecurityGroupRuleId", "")
+            for item in aws_json("ec2", "describe-security-group-rules").get("SecurityGroupRules", [])
+        },
+    })
+
     tagged = aws_json(
         "resourcegroupstaggingapi",
         "get-resources",
@@ -89,7 +108,7 @@ def collect() -> dict[str, Any]:
     )
     tagged_arns = [item.get("ResourceARN", "") for item in tagged.get("ResourceTagMappingList", [])]
     resources["osc_is_tagged_arns"] = sorted_unique(
-        [arn for arn in tagged_arns if tag_index_entry_is_active(arn, resources)]
+        [arn for arn in tagged_arns if tag_index_entry_is_active(arn, active_ec2_ids)]
     )
 
     return {

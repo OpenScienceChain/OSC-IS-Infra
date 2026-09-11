@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import fnmatch
 import json
 import re
@@ -54,6 +55,15 @@ REQUIRED_WAF_REDACTED_HEADERS = {
     "x-api-key",
     "x-demo-control-key",
     "x-demo-csrf",
+}
+EKS_SYSTEM_IMAGE_PULL_ACTIONS = {
+    "ecr:BatchCheckLayerAvailability",
+    "ecr:BatchGetImage",
+    "ecr:GetDownloadUrlForLayer",
+}
+EKS_SYSTEM_IMAGE_REPOSITORIES = {
+    "arn:aws:ecr:us-west-2:602401143452:repository/amazon-k8s-cni*",
+    "arn:aws:ecr:us-west-2:602401143452:repository/eks/*",
 }
 
 
@@ -215,10 +225,95 @@ def is_lifecycle_import_reconciliation(
     )
 
 
-def policy_actions(policy: str) -> set[str]:
+def policy_document(policy: str) -> dict[str, Any] | None:
     try:
         document = json.loads(policy)
     except (TypeError, json.JSONDecodeError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def normalized_statement(statement: dict[str, Any]) -> str:
+    normalized = dict(statement)
+    for key in ("Action", "Resource"):
+        value = normalized.get(key)
+        if isinstance(value, list):
+            normalized[key] = sorted(value)
+    return json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+
+
+def expected_eks_system_image_pull_statement() -> dict[str, Any]:
+    return {
+        "Effect": "Allow",
+        "Action": sorted(EKS_SYSTEM_IMAGE_PULL_ACTIONS),
+        "Resource": sorted(EKS_SYSTEM_IMAGE_REPOSITORIES),
+    }
+
+
+def validate_eks_system_image_pull_policy(policy: str, errors: list[str]) -> None:
+    document = policy_document(policy)
+    statements = document.get("Statement", []) if document else []
+    if not isinstance(statements, list):
+        errors.append("runtime boundary has no inspectable statements")
+        return
+    expected = normalized_statement(expected_eks_system_image_pull_statement())
+    normalized = [
+        normalized_statement(statement)
+        for statement in statements
+        if isinstance(statement, dict)
+    ]
+    if normalized.count(expected) != 1:
+        errors.append("runtime boundary must contain the exact pull-only AWS EKS system-image grant")
+    for statement in statements:
+        if not isinstance(statement, dict) or statement.get("Effect") != "Allow":
+            continue
+        resources = statement.get("Resource", [])
+        resources = [resources] if isinstance(resources, str) else resources
+        if any(":602401143452:repository/" in resource for resource in resources):
+            actions = statement.get("Action", [])
+            actions = [actions] if isinstance(actions, str) else actions
+            if set(actions) != EKS_SYSTEM_IMAGE_PULL_ACTIONS or set(resources) != EKS_SYSTEM_IMAGE_REPOSITORIES:
+                errors.append("runtime boundary broadens access to the AWS EKS image registry")
+
+
+def is_eks_system_image_pull_boundary_update(
+    address: str,
+    resource_type: str,
+    change: dict[str, Any],
+) -> bool:
+    if address != "aws_iam_policy.lifecycle_boundary" or resource_type != "aws_iam_policy":
+        return False
+    if change.get("actions") != ["update"] or change.get("after_unknown"):
+        return False
+    before = dict(change.get("before") or {})
+    after = dict(change.get("after") or {})
+    before_policy = policy_document(before.pop("policy", None))
+    after_policy = policy_document(after.pop("policy", None))
+    if before != after or before_policy is None or after_policy is None:
+        return False
+    if before_policy.get("Version") != after_policy.get("Version"):
+        return False
+    before_statements = before_policy.get("Statement")
+    after_statements = after_policy.get("Statement")
+    if not isinstance(before_statements, list) or not isinstance(after_statements, list):
+        return False
+    before_counter = Counter(
+        normalized_statement(statement)
+        for statement in before_statements
+        if isinstance(statement, dict)
+    )
+    after_counter = Counter(
+        normalized_statement(statement)
+        for statement in after_statements
+        if isinstance(statement, dict)
+    )
+    expected = normalized_statement(expected_eks_system_image_pull_statement())
+    return after_counter == before_counter + Counter({expected: 1})
+
+
+def policy_actions(policy: str) -> set[str]:
+    document = policy_document(policy)
+    if document is None:
         return set()
     result: set[str] = set()
     for statement in document.get("Statement", []):
@@ -239,6 +334,7 @@ def main() -> None:
     bounded_roles: set[str] = set()
     codebuild_projects: set[str] = set()
     boundary_checked = False
+    boundary_updates = 0
     import_reconciliations = 0
     one_time_schedule_names: set[str] = set()
     waf_controls_checked = False
@@ -259,6 +355,8 @@ def main() -> None:
         creates += actions == ["create"]
         if is_lifecycle_import_reconciliation(address, resource_type, change, args.run_id):
             import_reconciliations += 1
+        elif is_eks_system_image_pull_boundary_update(address, resource_type, change):
+            boundary_updates += 1
         elif actions not in ALLOWED_ACTIONS:
             errors.append(f"{address} has forbidden actions {actions}")
         if resource_type in FORBIDDEN_TYPES:
@@ -382,6 +480,7 @@ def main() -> None:
 
         if resource_type == "aws_iam_policy" and after.get("name") == f"osc-usrse26-{args.run_id}-runtime-boundary":
             boundary_checked = True
+            validate_eks_system_image_pull_policy(after.get("policy", ""), errors)
             actions = policy_actions(after.get("policy", ""))
             forbidden = sorted({
                 candidate
@@ -462,8 +561,8 @@ def main() -> None:
     }
     if outputs.get("lifecycle_schedule", {}).get("value") != expected_schedule:
         errors.append("lifecycle schedule or hard-close deadline differs from the approved 72-hour window")
-    if creates == 0:
-        errors.append("control plan contains no creates")
+    if creates == 0 and import_reconciliations == 0 and boundary_updates == 0:
+        errors.append("control plan contains no reviewed changes")
 
     if errors:
         print("Control-plane policy check failed:")
@@ -472,7 +571,8 @@ def main() -> None:
         raise SystemExit(1)
     print(
         f"Control-plane policy check passed: {creates} creates, "
-        f"{import_reconciliations} state-only import reconciliation, zero deletes in account {ACCOUNT}."
+        f"{import_reconciliations} state-only import reconciliation, "
+        f"{boundary_updates} exact EKS system-image boundary update, zero deletes in account {ACCOUNT}."
     )
 
 

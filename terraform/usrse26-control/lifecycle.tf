@@ -394,6 +394,19 @@ locals {
   ]
   runtime_workload_boundary_statements = [
     {
+      Sid    = "EksSystemImagePull"
+      Effect = "Allow"
+      Action = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ]
+      Resource = [
+        "arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon-k8s-cni*",
+        "arn:aws:ecr:${var.aws_region}:602401143452:repository/eks/*",
+      ]
+    },
+    {
       Sid    = "EksNodeCniBootstrap"
       Effect = "Allow"
       Action = [

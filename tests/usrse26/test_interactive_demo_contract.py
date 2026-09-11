@@ -26,6 +26,18 @@ def load_check_control_plan():
     return module
 
 
+def load_aws_inventory():
+    aws_path = str(ROOT / "platform/aws")
+    if aws_path not in sys.path:
+        sys.path.insert(0, aws_path)
+    spec = spec_from_file_location("aws_inventory", ROOT / "platform/aws/inventory.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load inventory.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class RuntimeTopologyTests(unittest.TestCase):
     def test_three_az_nodes_and_multi_az_rabbitmq(self) -> None:
         network = read("terraform/usrse26-eks/network.tf")
@@ -175,6 +187,9 @@ class LifecycleContractTests(unittest.TestCase):
         prepare_run = read("platform/aws/prepare-run.ps1")
         self.assertIn('aws_ecr_repository.experiment["{0}"]', prepare_run)
         self.assertIn('terraform import -input=false', prepare_run)
+        cleanup = read("platform/aws/cleanup-aws-workloads.ps1")
+        self.assertIn("get crd applications.argoproj.io", cleanup)
+        self.assertIn("[string]::IsNullOrWhiteSpace([string]$applicationCrd)", cleanup)
         self.assertIn('variable "cost_control_mode"', read("terraform/usrse26-control/variables.tf"))
         self.assertIn('default = "TIME_BOUNDED"', read("terraform/usrse26-control/variables.tf"))
         self.assertEqual(config["costControl"]["mode"], "TIME_BOUNDED")
@@ -394,8 +409,45 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("local.runtime_role_arn_map", control)
         self.assertIn("Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)", control)
         self.assertIn("runtime_workload_boundary_statements", control)
+        self.assertIn('Sid    = "EksSystemImagePull"', control)
+        self.assertIn('arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon-k8s-cni*', control)
+        self.assertIn('arn:aws:ecr:${var.aws_region}:602401143452:repository/eks/*', control)
         for forbidden in ("iam:CreateRole", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"):
             self.assertNotIn(forbidden, control)
+
+    def test_control_plan_allows_only_exact_eks_system_image_boundary_update(self) -> None:
+        checker = load_check_control_plan()
+        before_policy = {
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Allow", "Action": ["ec2:DescribeInstances"], "Resource": ["*"]}],
+        }
+        expected = checker.expected_eks_system_image_pull_statement()
+        before = {
+            "name": "osc-usrse26-usrse26demo-runtime-boundary",
+            "policy": json.dumps(before_policy),
+        }
+        after = {
+            **before,
+            "policy": json.dumps({**before_policy, "Statement": [*before_policy["Statement"], expected]}),
+        }
+        change = {"actions": ["update"], "before": before, "after": after, "after_unknown": {}}
+        self.assertTrue(checker.is_eks_system_image_pull_boundary_update(
+            "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", change,
+        ))
+
+        broader = json.loads(json.dumps(change))
+        broader_policy = json.loads(broader["after"]["policy"])
+        broader_policy["Statement"][-1]["Action"].append("ecr:PutImage")
+        broader["after"]["policy"] = json.dumps(broader_policy)
+        self.assertFalse(checker.is_eks_system_image_pull_boundary_update(
+            "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", broader,
+        ))
+
+        unrelated = json.loads(json.dumps(change))
+        unrelated["after"]["description"] = "changed"
+        self.assertFalse(checker.is_eks_system_image_pull_boundary_update(
+            "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", unrelated,
+        ))
 
     def test_aws_secrets_are_split_by_workload(self) -> None:
         secrets = read("terraform/usrse26-eks/secrets.tf")
@@ -484,6 +536,20 @@ class LifecycleContractTests(unittest.TestCase):
 
 
 class RenderingAndPolicyTests(unittest.TestCase):
+    def test_inventory_ignores_deleted_ec2_tag_index_entries(self) -> None:
+        inventory = load_aws_inventory()
+        live = {
+            "subnet": {"subnet-live"},
+            "security-group": {"sg-live"},
+            "security-group-rule": {"sgr-live"},
+        }
+        prefix = "arn:aws:ec2:us-west-2:269624229733"
+        self.assertTrue(inventory.tag_index_entry_is_active(f"{prefix}:subnet/subnet-live", live))
+        self.assertFalse(inventory.tag_index_entry_is_active(f"{prefix}:subnet/subnet-deleted", live))
+        self.assertFalse(inventory.tag_index_entry_is_active(f"{prefix}:security-group/sg-deleted", live))
+        self.assertFalse(inventory.tag_index_entry_is_active(f"{prefix}:security-group-rule/sgr-deleted", live))
+        self.assertTrue(inventory.tag_index_entry_is_active("arn:aws:s3:::osc-example", live))
+
     def test_runtime_plan_policy_enforces_fixed_capacity(self) -> None:
         tags = {
             "Project": "OSC-IS", "Purpose": "USRSE26-Interactive-Demo",
@@ -784,7 +850,23 @@ class RenderingAndPolicyTests(unittest.TestCase):
             ("aws_dynamodb_table", {}),
             ("aws_iam_policy", {
                 "name": "osc-usrse26-usrse26demo-runtime-boundary",
-                "policy": json.dumps({"Statement": [{"Action": "iam:PassRole"}]}),
+                "policy": json.dumps({
+                    "Statement": [
+                        {"Action": "iam:PassRole"},
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "ecr:BatchCheckLayerAvailability",
+                                "ecr:BatchGetImage",
+                                "ecr:GetDownloadUrlForLayer",
+                            ],
+                            "Resource": [
+                                "arn:aws:ecr:us-west-2:602401143452:repository/amazon-k8s-cni*",
+                                "arn:aws:ecr:us-west-2:602401143452:repository/eks/*",
+                            ],
+                        },
+                    ],
+                }),
             }),
             ("aws_sfn_state_machine", {}),
             ("aws_wafv2_web_acl", waf_after),
