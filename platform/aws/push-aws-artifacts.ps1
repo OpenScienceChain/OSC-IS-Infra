@@ -135,7 +135,13 @@ try {
             if ($LASTEXITCODE -eq 0) {
                 $tagMap = @{}
                 foreach ($tag in @(($tagsJson | ConvertFrom-Json))) { $tagMap[$tag.Key] = $tag.Value }
-                $tagMismatches = @($expectedTags.GetEnumerator() | Where-Object { $tagMap[$_.Key] -ne $_.Value })
+                $tagMismatches = @($expectedTags.GetEnumerator() | Where-Object {
+                    if ($_.Key -eq 'ExpiresAt') {
+                        if ($null -eq $tagMap[$_.Key]) { return $true }
+                        return ([DateTimeOffset]$tagMap[$_.Key]).ToUniversalTime().Ticks -ne ([DateTimeOffset][string]$_.Value).ToUniversalTime().Ticks
+                    }
+                    return [string]$tagMap[$_.Key] -cne [string]$_.Value
+                })
                 if ($tagMismatches.Count -eq 0) { break }
             } else {
                 $tagMismatches = @('AWS tag read failed')

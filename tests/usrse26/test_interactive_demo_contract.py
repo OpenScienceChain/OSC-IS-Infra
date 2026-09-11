@@ -279,6 +279,8 @@ class LifecycleContractTests(unittest.TestCase):
         publisher = read("platform/aws/push-aws-artifacts.ps1")
         self.assertIn("$tagReadAttempt -le 6", publisher)
         self.assertIn("if ($tagMismatches.Count -eq 0) { break }", publisher)
+        self.assertIn("([DateTimeOffset]$tagMap[$_.Key]).ToUniversalTime().Ticks", publisher)
+        self.assertIn("([DateTimeOffset][string]$_.Value).ToUniversalTime().Ticks", publisher)
         self.assertIn("missing exact tags after bounded reconciliation", publisher)
         self.assertNotIn("aws ecr tag-resource", publisher)
 
