@@ -1,7 +1,7 @@
 INSERT INTO "organization_entity"
   ("id", "name", "description", "slug", "mspId", "ledgerGroupName", "ledgerApiUserId", "artifactSchemaName", "status")
 VALUES
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'nEUROSCIENCE GATEWAY', 'Local NSG evidence organization', 'nsg', 'NSGMSP', 'nsg', 'nsg-service', 'research-artifact', 'active'),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'NEUROSCIENCE GATEWAY', 'Local NSG evidence organization', 'neuroscience-gateway', 'NSGMSP', 'nsg', 'nsg-service', 'research-artifact', 'active'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'CITIZEN SCIENCE', 'Local Citizen Science evidence organization', 'citizen-science', 'CitizenScienceMSP', 'citizen-science', 'citizen-service', 'research-artifact', 'active')
 ON CONFLICT ("id") DO UPDATE SET
   "name" = EXCLUDED."name", "slug" = EXCLUDED."slug", "mspId" = EXCLUDED."mspId", "status" = 'active';

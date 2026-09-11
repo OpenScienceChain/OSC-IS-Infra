@@ -8,13 +8,12 @@ runtime_secrets_init
 trap runtime_secrets_cleanup EXIT
 SECRET_DIR="${RUNTIME_SECRET_DIR}"
 PASSWORD_FILE="${SECRET_DIR}/e2e-password"
-API_IMAGE=${API_IMAGE:-localhost:5017/osc-api-gateway@sha256:917bd71bd7c1906ae4af22c90468ddd2ac00008dfeb9c5241a7ddf7b8308603d}
 
 PASSWORD=$(openssl rand -base64 24 | tr -d '\r\n')
 printf '%s' "${PASSWORD}" > "${PASSWORD_FILE}"
 runtime_secrets_verify_files
 
-PASSWORD_HASH=$(docker run --rm -i --entrypoint node "${API_IMAGE}" -e '
+PASSWORD_HASH=$(kubectl -n osc-apps exec -i deployment/api-gateway -- node -e '
   const bcrypt = require("bcrypt");
   let value = "";
   process.stdin.on("data", chunk => value += chunk);
