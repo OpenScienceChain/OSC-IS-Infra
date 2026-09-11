@@ -402,6 +402,7 @@ locals {
         "ecr:GetDownloadUrlForLayer",
       ]
       Resource = [
+        "arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon/aws-network-policy-agent",
         "arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon-k8s-cni*",
         "arn:aws:ecr:${var.aws_region}:602401143452:repository/eks/*",
       ]
@@ -411,7 +412,7 @@ locals {
       Effect = "Allow"
       Action = [
         "ec2:AssignIpv6Addresses", "ec2:AssignPrivateIpAddresses", "ec2:AttachNetworkInterface",
-        "ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface",
+        "ec2:CreateNetworkInterface", "ec2:CreateTags", "ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface",
         "ec2:ModifyNetworkInterfaceAttribute", "ec2:UnassignIpv6Addresses", "ec2:UnassignPrivateIpAddresses",
       ]
       Resource = "*"

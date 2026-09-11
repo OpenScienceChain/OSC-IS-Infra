@@ -67,16 +67,6 @@ try {
         throw 'The release bucket must exist in the authorized account with versioning enabled.'
     }
 
-    $repositoryPolicy = @{
-        rules = @(@{
-            rulePriority = 1
-            description = 'Retain only the five most recent experiment images'
-            selection = @{tagStatus = 'any'; countType = 'imageCountMoreThan'; countNumber = 5}
-            action = @{type = 'expire'}
-        })
-    } | ConvertTo-Json -Depth 6 -Compress
-    [IO.File]::WriteAllText($repositoryPolicyPath, $repositoryPolicy + [Environment]::NewLine)
-
     aws ecr get-login-password --profile default --region us-west-2 --no-cli-pager | docker login --username AWS --password-stdin $registry | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Short-lived ECR login failed.' }
 
@@ -86,6 +76,20 @@ try {
         $name = $image.Name
         $repository = "osc-usrse26-$RunId/$name"
         $repositoryExpiresAt = if ($name -eq 'lifecycle-runner') { $controlExpiresAt } else { $ExpiresAt.ToString('o') }
+        $repositoryPolicyDescription = if ($name -eq 'lifecycle-runner') {
+            'Retain only the five most recent control images'
+        } else {
+            'Retain only the five most recent experiment images'
+        }
+        $repositoryPolicy = @{
+            rules = @(@{
+                rulePriority = 1
+                description = $repositoryPolicyDescription
+                selection = @{tagStatus = 'any'; countType = 'imageCountMoreThan'; countNumber = 5}
+                action = @{type = 'expire'}
+            })
+        } | ConvertTo-Json -Depth 6 -Compress
+        [IO.File]::WriteAllText($repositoryPolicyPath, $repositoryPolicy + [Environment]::NewLine)
         $existing = aws ecr describe-repositories `
             --repository-names $repository `
             --query 'repositories[0]' `

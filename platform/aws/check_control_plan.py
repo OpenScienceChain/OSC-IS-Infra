@@ -62,8 +62,24 @@ EKS_SYSTEM_IMAGE_PULL_ACTIONS = {
     "ecr:GetDownloadUrlForLayer",
 }
 EKS_SYSTEM_IMAGE_REPOSITORIES = {
+    "arn:aws:ecr:us-west-2:602401143452:repository/amazon/aws-network-policy-agent",
     "arn:aws:ecr:us-west-2:602401143452:repository/amazon-k8s-cni*",
     "arn:aws:ecr:us-west-2:602401143452:repository/eks/*",
+}
+PREVIOUS_EKS_SYSTEM_IMAGE_REPOSITORIES = EKS_SYSTEM_IMAGE_REPOSITORIES - {
+    "arn:aws:ecr:us-west-2:602401143452:repository/amazon/aws-network-policy-agent",
+}
+EKS_CNI_BOOTSTRAP_ACTIONS = {
+    "ec2:AssignIpv6Addresses",
+    "ec2:AssignPrivateIpAddresses",
+    "ec2:AttachNetworkInterface",
+    "ec2:CreateNetworkInterface",
+    "ec2:CreateTags",
+    "ec2:DeleteNetworkInterface",
+    "ec2:DetachNetworkInterface",
+    "ec2:ModifyNetworkInterfaceAttribute",
+    "ec2:UnassignIpv6Addresses",
+    "ec2:UnassignPrivateIpAddresses",
 }
 
 
@@ -250,6 +266,17 @@ def expected_eks_system_image_pull_statement() -> dict[str, Any]:
     }
 
 
+def expected_eks_cni_bootstrap_statement(*, include_create_tags: bool) -> dict[str, Any]:
+    actions = EKS_CNI_BOOTSTRAP_ACTIONS
+    if not include_create_tags:
+        actions = actions - {"ec2:CreateTags"}
+    return {
+        "Effect": "Allow",
+        "Action": sorted(actions),
+        "Resource": ["*"],
+    }
+
+
 def validate_eks_system_image_pull_policy(policy: str, errors: list[str]) -> None:
     document = policy_document(policy)
     statements = document.get("Statement", []) if document else []
@@ -276,7 +303,7 @@ def validate_eks_system_image_pull_policy(policy: str, errors: list[str]) -> Non
                 errors.append("runtime boundary broadens access to the AWS EKS image registry")
 
 
-def is_eks_system_image_pull_boundary_update(
+def is_eks_bootstrap_boundary_update(
     address: str,
     resource_type: str,
     change: dict[str, Any],
@@ -307,8 +334,28 @@ def is_eks_system_image_pull_boundary_update(
         for statement in after_statements
         if isinstance(statement, dict)
     )
-    expected = normalized_statement(expected_eks_system_image_pull_statement())
-    return after_counter == before_counter + Counter({expected: 1})
+    expected_pull = normalized_statement(expected_eks_system_image_pull_statement())
+    if after_counter == before_counter + Counter({expected_pull: 1}):
+        return True
+
+    previous_pull = normalized_statement({
+        **expected_eks_system_image_pull_statement(),
+        "Resource": sorted(PREVIOUS_EKS_SYSTEM_IMAGE_REPOSITORIES),
+    })
+    previous_cni = normalized_statement(expected_eks_cni_bootstrap_statement(include_create_tags=False))
+    expected_cni = normalized_statement(expected_eks_cni_bootstrap_statement(include_create_tags=True))
+    expected_after = before_counter.copy()
+    for old_statement, new_statement in (
+        (previous_pull, expected_pull),
+        (previous_cni, expected_cni),
+    ):
+        if expected_after[old_statement] != 1:
+            return False
+        expected_after[old_statement] -= 1
+        if expected_after[old_statement] == 0:
+            del expected_after[old_statement]
+        expected_after[new_statement] += 1
+    return after_counter == expected_after
 
 
 def policy_actions(policy: str) -> set[str]:
@@ -355,7 +402,7 @@ def main() -> None:
         creates += actions == ["create"]
         if is_lifecycle_import_reconciliation(address, resource_type, change, args.run_id):
             import_reconciliations += 1
-        elif is_eks_system_image_pull_boundary_update(address, resource_type, change):
+        elif is_eks_bootstrap_boundary_update(address, resource_type, change):
             boundary_updates += 1
         elif actions not in ALLOWED_ACTIONS:
             errors.append(f"{address} has forbidden actions {actions}")
@@ -572,7 +619,7 @@ def main() -> None:
     print(
         f"Control-plane policy check passed: {creates} creates, "
         f"{import_reconciliations} state-only import reconciliation, "
-        f"{boundary_updates} exact EKS system-image boundary update, zero deletes in account {ACCOUNT}."
+        f"{boundary_updates} exact EKS bootstrap boundary update, zero deletes in account {ACCOUNT}."
     )
 
 

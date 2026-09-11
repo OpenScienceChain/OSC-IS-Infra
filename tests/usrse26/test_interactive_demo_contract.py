@@ -187,6 +187,10 @@ class LifecycleContractTests(unittest.TestCase):
         prepare_run = read("platform/aws/prepare-run.ps1")
         self.assertIn('aws_ecr_repository.experiment["{0}"]', prepare_run)
         self.assertIn('terraform import -input=false', prepare_run)
+        publisher = read("platform/aws/push-aws-artifacts.ps1")
+        self.assertIn("$repositoryPolicyDescription = if ($name -eq 'lifecycle-runner')", publisher)
+        self.assertIn("Retain only the five most recent control images", publisher)
+        self.assertIn("Retain only the five most recent experiment images", publisher)
         cleanup = read("platform/aws/cleanup-aws-workloads.ps1")
         self.assertIn("get crd applications.argoproj.io", cleanup)
         self.assertIn("[string]::IsNullOrWhiteSpace([string]$applicationCrd)", cleanup)
@@ -410,8 +414,10 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("Statement = concat(local.runtime_service_statements, local.runtime_iam_statements)", control)
         self.assertIn("runtime_workload_boundary_statements", control)
         self.assertIn('Sid    = "EksSystemImagePull"', control)
+        self.assertIn('arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon/aws-network-policy-agent', control)
         self.assertIn('arn:aws:ecr:${var.aws_region}:602401143452:repository/amazon-k8s-cni*', control)
         self.assertIn('arn:aws:ecr:${var.aws_region}:602401143452:repository/eks/*', control)
+        self.assertIn('"ec2:CreateNetworkInterface", "ec2:CreateTags", "ec2:DeleteNetworkInterface"', control)
         for forbidden in ("iam:CreateRole", "iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"):
             self.assertNotIn(forbidden, control)
 
@@ -431,7 +437,7 @@ class LifecycleContractTests(unittest.TestCase):
             "policy": json.dumps({**before_policy, "Statement": [*before_policy["Statement"], expected]}),
         }
         change = {"actions": ["update"], "before": before, "after": after, "after_unknown": {}}
-        self.assertTrue(checker.is_eks_system_image_pull_boundary_update(
+        self.assertTrue(checker.is_eks_bootstrap_boundary_update(
             "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", change,
         ))
 
@@ -439,14 +445,44 @@ class LifecycleContractTests(unittest.TestCase):
         broader_policy = json.loads(broader["after"]["policy"])
         broader_policy["Statement"][-1]["Action"].append("ecr:PutImage")
         broader["after"]["policy"] = json.dumps(broader_policy)
-        self.assertFalse(checker.is_eks_system_image_pull_boundary_update(
+        self.assertFalse(checker.is_eks_bootstrap_boundary_update(
             "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", broader,
         ))
 
         unrelated = json.loads(json.dumps(change))
         unrelated["after"]["description"] = "changed"
-        self.assertFalse(checker.is_eks_system_image_pull_boundary_update(
+        self.assertFalse(checker.is_eks_bootstrap_boundary_update(
             "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", unrelated,
+        ))
+
+        previous_pull = {
+            **expected,
+            "Resource": sorted(checker.PREVIOUS_EKS_SYSTEM_IMAGE_REPOSITORIES),
+        }
+        previous_cni = checker.expected_eks_cni_bootstrap_statement(include_create_tags=False)
+        expanded = {
+            "actions": ["update"],
+            "before": {
+                **before,
+                "policy": json.dumps({
+                    "Version": "2012-10-17",
+                    "Statement": [previous_pull, previous_cni],
+                }),
+            },
+            "after": {
+                **before,
+                "policy": json.dumps({
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        expected,
+                        checker.expected_eks_cni_bootstrap_statement(include_create_tags=True),
+                    ],
+                }),
+            },
+            "after_unknown": {},
+        }
+        self.assertTrue(checker.is_eks_bootstrap_boundary_update(
+            "aws_iam_policy.lifecycle_boundary", "aws_iam_policy", expanded,
         ))
 
     def test_aws_secrets_are_split_by_workload(self) -> None:
@@ -861,6 +897,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
                                 "ecr:GetDownloadUrlForLayer",
                             ],
                             "Resource": [
+                                "arn:aws:ecr:us-west-2:602401143452:repository/amazon/aws-network-policy-agent",
                                 "arn:aws:ecr:us-west-2:602401143452:repository/amazon-k8s-cni*",
                                 "arn:aws:ecr:us-west-2:602401143452:repository/eks/*",
                             ],
