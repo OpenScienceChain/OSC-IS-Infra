@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "accountId": "269624229733",
+  "primaryRegion": "us-west-2",
+  "edgeControlPlaneException": {
+    "region": "us-east-1",
+    "services": ["ACM for CloudFront", "AWS WAF CLOUDFRONT scope"]
+  },
+  "publicUrl": "https://demo.osc-staging.org",
+  "schedule": {
+    "timezone": "America/Los_Angeles",
+    "start": "2026-10-20T08:00:00",
+    "stop": "2026-10-23T08:00:00",
+    "backupStop": "2026-10-23T10:00:00",
+    "maximumRuntimeHours": 72
+  },
+  "organizations": [
+    {"id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "name": "Neuroscience Gateway", "mspId": "NSGMSP"},
+    {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "name": "Citizen Science", "mspId": "CitizenScienceMSP"}
+  ],
+  "capacity": {"concurrentBrowserSessions": 100, "totalBrowserSessions": 300},
+  "quotas": {
+    "perSession": {"artifacts": 3, "workflows": 2, "surveys": 1},
+    "event": {"artifacts": 1000, "workflows": 500},
+    "fileMetadataMaximumBytes": 10485760
+  },
+  "costControlsUsd": {"information": 75, "warning": 125, "readOnlyAndTeardown": 150, "absoluteCeiling": 200},
+  "retentionDays": {"securityLogs": 7, "sanitizedTelemetry": 30, "reports": 30, "controlEvidence": 30},
+  "topology": {
+    "privateEksNodes": 3,
+    "rabbitMqBrokers": 3,
+    "fabricOrderers": 3,
+    "fabricPeersPerOrganization": 2,
+    "postgresAvailability": "single-AZ experimental",
+    "minimumServiceReplicas": 2
+  }
+}

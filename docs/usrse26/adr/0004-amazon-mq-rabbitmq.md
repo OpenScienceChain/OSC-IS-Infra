@@ -1,7 +1,7 @@
 # ADR 0004: Amazon MQ for RabbitMQ in AWS
 
-- Status: Accepted for implementation
-- Date: 2026-09-01
+- Status: Accepted for the interactive demonstration
+- Date: 2026-09-10
 
 ## Context
 
@@ -11,8 +11,8 @@ contracts.
 
 ## Decision
 
-Use a private, TLS-only, single-instance Amazon MQ for RabbitMQ broker for the
-short AWS evidence run. Credentials are generated, stored in Secrets Manager,
+Use a private, TLS-only, three-broker Multi-AZ Amazon MQ for RabbitMQ cluster
+for the 72-hour interactive demonstration. Credentials are generated, stored in Secrets Manager,
 and supplied only to the Gateway and messaging workers through workload identity.
 Security groups permit AMQPS only from EKS workloads through the selected VPC
 path. The management endpoint is not publicly exposed.
@@ -28,9 +28,10 @@ semantics.
 
 ## Consequences
 
-Single-instance Amazon MQ is cheaper and sufficient for an ephemeral failure
-experiment, but it is not an HA design. A production candidate would use a
-multi-AZ RabbitMQ cluster, quorum queues, tested broker replacement, backups,
-alarms, and capacity/load evidence. The AWS run tests a temporary client or peer
-failure; it does not deliberately destroy the managed broker.
+The Multi-AZ broker removes the previous single-instance limitation and permits
+a controlled broker-path recovery observation. It still does not establish
+product high availability: the database remains single-AZ, the environment is
+short-lived, and no disaster-recovery claim is in scope. Quorum policy,
+idempotency, load behavior, alarms, and teardown must be evidenced during the
+authorized rehearsal.
 

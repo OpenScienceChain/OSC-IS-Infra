@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runId": "REPLACE",
+  "currency": "USD",
+  "plannedRange": {"minimum": 90, "maximum": 120},
+  "controls": {"information": 75, "warning": 125, "readOnlyAndTeardown": 150, "absoluteCeiling": 200},
+  "estimatedBeforeStart": null,
+  "observedAtStop": null,
+  "finalizedAfter48Hours": null,
+  "billingDataAsOf": null,
+  "runtimeHours": null,
+  "notes": ["Cost Explorer data can lag. The hard deadline and tagged sweeper are primary controls."]
+}

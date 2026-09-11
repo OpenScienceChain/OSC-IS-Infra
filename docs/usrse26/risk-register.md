@@ -17,11 +17,14 @@ Status values: open, mitigated, accepted, or blocked.
 | R11 | Public network exposure reaches a data or admin plane | Medium | Critical | private subnets/services, restricted EKS API CIDR, no public MQ/Fabric/Postgres | Terraform and reachability checks | Open |
 | R12 | Upstream Fabric sample drift breaks reproducibility | Medium | High | exact commit pin, checksum, deterministic overlay, copied run manifest | local rebuild from empty state | Open |
 | R13 | Argo CD demonstrates sync but cannot reproduce rollback | Medium | Medium | immutable revisions and recorded known-good commit/digest | drift/rollout/rollback evidence | Open |
-| R14 | EKS experiment exceeds the authorized cost | Low | High | estimate before apply, RunId/ExpiresAt tags, 8-hour cutoff, teardown checklist | estimate and actual duration | Open |
+| R14 | EKS demonstration exceeds the authorized cost | Low | High | estimate before apply, $75/$125 notices, $150 read-only/stop, $200 no-provision ceiling, 72-hour deadline | estimate, monitor decisions, final cost | Open |
 | R15 | Terraform destroy damages pre-existing resources | Low | Critical | dedicated state and VPC, baseline inventory, no imports, RunId tags | before/after inventory parity | Open |
-| R16 | Billable resources survive a work session | Medium | Critical | automatic expiry metadata, same-session destroy, explicit remnant queries | final inventory statement | Open |
+| R16 | Billable resources survive the event window | Medium | Critical | scheduled stop, backup stop two hours later, expiry tags, all-tag sweeper, static fallback independent of runtime | empty tagged inventory and teardown proof | Open |
 | R17 | In-cluster PostgreSQL is mistaken for a production design | Medium | Medium | label as disposable single-replica storage; document RDS alternative | ADR and claim matrix | Accepted |
-| R18 | Single-instance Amazon MQ is mistaken for HA | Medium | Medium | label experimental; document multi-AZ cluster/quorum alternative | ADR and claim matrix | Accepted |
+| R18 | Three-broker Amazon MQ is overstated as product HA | Medium | Medium | use Multi-AZ broker for the demo but prohibit production-availability claims | topology evidence and claim matrix | Mitigated |
 | R19 | EKS results are presented as production readiness or user adoption | Medium | High | claim/evidence matrix and talk wording guardrails | reviewed evidence package | Open |
 | R20 | Scope expands beyond a ten-day evidence campaign | High | High | prioritize one reference scenario and required negative/recovery tests | acceptance matrix | Open |
+| R21 | Public guest mode weakens the authenticated product path | Medium | Critical | additive DEMO_CONTRIBUTOR role, server-owned organization binding, 30-minute hard-close session, no update/delete/admin | product contract and negative tests | Open |
+| R22 | Conference shared NAT causes false abuse blocks | Medium | Medium | per-session quotas first, high IP fallback threshold, silent WAF Challenge | load rehearsal and WAF samples | Open |
+| R23 | Lifecycle runner image behaves outside the reviewed contract | Low | Critical | mandatory digest, no source/dependency install in CodeBuild, IAM permissions boundary, action contract | image scan, SBOM, rehearsal logs | Open |
 
