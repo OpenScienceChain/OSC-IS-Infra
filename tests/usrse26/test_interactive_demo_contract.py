@@ -141,7 +141,14 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertEqual(config["schedule"]["maximumRuntimeHours"], 72)
         self.assertFalse((ROOT / "terraform/usrse26-control/budget.tf").exists())
         lifecycle = read("terraform/usrse26-control/lifecycle.tf")
-        self.assertIn('COST_CONTROL_MODE             = var.cost_control_mode', read("terraform/usrse26-control/locals.tf"))
+        control_locals = read("terraform/usrse26-control/locals.tf")
+        self.assertIn('COST_CONTROL_MODE             = var.cost_control_mode', control_locals)
+        self.assertIn('LIFECYCLE_CODEBUILD_PROJECT', control_locals)
+        self.assertNotIn('    CODEBUILD_PROJECT', control_locals)
+        self.assertEqual(
+            lifecycle.count('CODEBUILD_PROJECT=\\"$LIFECYCLE_CODEBUILD_PROJECT\\"'),
+            2,
+        )
         self.assertIn('variable "cost_control_mode"', read("terraform/usrse26-control/variables.tf"))
         self.assertIn('default = "TIME_BOUNDED"', read("terraform/usrse26-control/variables.tf"))
         self.assertEqual(config["costControl"]["mode"], "TIME_BOUNDED")

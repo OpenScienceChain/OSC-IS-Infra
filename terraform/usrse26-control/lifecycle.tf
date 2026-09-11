@@ -542,7 +542,7 @@ resource "aws_codebuild_project" "lifecycle" {
           "test \"$AWS_DEFAULT_REGION\" = \"$EXPECTED_REGION\"",
           "test \"$COST_CONTROL_MODE\" = \"TIME_BOUNDED\""
         ] }
-        build = { commands = ["/usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
+        build = { commands = ["CODEBUILD_PROJECT=\"$LIFECYCLE_CODEBUILD_PROJECT\" /usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
       }
     })
   }
@@ -588,7 +588,7 @@ resource "aws_codebuild_project" "cleanup" {
           "test \"$AWS_DEFAULT_REGION\" = \"$EXPECTED_REGION\"",
           "test \"$ACTION\" = \"DESTROY_RUNTIME\" -o \"$ACTION\" = \"SWEEP\""
         ] }
-        build = { commands = ["/usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
+        build = { commands = ["CODEBUILD_PROJECT=\"$LIFECYCLE_CODEBUILD_PROJECT\" /usr/local/bin/osc-demo-lifecycle \"$ACTION\""] }
       }
     })
   }

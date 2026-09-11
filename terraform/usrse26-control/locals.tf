@@ -28,7 +28,7 @@ locals {
     CLOUDFRONT_DISTRIBUTION       = aws_cloudfront_distribution.edge.id
     NOTIFICATION_TOPIC_ARN        = aws_sns_topic.lifecycle.arn
     LIFECYCLE_TABLE               = aws_dynamodb_table.lifecycle.name
-    CODEBUILD_PROJECT             = "${local.name_prefix}-lifecycle"
+    LIFECYCLE_CODEBUILD_PROJECT   = "${local.name_prefix}-lifecycle"
     STOP_STATE_MACHINE_ARN        = "arn:aws:states:${var.aws_region}:${var.authorized_account_id}:stateMachine:${local.name_prefix}-stop"
     PUBLIC_URL                    = "https://${var.public_hostname}"
     API_CACHE_POLICY_ID           = aws_cloudfront_cache_policy.api.id
