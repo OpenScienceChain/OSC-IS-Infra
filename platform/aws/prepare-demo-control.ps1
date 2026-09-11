@@ -1,0 +1,66 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9]{8,20}$')][string]$RunId,
+    [Parameter(Mandatory = $true)][ValidatePattern('^Z[A-Z0-9]+$')][string]$HostedZoneId,
+    [Parameter(Mandatory = $true)][ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}/32$')][string]$AdminCidr,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')][string]$LifecycleRunnerImage,
+    [Parameter(Mandatory = $true)][ValidatePattern('^arn:aws:iam::269624229733:policy/[A-Za-z0-9+=,.@_/-]+$')][string]$LifecyclePermissionsBoundaryArn,
+    [Parameter(Mandatory = $true)][ValidatePattern('^s3://[a-z0-9.-]+/.+/.+\.json$')][string]$ArtifactManifestS3Uri,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ArtifactManifestSha256,
+    [ValidateRange(0, 200)][decimal]$PlanningCostUsd = 120,
+    [AllowNull()][string]$NotificationEmail = $null
+)
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$terraformRoot = Join-Path $repoRoot 'terraform\usrse26-control'
+$runRoot = Join-Path $repoRoot "platform\.generated\control\$RunId"
+$statePath = Join-Path $runRoot 'terraform.tfstate'
+$planPath = Join-Path $runRoot 'reviewed.tfplan'
+$planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
+$tfvarsPath = Join-Path $runRoot 'control.tfvars'
+
+if ($AdminCidr -in @('0.0.0.0/0', '0.0.0.0/32')) { throw 'AdminCidr must identify one trusted IPv4 address.' }
+New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
+
+Push-Location $repoRoot
+try {
+    python platform/aws/aws_guard.py | Out-Null
+    python platform/aws/estimate_cost.py --hours 72 --output (Join-Path $runRoot 'cost-estimate.json') | Out-Null
+    $values = [ordered]@{
+        run_id = $RunId
+        hosted_zone_id = $HostedZoneId
+        admin_cidr = $AdminCidr
+        lifecycle_runner_image = $LifecycleRunnerImage
+        lifecycle_permissions_boundary_arn = $LifecyclePermissionsBoundaryArn
+        artifact_manifest_s3_uri = $ArtifactManifestS3Uri
+        artifact_manifest_sha256 = $ArtifactManifestSha256
+        planning_cost_usd = $PlanningCostUsd
+        notification_email = $NotificationEmail
+    }
+    $lines = foreach ($entry in $values.GetEnumerator()) {
+        if ($null -eq $entry.Value) { "$($entry.Key) = null" }
+        elseif ($entry.Value -is [decimal]) { "$($entry.Key) = $($entry.Value)" }
+        else { "$($entry.Key) = `"$($entry.Value)`"" }
+    }
+    [IO.File]::WriteAllLines($tfvarsPath, $lines, [Text.UTF8Encoding]::new($false))
+
+    Push-Location $terraformRoot
+    try {
+        terraform init -backend=false -input=false
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed.' }
+        terraform validate
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform validation failed.' }
+        python (Join-Path $repoRoot 'platform/aws/aws_guard.py') | Out-Null
+        terraform plan -input=false -lock=true "-state=$statePath" "-var-file=$tfvarsPath" "-out=$planPath"
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform control-plane plan failed.' }
+        terraform show -json $planPath | Out-File -LiteralPath $planJsonPath -Encoding utf8NoBOM
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform plan serialization failed.' }
+    }
+    finally { Pop-Location }
+
+    python platform/aws/check_control_plan.py $planJsonPath --run-id $RunId
+    if ($LASTEXITCODE -ne 0) { throw 'Control-plane policy check failed.' }
+    Write-Host "Reviewed control-plane plan: $planPath"
+}
+finally { Pop-Location }

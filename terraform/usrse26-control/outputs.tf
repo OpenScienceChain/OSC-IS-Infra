@@ -1,0 +1,11 @@
+output "public_url" { value = "https://${var.public_hostname}" }
+output "cloudfront_distribution_id" { value = aws_cloudfront_distribution.edge.id }
+output "status_bucket" { value = aws_s3_bucket.edge.id }
+output "control_bucket" { value = aws_s3_bucket.control.id }
+output "lifecycle_table" { value = aws_dynamodb_table.lifecycle.name }
+output "terraform_lock_table" { value = aws_dynamodb_table.terraform_locks.name }
+output "start_state_machine_arn" { value = aws_sfn_state_machine.start.arn }
+output "stop_state_machine_arn" { value = aws_sfn_state_machine.stop.arn }
+output "monitor_state_machine_arn" { value = aws_sfn_state_machine.monitor.arn }
+output "notification_topic_arn" { value = aws_sns_topic.lifecycle.arn }
+output "required_tags" { value = local.required_tags }
