@@ -725,7 +725,10 @@ class RenderingAndPolicyTests(unittest.TestCase):
                     "address": waf_logging_change["address"],
                     "expressions": {
                         "resource_arn": {"references": ["aws_wafv2_web_acl.edge.arn"]},
-                        "log_destination_configs": {"references": ["aws_cloudwatch_log_group.waf.arn"]},
+                        "log_destination_configs": {"references": [
+                            "aws_cloudwatch_log_group.waf.arn",
+                            "aws_cloudwatch_log_group.waf",
+                        ]},
                     },
                 },
             ]}},
@@ -818,6 +821,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
                 ]["resources"][1]["expressions"]["log_destination_configs"].__setitem__(
                     "references", [
                         "aws_cloudwatch_log_group.waf.arn",
+                        "aws_cloudwatch_log_group.waf",
                         "aws_cloudwatch_log_group.other.arn",
                     ]
                 )),
