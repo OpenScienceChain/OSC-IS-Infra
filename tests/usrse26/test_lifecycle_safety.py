@@ -20,6 +20,7 @@ LIFECYCLE_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(LIFECYCLE_MODULE)
 Lifecycle = LIFECYCLE_MODULE.Lifecycle
 validate_sanitized_export = LIFECYCLE_MODULE.validate_sanitized_export
+tag_index_entry_is_active = LIFECYCLE_MODULE.tag_index_entry_is_active
 
 
 def valid_sanitized_export() -> dict:
@@ -83,6 +84,49 @@ class CleanupFaultInjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "injected detach failure"):
             instance.failed_start_cleanup()
         self.assert_every_cleanup_ran(instance)
+
+
+class TeardownTagIndexTests(unittest.TestCase):
+    def test_ignores_deleted_ec2_tombstones_but_keeps_live_and_non_ec2_resources(self) -> None:
+        active = {"volume": {"vol-live"}, "natgateway": set()}
+        self.assertTrue(tag_index_entry_is_active(
+            "arn:aws:ec2:us-west-2:269624229733:volume/vol-live", active
+        ))
+        self.assertFalse(tag_index_entry_is_active(
+            "arn:aws:ec2:us-west-2:269624229733:volume/vol-deleted", active
+        ))
+        self.assertFalse(tag_index_entry_is_active(
+            "arn:aws:ec2:us-west-2:269624229733:natgateway/nat-deleted", active
+        ))
+        self.assertTrue(tag_index_entry_is_active(
+            "arn:aws:ecr:us-west-2:269624229733:repository/runtime", active
+        ))
+
+
+class AmazonMqLogCleanupTests(unittest.TestCase):
+    def test_deletes_only_log_groups_under_the_exact_broker_prefix(self) -> None:
+        instance = object.__new__(Lifecycle)
+        prefix = "/aws/amazonmq/broker/b-cdeabca8-9245-4b2a-b8bf-7b9d25af9c56/"
+        with (
+            patch.object(LIFECYCLE_MODULE, "aws_json", return_value={
+                "logGroups": [
+                    {"logGroupName": prefix + "channel"},
+                    {"logGroupName": prefix + "general"},
+                ]
+            }),
+            patch.object(LIFECYCLE_MODULE, "aws") as delete,
+        ):
+            instance.delete_amazon_mq_log_groups(
+                "b-cdeabca8-9245-4b2a-b8bf-7b9d25af9c56"
+            )
+        self.assertEqual(delete.call_count, 2)
+        for call in delete.call_args_list:
+            self.assertTrue(call.args[-1].startswith(prefix))
+
+    def test_rejects_an_unexpected_broker_identifier(self) -> None:
+        instance = object.__new__(Lifecycle)
+        with self.assertRaisesRegex(RuntimeError, "unexpected format"):
+            instance.delete_amazon_mq_log_groups("../../unbounded")
 
 
 class SanitizedExportAllowlistTests(unittest.TestCase):

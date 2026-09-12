@@ -216,7 +216,7 @@ locals {
         "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
         "cloudfront:ListVpcOrigins",
         "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
-        "ec2:GetCoipPoolUsage", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
+        "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
         "eks:List*", "elasticloadbalancing:Describe*",
         "logs:DescribeLogGroups", "mq:List*", "resourcegroupstaggingapi:GetResources",
         "iam:GetServerCertificate", "iam:ListServerCertificates", "shield:GetSubscriptionState", "shield:ListProtections", "sts:GetCallerIdentity",
@@ -411,9 +411,9 @@ locals {
       Sid    = "EksNodeCniBootstrap"
       Effect = "Allow"
       Action = [
-        "ec2:AssignIpv6Addresses", "ec2:AssignPrivateIpAddresses", "ec2:AttachNetworkInterface",
+        "ec2:AssignPrivateIpAddresses", "ec2:AttachNetworkInterface",
         "ec2:CreateNetworkInterface", "ec2:CreateTags", "ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface",
-        "ec2:ModifyNetworkInterfaceAttribute", "ec2:UnassignIpv6Addresses", "ec2:UnassignPrivateIpAddresses",
+        "ec2:ModifyNetworkInterfaceAttribute", "ec2:UnassignPrivateIpAddresses",
       ]
       Resource = "*"
     },
@@ -445,9 +445,14 @@ locals {
     "ExactRunS3Objects",
     "DeleteTaggedCloudFrontRuntimeOrigin",
     "UpdateTaggedControlDistribution",
+    "EksNodeCniBootstrap",
     "EksPodIdentityAgent",
   ]
   runtime_boundary_action_overrides = {
+    ReadOnlyRuntimeDiscovery = concat(
+      local.runtime_boundary_statement_by_sid["ReadOnlyRuntimeDiscovery"].Action,
+      local.runtime_boundary_statement_by_sid["EksNodeCniBootstrap"].Action,
+    )
     ExactRunS3Buckets = concat(
       local.runtime_boundary_statement_by_sid["ExactRunS3Buckets"].Action,
       local.runtime_boundary_statement_by_sid["ExactRunS3Objects"].Action,

@@ -245,8 +245,8 @@ try {
     $releaseManifest = [ordered]@{
         schemaVersion = $manifest.schemaVersion
         runId = $manifest.runId
-        expiresAt = $manifest.expiresAt
-        createdAt = $manifest.createdAt
+        expiresAt = ([DateTimeOffset]$manifest.expiresAt).ToUniversalTime().ToString('o')
+        createdAt = ([DateTimeOffset]$manifest.createdAt).ToUniversalTime().ToString('o')
         buildCredentialIsolation = [ordered]@{
             status = $manifest.buildCredentialIsolation.status
             commonAwsCredentialSourcesAbsent = $manifest.buildCredentialIsolation.commonAwsCredentialSourcesAbsent

@@ -61,6 +61,7 @@ try {
 
     & $wsl -d $wslDistribution --cd $infraRoot -- env `
         "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "OSC_RUNTIME_SECRET_DIR=/tmp/osc-is-$RunId-runtime-secrets" `
         "API_IMAGE=$($artifacts.images.'api-gateway'.localReference)" `
         bash platform/scripts/seed-local-data.sh
     if ($LASTEXITCODE -ne 0) { throw 'Deterministic EKS test-data seeding failed.' }

@@ -1,0 +1,27 @@
+{
+  "runId": "usrse26r1",
+  "startedAt": "2026-09-12T00:25:19Z",
+  "finishedAt": "2026-09-12T00:28:59Z",
+  "source": {
+    "repositoryImage": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/gitops-repository@sha256:3998a2cac8aa3fd32a62d9eda7d895fc80a8f1e8608722d3952d86bc55afab8a",
+    "baselineRevision": "2fcbaf9b86c3df821422fe41c70951b96369866a",
+    "rolloutRevision": "0bf853599bec1ce8574ff758278f5f3500d26b01"
+  },
+  "deployment": {
+    "applicationImage": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/api-gateway@sha256:6a8cfe5c940ee9a248e76bbd6fa424ce2f58055bb0bd1a557fcd1ec8c9192929",
+    "immutableImage": true
+  },
+  "drift": {
+    "detectedAndSelfHealed": true,
+    "seconds": 156
+  },
+  "rollout": {
+    "succeeded": true,
+    "seconds": 21
+  },
+  "rollback": {
+    "knownGoodRevisionRestored": true,
+    "seconds": 20
+  },
+  "credentialsRetained": false
+}

@@ -42,6 +42,14 @@ resource "aws_eks_cluster" "experiment" {
   ]
 }
 
+resource "aws_ec2_tag" "eks_cluster_security_group" {
+  for_each = local.required_tags
+
+  resource_id = aws_eks_cluster.experiment.vpc_config[0].cluster_security_group_id
+  key         = each.key
+  value       = each.value
+}
+
 resource "aws_security_group" "lifecycle_runner" {
   #checkov:skip=CKV2_AWS_5: This group is attached to the control-plane CodeBuild project after the EKS stack publishes its ID.
   name        = "${local.name_prefix}-lifecycle-runner"

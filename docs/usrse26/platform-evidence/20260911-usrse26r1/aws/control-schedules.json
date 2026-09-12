@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse26r1",
+  "verifiedAt": "2026-09-12T02:27:00Z",
+  "schedules": [
+    {
+      "action": "start",
+      "state": "ENABLED",
+      "expression": "at(2026-10-20T08:00:00)",
+      "timezone": "America/Los_Angeles"
+    },
+    {
+      "action": "stop",
+      "state": "ENABLED",
+      "expression": "at(2026-10-23T08:00:00)",
+      "timezone": "America/Los_Angeles"
+    },
+    {
+      "action": "backup-stop",
+      "state": "ENABLED",
+      "expression": "at(2026-10-23T10:00:00)",
+      "timezone": "America/Los_Angeles"
+    },
+    {
+      "action": "monitor",
+      "state": "ENABLED",
+      "expression": "rate(5 minutes)",
+      "timezone": "UTC",
+      "startDate": "2026-10-20T15:00:00Z",
+      "endDate": "2026-10-23T17:00:00Z"
+    }
+  ],
+  "stateMachines": ["start", "monitor", "stop"],
+  "staticEdgeState": "CLOSED",
+  "runtimeVpcPlacementRemoved": true,
+  "conferenceLaunchReady": false,
+  "requiredNearEventGate": {
+    "reason": "The rehearsal manifest expires before the conference and its disposable OCI repositories were deleted during verified teardown.",
+    "actions": [
+      "Republish the retained immutable application archives into fresh run-scoped repositories.",
+      "Publish a fresh time-valid manifest and update the lifecycle project to its reviewed SHA-256.",
+      "Run the focused preflight and one final dry run before leaving the start schedule enabled."
+    ],
+    "configuredManifestSha256": "fc4d9796580599d602d616473828904dcc0da52c3ba23ce1d14a9d689a205952",
+    "rehearsalManifestSha256": "30ded5a43cea076bb1d9c925df226210fdf37694ff23fab13d20cfb226018155"
+  }
+}

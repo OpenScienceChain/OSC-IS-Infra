@@ -61,6 +61,20 @@ SANITIZED_EXPORT_CAVEAT = (
 )
 
 
+def tag_index_entry_is_active(arn: str, active_ec2_ids: dict[str, set[str]]) -> bool:
+    """Ignore eventually consistent EC2 tag-index entries after deletion."""
+    match = re.fullmatch(
+        rf"arn:aws:ec2:{re.escape(REGION)}:{ACCOUNT}:([^/]+)/(.+)", arn
+    )
+    if not match:
+        return True
+    resource_type, resource_id = match.groups()
+    authoritative_ids = active_ec2_ids.get(resource_type)
+    if authoritative_ids is None:
+        return True
+    return resource_id in authoritative_ids
+
+
 def required(name: str) -> str:
     value = os.environ.get(name, "")
     if not value:
@@ -395,6 +409,21 @@ class Lifecycle:
                 if member.issym() or member.islnk() or not destination.is_relative_to(site.resolve()):
                     raise RuntimeError("Unsafe WebApp bundle member")
             bundle.extractall(site)
+        runtime_config = {
+            "schemaVersion": 1,
+            "sourceRevision": web["sourceRevision"],
+            "DEMO_MODE": True,
+            "API_BASE_URL": "/api/v1",
+        }
+        runtime_path = site / "assets/runtime-config.json"
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_text(
+            json.dumps(runtime_config, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        for extracted in site.rglob("*"):
+            if extracted.is_file():
+                os.utime(extracted, None)
         aws(
             "s3", "sync", str(site), f"s3://{required('STATUS_BUCKET')}/", "--delete",
             "--exclude", "status.json", "--sse", "AES256",
@@ -642,8 +671,9 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         raise RuntimeError("The tagged internal ALB did not become active")
 
     def attach_origin(self, load_balancer: dict[str, Any]) -> None:
+        origin_name = f"osc-usrse26-{self.run_id}-api"
         endpoint = {
-            "Name": f"osc-usrse26-{self.run_id}-api",
+            "Name": origin_name,
             "Arn": load_balancer["LoadBalancerArn"],
             "HTTPPort": 80,
             "HTTPSPort": 443,
@@ -658,8 +688,25 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             {"Key": "RunId", "Value": self.run_id},
             {"Key": "ExpiresAt", "Value": self.expires_at},
         ]}
-        created = aws_json("cloudfront", "create-vpc-origin", "--vpc-origin-endpoint-config", json.dumps(endpoint), "--tags", json.dumps(tags))
-        origin_id = created["VpcOrigin"]["Id"]
+        listed = aws_json("cloudfront", "list-vpc-origins")
+        matching_origins = [
+            item for item in listed.get("VpcOriginList", {}).get("Items", [])
+            if item.get("Name") == origin_name
+        ]
+        if len(matching_origins) > 1:
+            raise RuntimeError(f"Multiple CloudFront VPC origins match {origin_name}")
+        if matching_origins:
+            existing_origin = matching_origins[0]
+            if existing_origin.get("OriginEndpointArn") != load_balancer["LoadBalancerArn"]:
+                raise RuntimeError(f"CloudFront VPC origin {origin_name} targets an unexpected load balancer")
+            origin_id = existing_origin["Id"]
+        else:
+            created = aws_json(
+                "cloudfront", "create-vpc-origin",
+                "--vpc-origin-endpoint-config", json.dumps(endpoint),
+                "--tags", json.dumps(tags),
+            )
+            origin_id = created["VpcOrigin"]["Id"]
         deadline = time.monotonic() + 900
         while time.monotonic() < deadline:
             current = aws_json("cloudfront", "get-vpc-origin", "--id", origin_id)
@@ -671,17 +718,40 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         distribution_id = required("CLOUDFRONT_DISTRIBUTION")
         current = aws_json("cloudfront", "get-distribution-config", "--id", distribution_id)
         config = current["DistributionConfig"]
+        custom_errors = config.get("CustomErrorResponses", {"Quantity": 0})
+        changed = custom_errors.get("Quantity", 0) != 0
+        config["CustomErrorResponses"] = {"Quantity": 0}
         origins = config.setdefault("Origins", {"Quantity": 0, "Items": []})
-        origins.setdefault("Items", []).append({
+        desired_origin = {
             "Id": "runtime-api",
             "DomainName": load_balancer["DNSName"],
+            "OriginPath": "",
+            "CustomHeaders": {"Quantity": 0},
             "VpcOriginConfig": {"VpcOriginId": origin_id, "OriginReadTimeout": 90, "OriginKeepaliveTimeout": 5},
             "ConnectionAttempts": 3,
             "ConnectionTimeout": 10,
-        })
-        origins["Quantity"] = len(origins["Items"])
+            "OriginShield": {"Enabled": False},
+        }
+        origin_items = origins.setdefault("Items", [])
+        matching_distribution_origins = [item for item in origin_items if item.get("Id") == "runtime-api"]
+        if len(matching_distribution_origins) > 1:
+            raise RuntimeError("CloudFront distribution has duplicate runtime-api origins")
+        if matching_distribution_origins:
+            existing = matching_distribution_origins[0]
+            if (
+                existing.get("DomainName") != load_balancer["DNSName"]
+                or existing.get("VpcOriginConfig", {}).get("VpcOriginId") != origin_id
+            ):
+                raise RuntimeError("CloudFront runtime-api origin targets an unexpected endpoint")
+            if existing != desired_origin:
+                origin_items[origin_items.index(existing)] = desired_origin
+                changed = True
+        else:
+            origin_items.append(desired_origin)
+            changed = True
+        origins["Quantity"] = len(origin_items)
         behaviors = config.setdefault("CacheBehaviors", {"Quantity": 0, "Items": []})
-        behaviors.setdefault("Items", []).append({
+        desired_behavior = {
             "PathPattern": "/api/*",
             "TargetOriginId": "runtime-api",
             "TrustedSigners": {"Enabled": False, "Quantity": 0},
@@ -696,17 +766,34 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             "Compress": True,
             "LambdaFunctionAssociations": {"Quantity": 0},
             "FunctionAssociations": {"Quantity": 0},
+            "FieldLevelEncryptionId": "",
             "CachePolicyId": required("API_CACHE_POLICY_ID"),
             "OriginRequestPolicyId": required("API_ORIGIN_POLICY_ID"),
-        })
-        behaviors["Quantity"] = len(behaviors["Items"])
-        payload = self.work / "distribution.json"
-        payload.write_text(json.dumps(config), encoding="utf-8")
-        aws(
-            "cloudfront", "update-distribution", "--id", distribution_id,
-            "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
-        )
-        aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
+            "GrpcConfig": {"Enabled": False},
+        }
+        behavior_items = behaviors.setdefault("Items", [])
+        matching_behaviors = [item for item in behavior_items if item.get("PathPattern") == "/api/*"]
+        if len(matching_behaviors) > 1:
+            raise RuntimeError("CloudFront distribution has duplicate /api/* behaviors")
+        if matching_behaviors:
+            existing = matching_behaviors[0]
+            if existing.get("TargetOriginId") != "runtime-api":
+                raise RuntimeError("CloudFront /api/* behavior targets an unexpected origin")
+            if existing != desired_behavior:
+                behavior_items[behavior_items.index(existing)] = desired_behavior
+                changed = True
+        else:
+            behavior_items.append(desired_behavior)
+            changed = True
+        behaviors["Quantity"] = len(behavior_items)
+        if changed:
+            payload = self.work / "distribution.json"
+            payload.write_text(json.dumps(config), encoding="utf-8")
+            aws(
+                "cloudfront", "update-distribution", "--id", distribution_id,
+                "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
+            )
+            aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
         self.put_json(
             f"runtime-state/{self.run_id}/vpc-origin.json",
             {"id": origin_id, "loadBalancerArn": load_balancer["LoadBalancerArn"], "attachedAt": iso_now()},
@@ -791,7 +878,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
                 guests.append((opener, session))
             opener, guest = guests[0]
             fingerprint = hashlib.sha256(f"{self.run_id}:public-canary".encode()).hexdigest()
-            request_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osc-is:{self.run_id}:artifact"))
+            request_id = str(uuid.uuid4())
             mutation_headers = {"Origin": origin, "X-Demo-CSRF": guest["csrfToken"], "X-Correlation-Id": request_id}
             artifact = self.http_json(
                 opener, "/api/v1/demo/artifacts", method="POST",
@@ -813,7 +900,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             if history.get("total") != 1:
                 raise RuntimeError("Artifact canary did not produce exactly one ledger revision")
             self.http_json(guests[1][0], f"/api/v1/demo/artifacts/{artifact['id']}", expected=403)
-            workflow_request = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osc-is:{self.run_id}:workflow"))
+            workflow_request = str(uuid.uuid4())
             workflow = self.http_json(
                 opener, "/api/v1/demo/workflows", method="POST",
                 body={"requestId": workflow_request, "artifactIds": [artifact["id"]], "researchContext": "REPRODUCIBLE_ANALYSIS"},
@@ -880,6 +967,13 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         behaviors["Quantity"] = len(behaviors["Items"])
         if not behaviors["Items"]:
             behaviors.pop("Items", None)
+        config["CustomErrorResponses"] = {
+            "Quantity": 2,
+            "Items": [
+                {"ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 0},
+                {"ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 0},
+            ],
+        }
         payload = self.work / "distribution-detached.json"
         payload.write_text(json.dumps(config), encoding="utf-8")
         aws(
@@ -927,6 +1021,13 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             self.write_status("READ_ONLY", "The contribution window is closed while sanitized evidence is exported and the runtime is removed.")
 
     def reset_codebuild_network(self) -> None:
+        current = aws_json(
+            "codebuild", "batch-get-projects", "--names", required("CODEBUILD_PROJECT"),
+        ).get("projects", [])
+        if len(current) != 1:
+            raise RuntimeError("Lifecycle CodeBuild project lookup was not exact")
+        if not current[0].get("vpcConfig"):
+            return
         aws(
             "codebuild", "update-project", "--name", required("CODEBUILD_PROJECT"),
             "--vpc-config", json.dumps({"vpcId": "", "subnets": [], "securityGroupIds": []}),
@@ -938,6 +1039,43 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             return
         self.configure_kubectl()
         self.kubectl("-n", "argocd", "delete", "application", "osc-is-aws", "--ignore-not-found=true", "--wait=true", "--timeout=5m", check=False)
+        self.kubectl(
+            "-n", "osc-apps", "delete", "ingress", "osc-demo-api",
+            "--ignore-not-found=true", "--wait=false", check=False,
+        )
+        tag_arguments = [
+            f"Key={key},Values={value}"
+            for key, value in {
+                "Project": "OSC-IS",
+                "Purpose": "USRSE26-Interactive-Demo",
+                "Environment": "ephemeral",
+                "RunId": self.run_id,
+                "ExpiresAt": self.expires_at,
+            }.items()
+        ]
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline:
+            load_balancer_resources = aws_json(
+                "resourcegroupstaggingapi", "get-resources",
+                "--resource-type-filters",
+                "elasticloadbalancing:loadbalancer",
+                "elasticloadbalancing:targetgroup",
+                "--tag-filters", *tag_arguments,
+            ).get("ResourceTagMappingList", [])
+            if not load_balancer_resources:
+                ingress = self.kubectl(
+                    "-n", "osc-apps", "get", "ingress", "osc-demo-api",
+                    "-o", "name", check=False,
+                ).strip()
+                if ingress:
+                    self.kubectl(
+                        "-n", "osc-apps", "patch", "ingress", "osc-demo-api",
+                        "--type=merge", "-p", '{"metadata":{"finalizers":[]}}',
+                    )
+                break
+            time.sleep(10)
+        else:
+            raise RuntimeError("Tagged load balancer resources did not delete")
         for namespace in ("osc-apps", "osc-fabric", "argocd", "ingress-nginx", "cert-manager"):
             self.kubectl("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=10m")
         deadline = time.monotonic() + 600
@@ -947,6 +1085,11 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
                 f"Name=tag:RunId,Values={self.run_id}", "Name=tag:Project,Values=OSC-IS",
                 "Name=tag:Purpose,Values=USRSE26-Interactive-Demo", "Name=tag:Environment,Values=ephemeral",
             ).get("Volumes", [])
+            volumes = [
+                volume for volume in volumes
+                if not volume.get("Attachments")
+                or any(not attachment.get("DeleteOnTermination", False) for attachment in volume["Attachments"])
+            ]
             if not volumes:
                 return
             if all(volume["State"] == "available" for volume in volumes):
@@ -983,6 +1126,14 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             raise RuntimeError("; ".join(failures))
 
     def destroy_runtime(self) -> None:
+        broker_name = f"osc-usrse26-{self.run_id}-rabbitmq"
+        broker_matches = [
+            item for item in aws_json("mq", "list-brokers").get("BrokerSummaries", [])
+            if item.get("BrokerName") == broker_name
+        ]
+        if len(broker_matches) > 1:
+            raise RuntimeError(f"Multiple Amazon MQ brokers match {broker_name}")
+        broker_id = broker_matches[0]["BrokerId"] if broker_matches else None
         state_object = run([
             "aws", "s3api", "head-object", "--bucket", required("STATE_BUCKET"),
             "--key", f"runtime-state/{self.run_id}/runtime.auto.tfvars.json",
@@ -993,6 +1144,8 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             root, _ = self.tf_root(create_variables=False)
             run(["terraform", "destroy", "-input=false", "-auto-approve"], cwd=root, capture=False)
         self.delete_residual_runtime_repositories()
+        if broker_id:
+            self.delete_amazon_mq_log_groups(broker_id)
         self.put_json(
             f"evidence/{self.run_id}/destroy.json",
             {
@@ -1023,6 +1176,19 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             if any(tag_map.get(key) != value for key, value in expected.items()):
                 raise RuntimeError(f"Refusing to delete partially tagged ECR repository {repository}")
             aws("ecr", "delete-repository", "--repository-name", repository, "--force")
+
+    def delete_amazon_mq_log_groups(self, broker_id: str) -> None:
+        if not re.fullmatch(r"b-[0-9a-f-]+", broker_id):
+            raise RuntimeError("Amazon MQ broker ID has an unexpected format")
+        prefix = f"/aws/amazonmq/broker/{broker_id}/"
+        groups = aws_json(
+            "logs", "describe-log-groups", "--log-group-name-prefix", prefix,
+        ).get("logGroups", [])
+        for group in groups:
+            name = group.get("logGroupName", "")
+            if not name.startswith(prefix):
+                raise RuntimeError(f"Refusing to delete unexpected log group {name}")
+            aws("logs", "delete-log-group", "--log-group-name", name)
 
     def failed_start_cleanup(self) -> None:
         failures: list[str] = []
@@ -1270,12 +1436,23 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
     def sweep(self) -> None:
         manifest = self.load_manifest(allow_expired=True)
         expected_prefix = f"osc-usrse26-{self.run_id}"
+        runtime_variables = self.work / "runtime.auto.tfvars.json"
+        aws(
+            "s3api", "get-object", "--bucket", required("STATE_BUCKET"),
+            "--key", f"runtime-state/{self.run_id}/runtime.auto.tfvars.json",
+            str(runtime_variables),
+        )
+        runtime_expires_at = json.loads(
+            runtime_variables.read_text(encoding="utf-8")
+        ).get("expires_at")
+        if not runtime_expires_at:
+            raise RuntimeError("Runtime Terraform variables do not contain expires_at")
         runtime_tags = {
             "Project": "OSC-IS",
             "Purpose": "USRSE26-Interactive-Demo",
             "Environment": "ephemeral",
             "RunId": self.run_id,
-            "ExpiresAt": manifest["expiresAt"],
+            "ExpiresAt": runtime_expires_at,
         }
 
         def inventory() -> dict[str, list[str]]:
@@ -1285,13 +1462,68 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             tagged = aws_json(
                 "resourcegroupstaggingapi", "get-resources", "--tag-filters", *tag_arguments,
             ).get("ResourceTagMappingList", [])
+            instance_payload = aws_json(
+                "ec2", "describe-instances", "--filters",
+                f"Name=tag:RunId,Values={self.run_id}",
+            )
+            active_ec2_ids = {
+                "instance": {
+                    instance["InstanceId"]
+                    for reservation in instance_payload.get("Reservations", [])
+                    for instance in reservation.get("Instances", [])
+                    if instance.get("State", {}).get("Name") != "terminated"
+                },
+                "volume": {
+                    item["VolumeId"] for item in aws_json(
+                        "ec2", "describe-volumes", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Volumes", [])
+                },
+                "natgateway": {
+                    item["NatGatewayId"] for item in aws_json(
+                        "ec2", "describe-nat-gateways", "--filter",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("NatGateways", []) if item.get("State") != "deleted"
+                },
+                "subnet": {
+                    item["SubnetId"] for item in aws_json(
+                        "ec2", "describe-subnets", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Subnets", [])
+                },
+                "security-group": {
+                    item["GroupId"] for item in aws_json(
+                        "ec2", "describe-security-groups", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("SecurityGroups", [])
+                },
+                "security-group-rule": {
+                    item["SecurityGroupRuleId"] for item in aws_json(
+                        "ec2", "describe-security-group-rules", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("SecurityGroupRules", [])
+                },
+                "elastic-ip": {
+                    item["AllocationId"] for item in aws_json(
+                        "ec2", "describe-addresses", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Addresses", [])
+                },
+            }
+            tagged = [
+                item for item in tagged
+                if tag_index_entry_is_active(item["ResourceARN"], active_ec2_ids)
+            ]
             clusters = aws_json("eks", "list-clusters").get("clusters", [])
             brokers = aws_json("mq", "list-brokers").get("BrokerSummaries", [])
             ecr = aws_json("ecr", "describe-repositories").get("repositories", [])
             volumes = aws_json(
                 "ec2", "describe-volumes", "--filters",
                 f"Name=tag:RunId,Values={self.run_id}",
-                "Name=tag:ExpiresAt,Values=" + manifest["expiresAt"],
+                "Name=tag:Project,Values=OSC-IS",
+                "Name=tag:Purpose,Values=USRSE26-Interactive-Demo",
+                "Name=tag:Environment,Values=ephemeral",
+                "Name=tag:ExpiresAt,Values=" + runtime_expires_at,
             ).get("Volumes", [])
             distribution = aws_json(
                 "cloudfront", "get-distribution-config", "--id", required("CLOUDFRONT_DISTRIBUTION"),

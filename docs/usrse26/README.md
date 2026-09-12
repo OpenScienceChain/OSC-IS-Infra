@@ -34,6 +34,8 @@ impact.
 
 ## Evidence
 
+- [2026-09-11 interactive-demo AWS rehearsal](platform-evidence/20260911-usrse26r1/README.md)
+
 Evidence belongs under `platform-evidence/<run-id>/`. Each run must include its
 environment, exact source revisions, test results, timings, planning estimate,
 and teardown proof. Raw credentials, certificates, private keys, tokens, sensitive

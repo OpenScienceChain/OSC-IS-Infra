@@ -18,8 +18,8 @@ def payload(source_revision: str) -> dict[str, object]:
     return {
         "schemaVersion": 1,
         "sourceRevision": source_revision,
-        "demoMode": True,
-        "apiBaseUrl": "/api/v1",
+        "DEMO_MODE": True,
+        "API_BASE_URL": "/api/v1",
     }
 
 
