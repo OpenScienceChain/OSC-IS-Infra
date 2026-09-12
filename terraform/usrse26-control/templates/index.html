@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>OSC-IS conference demonstration</title>
+  <style>
+    body{margin:0;background:#f4f8f9;color:#14324a;font:18px/1.55 system-ui,sans-serif}main{max-width:720px;margin:12vh auto;padding:32px}h1{font-size:2.2rem;line-height:1.15}.status{border-left:6px solid #07877d;background:#fff;padding:20px;margin:28px 0}a{color:#006d77}code{font-family:ui-monospace,monospace}@media(max-width:600px){main{margin:4vh auto;padding:24px}h1{font-size:1.8rem}}
+  </style>
+</head>
+<body>
+  <main>
+    <p>OPEN SCIENCE CHAIN</p>
+    <h1>Interactive provenance demonstration</h1>
+    <div class="status" role="status" aria-live="polite">
+      <strong id="state">Checking demonstration status</strong>
+      <p id="message">The portal will become interactive during the scheduled conference window.</p>
+    </div>
+    <p>This stable page remains available while the temporary demonstration environment starts, runs, and shuts down.</p>
+    <p id="cost-model">Cost control is time-bounded: a pre-deployment estimate is checked against a USD 200 planning ceiling, runtime exposure is capped at 72 hours, and actual billed cost is reconciled separately by a human after teardown.</p>
+  </main>
+  <script>
+    fetch('/status.json',{cache:'no-store'}).then(r=>r.json()).then(s=>{
+      document.getElementById('state').textContent=s.state;
+      document.getElementById('message').textContent=s.message;
+      const c=s.costControl;
+      if(c){document.getElementById('cost-model').textContent=`Cost control: ${c.mode}. Planned estimate: USD ${c.plannedEstimateUsd} against a USD ${c.planningEstimateCeilingUsd} planning ceiling. Runtime exposure: at most ${c.maximumRuntimeHours} hours. Actual billed cost: ${c.actualBilledCost.status}.`;}
+      if(s.state==='OPEN'&&s.applicationUrl){location.assign(s.applicationUrl);}
+    }).catch(()=>{document.getElementById('state').textContent='STATUS UNAVAILABLE';});
+  </script>
+</body>
+</html>

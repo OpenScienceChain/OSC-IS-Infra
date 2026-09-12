@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse26r1",
+  "region": "us-west-2",
+  "eks": {
+    "version": "1.35",
+    "nodes": 3,
+    "readyNodes": 3,
+    "instanceType": "m7i.large",
+    "runningPods": 71,
+    "namespacePodCounts": {
+      "argocd": 8,
+      "aws-secrets-manager": 6,
+      "cert-manager": 3,
+      "ingress-nginx": 1,
+      "kube-system": 18,
+      "osc-apps": 21,
+      "osc-fabric": 14
+    }
+  },
+  "rabbitMq": {
+    "service": "Amazon MQ",
+    "engineVersion": "4.2",
+    "deploymentMode": "CLUSTER_MULTI_AZ",
+    "brokers": 3,
+    "instanceType": "mq.m7g.medium",
+    "publiclyAccessible": false
+  },
+  "fabric": {
+    "organizations": 2,
+    "orderers": 3,
+    "peersPerOrganization": 2,
+    "externalChaincodeServices": 4
+  },
+  "scope": "Observed validation snapshot; not a capacity, scale, availability, or production-topology claim."
+}

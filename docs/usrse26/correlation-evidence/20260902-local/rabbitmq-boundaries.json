@@ -1,0 +1,38 @@
+[
+  {
+    "correlationId": null,
+    "messageId": "usrse26-e2e-20260902-local-003",
+    "payload": {
+      "artifactId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+      "correlationId": "usrse26-e2e-20260902-local-003",
+      "organization": {
+        "artifactSchemaName": "research-artifact",
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "ledgerApiUserId": "nsg-service",
+        "ledgerGroupName": "nsg",
+        "mspId": "NSGMSP",
+        "name": "nEUROSCIENCE GATEWAY",
+        "slug": "nsg"
+      },
+      "request": {
+        "authenticatedUserId": "10000000-0000-4000-8000-000000000002",
+        "correlationId": "usrse26-e2e-20260902-local-003",
+        "operation": "artifact.create",
+        "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "requestedAt": "2026-09-02T18:04:24.223Z"
+      }
+    },
+    "routingKey": "artifact.submit"
+  },
+  {
+    "correlationId": "usrse26-e2e-20260902-local-003",
+    "messageId": "usrse26-e2e-20260902-local-003",
+    "payload": {
+      "artifactId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+      "blockchainTxId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+      "submissionState": "SUCCESS",
+      "submittedAt": "2026-09-02T18:04:26.382071+00:00"
+    },
+    "routingKey": "artifact.submitted"
+  }
+]

@@ -1,0 +1,27 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: osc-selfsigned, namespace: osc-apps}
+spec: {selfSigned: {}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: osc-postgres-ca, namespace: osc-apps}
+spec:
+  isCA: true
+  commonName: osc-usrse26-postgres-ca
+  secretName: osc-postgres-ca
+  privateKey: {algorithm: ECDSA, size: 256}
+  issuerRef: {name: osc-selfsigned}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: osc-postgres-ca, namespace: osc-apps}
+spec: {ca: {secretName: osc-postgres-ca}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: postgres-tls, namespace: osc-apps}
+spec:
+  secretName: postgres-tls
+  dnsNames: [postgres, postgres.osc-apps, postgres.osc-apps.svc, postgres.osc-apps.svc.cluster.local]
+  issuerRef: {name: osc-postgres-ca}

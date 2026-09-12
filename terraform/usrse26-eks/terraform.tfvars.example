@@ -1,0 +1,17 @@
+run_id    = "20260902a"
+expires_at = "2026-09-02T16:00:00Z"
+admin_cidr = "203.0.113.10/32"
+runner_public_cidr = "203.0.113.10/32"
+alb_controller_image = "public.ecr.aws/eks/aws-load-balancer-controller@sha256:REPLACE_WITH_REVIEWED_DIGEST"
+runtime_role_arns = {
+  eks_cluster                    = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-eks-cluster"
+  eks_nodes                      = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-eks-nodes"
+  alb_controller                 = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-alb-controller"
+  api_gateway                    = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-api-gateway"
+  postgres                       = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-postgres"
+  submission_worker              = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-submission-worker"
+  submission_listener            = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-submission-listener"
+  ledger_gateway_nsg             = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-ledger-gateway-nsg"
+  ledger_gateway_citizen_science = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-ledger-gateway-citizen-science"
+  ebs_csi                        = "arn:aws:iam::269624229733:role/osc-usrse26-usrse26demo-ebs-csi"
+}

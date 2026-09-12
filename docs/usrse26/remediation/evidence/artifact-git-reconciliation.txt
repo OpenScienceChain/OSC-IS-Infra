@@ -1,0 +1,17 @@
+reconciled 9f167efdc95767f2fa16673923b28980a63adc43
+parents 87854edf950cec25da88d050a389f5b3d9231dbf fcfdb3e6df9137509df84e012ac17de40bf2a706
+subject merge: reconcile platform evidence with develop
+remote aeb952c9549fe3e73d3177d2fb7f210021013eea Feature/test network connection (#3)
+remote 3e36f02a847768fcb99d39e02093af55f4a7f352 Update artifact data schema to allow empty strings for optional fields in server.ts and adjust corresponding test cases in server.test.ts
+remote 87854edf950cec25da88d050a389f5b3d9231dbf Enhance error handling in fabricClient.ts by enriching error messages with peer endorsement details and additional context for submitTxIfReal and evaluateHistory functions. This improves the clarity of error reporting during transaction submission and history evaluation failures.
+tag backup/usrse26-platform-evidence-before-develop-reconcile-20260902
+Tagger: Fernando Garzon <of.garzon2662@uniandes.edu.co>
+
+Local safety tag before reconciling US-RSE evidence work with origin/develop
+safety-tag tag: backup/usrse26-platform-evidence-before-develop-reconcile-20260902, feature/usrse26-platform-evidence
+commit fcfdb3e6df9137509df84e012ac17de40bf2a706
+subject fix: preserve chaincode authorization denials
+55	0
+* feature/usrse26-integration-remediation
+* feature/usrse26-integration-remediation
+* feature/usrse26-integration-remediation

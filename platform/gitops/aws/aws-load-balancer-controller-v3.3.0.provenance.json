@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "source": "https://github.com/kubernetes-sigs/aws-load-balancer-controller/releases/download/v3.3.0/v3_3_0_full.yaml",
+  "upstreamSha256": "fe7da00347dab61e60436b5f7a1b123d12ef257117c4cf3dcb9c5b5efd54ed41",
+  "retrievedAt": "2026-09-10",
+  "localChanges": [
+    "replace mutable controller image tag with render-time digest token",
+    "bind the deterministic demo cluster name and us-west-2 VPC",
+    "annotate the service account with the run-scoped IRSA role",
+    "run two controller replicas with hostname spreading"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 3,
+  "costControlMode": "TIME_BOUNDED",
+  "evidenceClass": "PRE_DEPLOYMENT_PLANNING_ESTIMATE",
+  "currency": "USD",
+  "hours": 6.0,
+  "componentsHourly": {
+    "EKS control plane": 0.1,
+    "3 x m7i.large nodes": 0.3024,
+    "3 x Amazon MQ mq.m7g.medium brokers": 0.4101,
+    "NAT gateway": 0.045,
+    "NAT public IPv4": 0.005,
+    "EBS, logs, ECR, edge, lifecycle, and data transfer allowance": 0.08
+  },
+  "estimatedHourly": 0.9425,
+  "estimatedRun": 5.66,
+  "plannedEstimateWith25PercentContingency": 27.07,
+  "fixedRehearsalAndControlAllowance": 20.0,
+  "planningEstimateCeilingUsd": 200.0,
+  "boundedExposure": {
+    "maximumRuntimeHours": 72,
+    "capacity": "fixed reviewed topology; no unbounded autoscaling or user infrastructure"
+  },
+  "actualBilledCost": {
+    "status": "NOT_RECONCILED",
+    "amountUsd": null,
+    "source": "human CloudBank or account billing reconciliation after teardown"
+  },
+  "approvedForPlanning": true
+}

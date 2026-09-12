@@ -1,0 +1,90 @@
+name: osc-is-system-test
+
+services:
+  rabbitmq:
+    build:
+      context: ../../OSC-Artifact-Submission/broker
+    environment:
+      RABBITMQ_DEFAULT_USER: osc_test
+      RABBITMQ_DEFAULT_PASS: osc_test_password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  mock-ledger-api:
+    build:
+      context: ../../OSC-Artifact-Submission/mock-osc-api
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:3004/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  adapter:
+    build:
+      context: ../../OSC-Artifact-Submission/adapter
+    environment:
+      ADAPTER_API_URL: http://mock-ledger-api:3004/v1/artifacts
+      ADAPTER_API_TOKEN: local-system-test-token
+      ADAPTER_ALLOW_LEGACY_DEFAULT_ROUTE: "false"
+      ADAPTER_REQUEST_TIMEOUT_SECONDS: "5"
+    depends_on:
+      mock-ledger-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  submission-worker:
+    build:
+      context: ../../OSC-Artifact-Submission/submission_worker
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: osc_test
+      RABBITMQ_PASS: osc_test_password
+      RABBITMQ_QUEUE_SUBMIT: artifact.submit.queue
+      RABBITMQ_QUEUE_SUBMITTED: artifact.submitted.queue
+      RABBITMQ_QUEUE_UPDATE: artifact.update.queue
+      RABBITMQ_QUEUE_UPDATED: artifact.updated.queue
+      RABBITMQ_QUEUE_WORKFLOW_SUBMIT: workflow.submit.queue
+      RABBITMQ_QUEUE_WORKFLOW_SUBMITTED: workflow.submitted.queue
+      RABBITMQ_QUEUE_WORKFLOW_UPDATE: workflow.update.queue
+      RABBITMQ_QUEUE_WORKFLOW_UPDATED: workflow.updated.queue
+      FABRIC_BRIDGE_URL: http://adapter:5000
+      ENVIRONMENT: system-test
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      adapter:
+        condition: service_healthy
+    restart: unless-stopped
+
+  probe:
+    build:
+      context: ./probe
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: osc_test
+      RABBITMQ_PASS: osc_test_password
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    profiles: [probe]

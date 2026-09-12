@@ -1,0 +1,21 @@
+[
+  {
+    "transactionId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+    "committedAt": "2026-09-02T18:04:24.277Z",
+    "deleted": false,
+    "record": {
+      "assetId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+      "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "organizationMsp": "NSGMSP",
+      "revision": 1,
+      "createdBy": "10000000-0000-4000-8000-000000000002",
+      "lastCorrelationId": "usrse26-e2e-20260902-local-003",
+      "lastTransactionId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+      "payload": {
+        "title": "USRSE correlated provenance artifact 003",
+        "visibility": "private",
+        "footprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    }
+  }
+]

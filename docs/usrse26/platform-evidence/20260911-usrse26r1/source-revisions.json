@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse26r1",
+  "branch": "feature/usrse26-interactive-demo",
+  "deployedSourceCommits": {
+    "OSC-IS-Infra": "ddc8cecff36347dc6d95ed915d4204bdfbd8b364",
+    "OSC-WebApp": "f05c02da0579a4fb82bd6433c382147d6973e00d",
+    "OSC-APIGateway": "2351746fad480bbe376e02da376a0864c59c1ad7",
+    "OSC-Artifact-Submission": "12c465381d7cd2f61fbedab3fa7f9e1ba44d7c81",
+    "OSC-Chaincode": "1d7d710485e5731e9489dc3df4fd5b0b18baaa0c"
+  },
+  "gitOps": {
+    "knownGood": "2fcbaf9b86c3df821422fe41c70951b96369866a",
+    "rollout": "0bf853599bec1ce8574ff758278f5f3500d26b01"
+  },
+  "publicWebApp": {
+    "sourceRevision": "f05c02da0579a4fb82bd6433c382147d6973e00d",
+    "bundleSha256": "87dae526ec9218e28876bcc08a451f19b170e877aede0b805c9ab5b4ccc030cb"
+  },
+  "artifactManifestSha256": "30ded5a43cea076bb1d9c925df226210fdf37694ff23fab13d20cfb226018155"
+}

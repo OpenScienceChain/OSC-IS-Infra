@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260902a",
+  "createdAt": "2026-09-02T03:42:10Z",
+  "reason": "Preserve chaincode authorization denials as non-retryable HTTP 403 responses.",
+  "credentialsInjectedIntoBuild": false,
+  "sourceCommits": {
+    "artifactSubmission": "fcfdb3e"
+  },
+  "images": {
+    "ledger-gateway": {
+      "reference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/ledger-gateway@sha256:654c682ddb514c1c39f876cdcb0dec2af17d52aecdf94eb06e9f1d64e589bed4",
+      "runtimeUser": "10001:10001",
+      "sbom": "artifacts/hotfix/ledger-gateway-authz1/sbom.cdx.json",
+      "scan": "artifacts/hotfix/ledger-gateway-authz1/scan-high-critical.json"
+    },
+    "gitops-repository": {
+      "reference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/gitops-repository@sha256:61c8732f567d61bb45c1fce9ace3b0e7e89b57800fb531bc664fc4b43669dcab",
+      "runtimeUser": "65534:65534",
+      "sbom": "artifacts/hotfix/gitops-repository-authz1/sbom.cdx.json",
+      "scan": "artifacts/hotfix/gitops-repository-authz1/scan-high-critical.json"
+    }
+  },
+  "gitops": {
+    "baselineRevision": "a3944ca4b8b7214a511a71490fc4fb1a2451b888",
+    "rolloutRevision": "cc10673a5f254be2afe83757e0706615e520b875"
+  }
+}

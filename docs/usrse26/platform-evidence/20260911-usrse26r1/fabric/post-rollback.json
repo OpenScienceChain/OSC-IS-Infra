@@ -1,0 +1,35 @@
+{
+  "testRun": "20260912002909",
+  "organizations": [
+    {
+      "name": "nEUROSCIENCE GATEWAY",
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "mspId": "NSGMSP"
+    },
+    {
+      "name": "CITIZEN SCIENCE",
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "mspId": "CitizenScienceMSP"
+    }
+  ],
+  "artifact": {
+    "id": "4df87831-3968-4308-8828-987a3303bd68",
+    "finalTransactionId": "99ac7bbf68e56b93c3626987e16efdb362f626e915ba07ae8f01e1020c2a2be7",
+    "revisions": 2
+  },
+  "workflow": {
+    "id": "7c0fdb72-7229-47d8-b34c-7be15803da32",
+    "transactionId": "142943480bac8a15ffb8f2a2f13831812472bb92805f82a615486fce819dac3d",
+    "revisions": 1
+  },
+  "authorization": {
+    "multiOrgSelectionRequired": true,
+    "callerTenancyFieldRejected": true,
+    "crossOrgReadDenied": true,
+    "crossOrgWriteDenied": true,
+    "collaboratorAdminDenied": true,
+    "fabricCrossOrganizationIdentityDenied": true,
+    "activeOrganizationClaimsVerified": true
+  },
+  "credentialsRetained": false
+}

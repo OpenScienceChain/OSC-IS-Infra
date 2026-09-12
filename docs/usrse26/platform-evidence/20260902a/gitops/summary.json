@@ -1,0 +1,27 @@
+{
+  "runId": "20260902a",
+  "startedAt": "2026-09-02T04:26:00Z",
+  "finishedAt": "2026-09-02T04:26:38Z",
+  "source": {
+    "repositoryImage": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/gitops-repository@sha256:61c8732f567d61bb45c1fce9ace3b0e7e89b57800fb531bc664fc4b43669dcab",
+    "baselineRevision": "a3944ca4b8b7214a511a71490fc4fb1a2451b888",
+    "rolloutRevision": "cc10673a5f254be2afe83757e0706615e520b875"
+  },
+  "deployment": {
+    "applicationImage": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/api-gateway@sha256:637145b6848d3b2ba2023995c67012023529f3afeb3fdfda42aadb6125967f58",
+    "immutableImage": true
+  },
+  "drift": {
+    "detectedAndSelfHealed": true,
+    "seconds": 3
+  },
+  "rollout": {
+    "succeeded": true,
+    "seconds": 13
+  },
+  "rollback": {
+    "knownGoodRevisionRestored": true,
+    "seconds": 13
+  },
+  "credentialsRetained": false
+}

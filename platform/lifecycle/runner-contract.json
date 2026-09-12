@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "entrypoint": "/usr/local/bin/osc-demo-lifecycle",
+  "expectedAccount": "269624229733",
+  "expectedRegion": "us-west-2",
+  "costControlMode": "TIME_BOUNDED",
+  "stateOrder": ["SCHEDULED", "PREPARING", "OPEN", "READ_ONLY", "CLOSED"],
+  "actions": {
+    "START": {
+      "preconditions": [
+        "verify STS account and AWS_DEFAULT_REGION",
+        "verify artifact manifest SHA-256",
+        "verify checksummed ENFORCED_COMMON_AWS_SOURCES_ABSENT build-isolation evidence",
+        "verify the manifest contains an immutable WebApp bundle and all required OCI image digests",
+        "reject mutable image references",
+        "verify a concrete pre-deployment planning estimate no greater than USD 200",
+        "verify the 72-hour maximum, manifest expiresAt, hard-close deadline, and exact stop authorization",
+        "acquire the run-id lock"
+      ],
+      "steps": [
+        "write PREPARING status",
+        "persist the validated manifest expiresAt, hard-close deadline, and TIME_BOUNDED mode before provisioning",
+        "sync the reviewed WebApp bundle to the private edge bucket while preserving status.json",
+        "apply only the tagged runtime Terraform root",
+        "deploy three-orderer and two-peer-per-organization Fabric",
+        "sync immutable manifests through Argo CD",
+        "seed Neuroscience Gateway and Citizen Science",
+        "attach the internal ALB VPC origin to CloudFront",
+        "leave status PREPARING until CANARY succeeds"
+      ]
+    },
+    "CANARY": {
+      "steps": [
+        "exercise artifact submission through the public URL",
+        "confirm transaction and history",
+        "create and confirm a workflow",
+        "verify organization binding and cross-organization denial",
+        "write OPEN status only after every assertion passes"
+      ]
+    },
+    "MONITOR": {
+      "steps": [
+        "record browser canary and service health through private in-cluster control endpoints",
+        "record queue depth, queue age, p50 and p95 confirmation time",
+        "record pod readiness, ALB health, WAF actions, and Fabric health",
+        "record TIME_BOUNDED mode, the planning estimate, bounded exposure, and unreconciled actual-billed-cost status",
+        "idempotently start the stop state machine at the persisted runtime deadline or a persistent safety failure",
+        "do not call AWS Budgets, Cost Explorer, EstimatedCharges, or billing APIs"
+      ]
+    },
+    "READ_ONLY": {
+      "steps": [
+        "write READ_ONLY status before disabling mutations",
+        "disable public mutation routes while preserving browse and history"
+      ]
+    },
+    "EXPORT": {
+      "steps": [
+        "export only the approved data dictionary through private in-cluster control endpoints",
+        "HMAC-hash session identifiers",
+        "exclude file bytes, filenames, names, email addresses, secrets, and raw tokens",
+        "write checksums and a resource inventory"
+      ]
+    },
+    "DESTROY": {
+      "steps": [
+        "detach the CloudFront VPC origin",
+        "remove Kubernetes workloads and volumes",
+        "move future lifecycle jobs out of the runtime VPC",
+        "preserve the static edge and control plane"
+      ]
+    },
+    "DESTROY_RUNTIME": {
+      "steps": [
+        "start only after the in-VPC destroy job has exited",
+        "destroy the tagged runtime Terraform state from outside the runtime VPC",
+        "preserve the static edge and control plane"
+      ]
+    },
+    "SWEEP": {
+      "steps": [
+        "enumerate resources by Project, Purpose, RunId, and ExpiresAt tags",
+        "delete only resources matching all run tags",
+        "fail when any tagged runtime resource remains",
+        "write runtime-teardown-proof.json"
+      ]
+    },
+    "FAILED_START_CLEANUP": {
+      "steps": [
+        "keep the static fallback reachable",
+        "detach a partially attached runtime origin",
+        "remove incomplete Kubernetes workloads and move future jobs out of the runtime VPC",
+        "run DESTROY_RUNTIME from a fresh out-of-VPC job",
+        "record the failed gate and cleanup result"
+      ]
+    }
+  },
+  "forbidden": [
+    "npm, pip, or dependency installation",
+    "source builds",
+    "mutable image tags",
+    "static AWS credentials",
+    "writes outside the tagged demo runtime",
+    "AWS Budgets, Cost Explorer, EstimatedCharges, or billing API calls",
+    "deletion of the Route 53 hosted zone",
+    "collection of file bytes or original filenames"
+  ],
+  "requiredArtifactInterfaces": {
+    "buildCredentialIsolation": ["status", "commonAwsCredentialSourcesAbsent", "evidence.sha256", "limitation"],
+    "webApp": ["sourceRevision", "s3Uri", "sha256"],
+    "ociImages": [
+      "api-gateway",
+      "ledger-gateway",
+      "submission-worker",
+      "submission-listener",
+      "history-worker",
+      "chaincode",
+      "gitops-repository",
+      "webapp",
+      "lifecycle-runner"
+    ],
+    "externalImages": [
+      "aws-load-balancer-controller"
+    ]
+  }
+}

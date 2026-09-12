@@ -1,0 +1,100 @@
+{
+  "metadata": {
+    "name": "osc-is-local"
+  },
+  "spec": {
+    "source": {
+      "path": "manifests",
+      "repoURL": "http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git",
+      "targetRevision": "495ff54e5b377043da02911cf21de0b621ea1c43"
+    },
+    "destination": {
+      "namespace": "osc-apps",
+      "server": "https://kubernetes.default.svc"
+    },
+    "syncPolicy": {
+      "automated": {
+        "enabled": true,
+        "prune": true,
+        "selfHeal": true
+      },
+      "retry": {
+        "backoff": {
+          "duration": "5s",
+          "factor": 2,
+          "maxDuration": "1m"
+        },
+        "limit": 5
+      },
+      "syncOptions": [
+        "ApplyOutOfSyncOnly=true",
+        "PruneLast=true"
+      ]
+    }
+  },
+  "status": {
+    "health": {
+      "lastTransitionTime": "2026-09-02T18:14:00Z",
+      "status": "Healthy"
+    },
+    "sync": {
+      "comparedTo": {
+        "destination": {
+          "namespace": "osc-apps",
+          "server": "https://kubernetes.default.svc"
+        },
+        "source": {
+          "path": "manifests",
+          "repoURL": "http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git",
+          "targetRevision": "495ff54e5b377043da02911cf21de0b621ea1c43"
+        }
+      },
+      "revision": "495ff54e5b377043da02911cf21de0b621ea1c43",
+      "status": "Synced"
+    },
+    "history": [
+      {
+        "deployStartedAt": "2026-09-02T18:13:36Z",
+        "deployedAt": "2026-09-02T18:13:37Z",
+        "id": 0,
+        "initiatedBy": {
+          "automated": true
+        },
+        "revision": "495ff54e5b377043da02911cf21de0b621ea1c43",
+        "source": {
+          "path": "manifests",
+          "repoURL": "http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git",
+          "targetRevision": "495ff54e5b377043da02911cf21de0b621ea1c43"
+        }
+      },
+      {
+        "deployStartedAt": "2026-09-02T18:13:43Z",
+        "deployedAt": "2026-09-02T18:13:44Z",
+        "id": 1,
+        "initiatedBy": {
+          "automated": true
+        },
+        "revision": "76c34cd0f607805aec9e2d3c2f4475a44e118035",
+        "source": {
+          "path": "manifests",
+          "repoURL": "http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git",
+          "targetRevision": "76c34cd0f607805aec9e2d3c2f4475a44e118035"
+        }
+      },
+      {
+        "deployStartedAt": "2026-09-02T18:13:53Z",
+        "deployedAt": "2026-09-02T18:13:53Z",
+        "id": 2,
+        "initiatedBy": {
+          "automated": true
+        },
+        "revision": "495ff54e5b377043da02911cf21de0b621ea1c43",
+        "source": {
+          "path": "manifests",
+          "repoURL": "http://osc-gitops-repository.argocd.svc.cluster.local:8080/osc-is-infra.git",
+          "targetRevision": "495ff54e5b377043da02911cf21de0b621ea1c43"
+        }
+      }
+    ]
+  }
+}

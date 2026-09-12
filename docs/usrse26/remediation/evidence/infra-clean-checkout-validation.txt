@@ -1,0 +1,4 @@
+Fresh Windows checkout contains LF-only bytes in 22 policy/Linux inputs.
+Clean-checkout line-ending and transient-secret validation passed.
+platform/scripts/prepare-local.sh: eol: lf
+platform/versions.env: eol: lf

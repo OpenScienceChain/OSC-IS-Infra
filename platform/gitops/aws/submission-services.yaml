@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: submission-worker, namespace: osc-apps}
+spec:
+  replicas: 4
+  selector:
+    matchLabels: {app.kubernetes.io/name: submission-worker}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: submission-worker, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: submission-worker
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-worker}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-worker}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: submission-worker
+          image: __SUBMISSION_WORKER_IMAGE__
+          env:
+            - {name: ENVIRONMENT, value: staging}
+            - name: RABBITMQ_HOST
+              valueFrom: {configMapKeyRef: {name: aws-runtime-endpoints, key: rabbitmq-host}}
+            - {name: RABBITMQ_PORT, value: "5671"}
+            - {name: RABBITMQ_TLS, value: "true"}
+            - name: RABBITMQ_USER
+              valueFrom: {secretKeyRef: {name: worker-rabbitmq-credentials, key: username}}
+            - name: RABBITMQ_PASS
+              valueFrom: {secretKeyRef: {name: worker-rabbitmq-credentials, key: password}}
+            - {name: LEDGER_GATEWAY_NSG_URL, value: http://ledger-gateway-nsg:4000}
+            - {name: LEDGER_GATEWAY_CITIZEN_SCIENCE_URL, value: http://ledger-gateway-citizen-science:4000}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - name: LEDGER_GATEWAY_NSG_TOKEN
+              valueFrom: {secretKeyRef: {name: worker-ledger-auth, key: nsg-token}}
+            - name: LEDGER_GATEWAY_CITIZEN_SCIENCE_TOKEN
+              valueFrom: {secretKeyRef: {name: worker-ledger-auth, key: citizen-science-token}}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: aws-secrets, mountPath: /var/run/osc/aws-secrets, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: aws-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: {secretProviderClass: submission-worker-secrets}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: submission-listener, namespace: osc-apps}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: submission-listener}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: submission-listener, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: submission-listener
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-listener}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: submission-listener}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: submission-listener
+          image: __SUBMISSION_LISTENER_IMAGE__
+          env:
+            - {name: ENVIRONMENT, value: staging}
+            - name: RABBITMQ_HOST
+              valueFrom: {configMapKeyRef: {name: aws-runtime-endpoints, key: rabbitmq-host}}
+            - {name: RABBITMQ_PORT, value: "5671"}
+            - {name: RABBITMQ_TLS, value: "true"}
+            - name: RABBITMQ_USER
+              valueFrom: {secretKeyRef: {name: listener-rabbitmq-credentials, key: username}}
+            - name: RABBITMQ_PASS
+              valueFrom: {secretKeyRef: {name: listener-rabbitmq-credentials, key: password}}
+            - {name: API_GATEWAY_BASE_URL, value: http://api-gateway:3000/api/v1}
+            - name: SUBMISSION_LISTENER_API_KEY
+              valueFrom: {secretKeyRef: {name: listener-api-auth, key: api-key}}
+            - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: aws-secrets, mountPath: /var/run/osc/aws-secrets, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: aws-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: {secretProviderClass: submission-listener-secrets}
+        - {name: tmp, emptyDir: {}}

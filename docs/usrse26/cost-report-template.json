@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "runId": "REPLACE",
+  "currency": "USD",
+  "costControlMode": "TIME_BOUNDED",
+  "planningEstimate": {
+    "status": "REQUIRED_BEFORE_DEPLOYMENT",
+    "amountUsd": null,
+    "ceilingUsd": 200,
+    "basis": "reviewed topology, rates, runtime, contingency, and rehearsal/control allowance"
+  },
+  "boundedExposure": {
+    "maximumRuntimeHours": 72,
+    "actualRuntimeHours": null,
+    "fixedCapacityVerified": null,
+    "primaryStopEvidence": null,
+    "backupStopEvidence": null,
+    "zeroInventoryEvidence": null
+  },
+  "actualBilledCost": {
+    "status": "NOT_RECONCILED",
+    "amountUsd": null,
+    "source": null,
+    "asOf": null,
+    "reconciledBy": null
+  },
+  "notes": [
+    "The planning estimate is not observed spend or actual billed cost.",
+    "Runtime automation does not use AWS Budgets, Cost Explorer, EstimatedCharges, or billing APIs.",
+    "Actual billed cost may be added later only from human CloudBank or account billing reconciliation."
+  ]
+}

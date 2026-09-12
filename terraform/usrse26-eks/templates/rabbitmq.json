@@ -1,0 +1,63 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Disposable OSC-IS US-RSE RabbitMQ broker",
+  "Parameters": {
+    "BrokerName": { "Type": "String" },
+    "EngineVersion": { "Type": "String" },
+    "HostInstanceType": { "Type": "String" },
+    "SubnetIds": { "Type": "List<AWS::EC2::Subnet::Id>" },
+    "SecurityGroupId": { "Type": "AWS::EC2::SecurityGroup::Id" },
+    "SecretName": { "Type": "String", "NoEcho": true },
+    "ProjectTag": { "Type": "String" },
+    "PurposeTag": { "Type": "String" },
+    "EnvironmentTag": { "Type": "String" },
+    "ManagedByTag": { "Type": "String" },
+    "OwnerTag": { "Type": "String" },
+    "RunIdTag": { "Type": "String" },
+    "ExpiresAtTag": { "Type": "String" }
+  },
+  "Resources": {
+    "Broker": {
+      "Type": "AWS::AmazonMQ::Broker",
+      "Properties": {
+        "BrokerName": { "Ref": "BrokerName" },
+        "DeploymentMode": "CLUSTER_MULTI_AZ",
+        "EngineType": "RABBITMQ",
+        "EngineVersion": { "Ref": "EngineVersion" },
+        "HostInstanceType": { "Ref": "HostInstanceType" },
+        "AutoMinorVersionUpgrade": true,
+        "PubliclyAccessible": false,
+        "SubnetIds": { "Ref": "SubnetIds" },
+        "SecurityGroups": [{ "Ref": "SecurityGroupId" }],
+        "EncryptionOptions": { "UseAwsOwnedKey": true },
+        "Logs": { "General": true },
+        "Users": [
+          {
+            "Username": "osc_usrse26",
+            "Password": {
+              "Fn::Sub": "{{resolve:secretsmanager:${SecretName}:SecretString:password}}"
+            }
+          }
+        ],
+        "Tags": [
+          { "Key": "Project", "Value": { "Ref": "ProjectTag" } },
+          { "Key": "Purpose", "Value": { "Ref": "PurposeTag" } },
+          { "Key": "Environment", "Value": { "Ref": "EnvironmentTag" } },
+          { "Key": "ManagedBy", "Value": { "Ref": "ManagedByTag" } },
+          { "Key": "Owner", "Value": { "Ref": "OwnerTag" } },
+          { "Key": "RunId", "Value": { "Ref": "RunIdTag" } },
+          { "Key": "ExpiresAt", "Value": { "Ref": "ExpiresAtTag" } }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "AmqpsEndpoint": {
+      "Description": "Private AMQPS endpoint",
+      "Value": { "Fn::Select": [0, { "Fn::GetAtt": ["Broker", "AmqpEndpoints"] }] }
+    },
+    "BrokerArn": {
+      "Value": { "Fn::GetAtt": ["Broker", "Arn"] }
+    }
+  }
+}

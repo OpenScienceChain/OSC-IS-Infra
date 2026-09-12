@@ -1,0 +1,10 @@
+prepare-local.sh CR bytes=71
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/scripts/prepare-local.sh: line 18: syntax error near unexpected token `$'{\r''
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/scripts/prepare-local.sh: line 18: `download_verified() {
+'
+bash-n-exit=2
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/versions.env: line 5: $'\r': command not found
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/versions.env: line 11: $'\r': command not found
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/versions.env: line 19: $'\r': command not found
+/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-remediation-verification/OSC-IS-Infra-pre-fix/platform/versions.env: line 26: $'\r': command not found
+source-exit=0

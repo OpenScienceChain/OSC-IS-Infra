@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Service
+metadata: {name: history-worker-nsg, namespace: osc-apps}
+spec:
+  selector: {app.kubernetes.io/name: history-worker-nsg}
+  ports: [{name: http, port: 8002, targetPort: 8002}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: history-worker-nsg, namespace: osc-apps}
+spec:
+  replicas: 4
+  selector:
+    matchLabels: {app.kubernetes.io/name: history-worker-nsg}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: history-worker-nsg, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: history-worker
+      automountServiceAccountToken: false
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: history-worker-nsg}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: history-worker
+          image: __HISTORY_WORKER_IMAGE__
+          env:
+            - {name: BRIDGE_URL, value: http://ledger-gateway-nsg:4000}
+            - name: LEDGER_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: ledger-gateway-nsg-auth, key: token}}
+            - {name: CACHE_TTL_SECONDS, value: "60"}
+            - {name: CACHE_MAX_ARTIFACTS, value: "1000"}
+          ports: [{name: http, containerPort: 8002}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: history-worker-citizen-science, namespace: osc-apps}
+spec:
+  selector: {app.kubernetes.io/name: history-worker-citizen-science}
+  ports: [{name: http, port: 8002, targetPort: 8002}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: history-worker-citizen-science, namespace: osc-apps}
+spec:
+  replicas: 4
+  selector:
+    matchLabels: {app.kubernetes.io/name: history-worker-citizen-science}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: history-worker-citizen-science, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: history-worker
+      automountServiceAccountToken: false
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: history-worker-citizen-science}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: history-worker
+          image: __HISTORY_WORKER_IMAGE__
+          env:
+            - {name: BRIDGE_URL, value: http://ledger-gateway-citizen-science:4000}
+            - name: LEDGER_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: ledger-gateway-citizen-science-auth, key: token}}
+            - {name: CACHE_TTL_SECONDS, value: "60"}
+            - {name: CACHE_MAX_ARTIFACTS, value: "1000"}
+          ports: [{name: http, containerPort: 8002}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]

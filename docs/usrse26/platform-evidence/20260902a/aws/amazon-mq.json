@@ -1,0 +1,16 @@
+{
+    "BrokerName": "osc-usrse26-20260902a-rabbitmq",
+    "BrokerState": "RUNNING",
+    "DeploymentMode": "SINGLE_INSTANCE",
+    "EngineType": "RabbitMQ",
+    "EngineVersion": "4.2",
+    "HostInstanceType": "mq.m7g.medium",
+    "PubliclyAccessible": false,
+    "EncryptionOptions": {
+        "UseAwsOwnedKey": true
+    },
+    "Logs": {
+        "General": true,
+        "GeneralLogGroup": "/aws/amazonmq/broker/b-a60fcd04-2496-4f96-a971-9f82fc9ec233/general"
+    }
+}
