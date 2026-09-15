@@ -112,8 +112,9 @@ resource "aws_sfn_state_machine" "start" {
       }
       AlreadyStarted = { Type = "Succeed" }
       ReserveRun = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::dynamodb:putItem"
+        Type       = "Task"
+        Resource   = "arn:aws:states:::dynamodb:putItem"
+        ResultPath = null
         Parameters = {
           TableName = aws_dynamodb_table.lifecycle.name
           Item = {
@@ -281,6 +282,7 @@ resource "aws_sfn_state_machine" "stop" {
       ReadOnly = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "READ_ONLY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.readOnlyResult"
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.readOnlyFailure", Next = "NotifyReadOnlyFailure" }]
         Next       = "Drain"
       }
@@ -295,6 +297,7 @@ resource "aws_sfn_state_machine" "stop" {
       Export = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "EXPORT", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.exportResult"
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.exportFailure", Next = "NotifyExportFailure" }]
         Next       = "Destroy"
       }
@@ -308,6 +311,7 @@ resource "aws_sfn_state_machine" "stop" {
       Destroy = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.workloadDestroyResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.workloadDestroyFailure", Next = "DestroyRuntime" }]
         Next       = "WaitForRunnerNetworkRelease"
@@ -316,6 +320,7 @@ resource "aws_sfn_state_machine" "stop" {
       DestroyRuntime = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.cleanup.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY_RUNTIME", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.runtimeDestroyResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 120, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.runtimeDestroyFailure", Next = "Sweep" }]
         Next       = "Sweep"
@@ -323,6 +328,7 @@ resource "aws_sfn_state_machine" "stop" {
       Sweep = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.cleanup.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "SWEEP", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.sweepResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.sweepFailure", Next = "NotifyIncompleteSweep" }]
         Next       = "MarkClosed"

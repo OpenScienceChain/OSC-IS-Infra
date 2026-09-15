@@ -224,8 +224,8 @@ try {
     $manifest = [ordered]@{
         schemaVersion = 1
         runId = $RunId
-        expiresAt = $ExpiresAt.ToString('o')
-        createdAt = [DateTimeOffset]::UtcNow.ToString('o')
+        expiresAt = $ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        createdAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
         buildCredentialIsolation = [ordered]@{
             status = $credentialIsolation.status
             commonAwsCredentialSourcesAbsent = $credentialIsolation.commonAwsCredentialSourcesAbsent

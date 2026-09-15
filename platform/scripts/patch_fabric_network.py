@@ -273,6 +273,20 @@ spec:
     )
     replace_required(
         chaincode,
+        "  cc_sha256=$(shasum -a 256 ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)\n",
+        """  if command -v sha256sum >/dev/null 2>&1; then
+    cc_sha256=$(sha256sum ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)
+  elif command -v shasum >/dev/null 2>&1; then
+    cc_sha256=$(shasum -a 256 ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)
+  else
+    echo "No SHA-256 utility is available to calculate the chaincode package ID"
+    exit 1
+  fi
+""",
+        1,
+    )
+    replace_required(
+        chaincode,
         """function launch_chaincode() {
   local org=org1
   local cc_name=$1

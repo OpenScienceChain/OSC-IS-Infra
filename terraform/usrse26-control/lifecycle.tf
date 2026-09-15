@@ -181,6 +181,12 @@ locals {
   ]
   runtime_iam_statements = [
     {
+      Sid      = "ReadOnlyExactRunRoles"
+      Effect   = "Allow"
+      Action   = ["iam:GetRole", "iam:ListAttachedRolePolicies"]
+      Resource = values(local.runtime_role_arn_map)
+    },
+    {
       Sid      = "PassOnlyRunRolesToApprovedServices"
       Effect   = "Allow"
       Action   = ["iam:PassRole"]
@@ -216,7 +222,7 @@ locals {
         "acm:DescribeCertificate", "acm:ListCertificates", "autoscaling:Describe*",
         "cloudfront:ListVpcOrigins",
         "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "ec2:Describe*",
-        "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
+        "ec2:GetManagedPrefixListEntries", "ec2:GetSecurityGroupsForVpc", "ecr:GetAuthorizationToken",
         "eks:List*", "elasticloadbalancing:Describe*",
         "logs:DescribeLogGroups", "mq:List*", "resourcegroupstaggingapi:GetResources",
         "iam:GetServerCertificate", "iam:ListServerCertificates", "shield:GetSubscriptionState", "shield:ListProtections", "sts:GetCallerIdentity",
@@ -249,7 +255,7 @@ locals {
     {
       Sid      = "ExactRunSecrets"
       Effect   = "Allow"
-      Action   = ["secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"]
+      Action   = ["secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"]
       Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.authorized_account_id}:secret:${local.name_prefix}/*"
     },
     {
@@ -268,7 +274,7 @@ locals {
     {
       Sid      = "ExactRunEcrRepositories"
       Effect   = "Allow"
-      Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:CompleteLayerUpload", "ecr:CreateRepository", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:DescribeImages", "ecr:DescribeRepositories", "ecr:GetDownloadUrlForLayer", "ecr:GetLifecyclePolicy", "ecr:GetRepositoryPolicy", "ecr:InitiateLayerUpload", "ecr:ListImages", "ecr:ListTagsForResource", "ecr:PutImage", "ecr:PutLifecyclePolicy", "ecr:SetRepositoryPolicy", "ecr:TagResource", "ecr:UntagResource", "ecr:UploadLayerPart"]
+      Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:CompleteLayerUpload", "ecr:CreateRepository", "ecr:DeleteLifecyclePolicy", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:DescribeImages", "ecr:DescribeRepositories", "ecr:GetDownloadUrlForLayer", "ecr:GetLifecyclePolicy", "ecr:GetRepositoryPolicy", "ecr:InitiateLayerUpload", "ecr:ListImages", "ecr:ListTagsForResource", "ecr:PutImage", "ecr:PutLifecyclePolicy", "ecr:SetRepositoryPolicy", "ecr:TagResource", "ecr:UntagResource", "ecr:UploadLayerPart"]
       Resource = "arn:aws:ecr:${var.aws_region}:${var.authorized_account_id}:repository/${local.name_prefix}/*"
     },
     {
@@ -319,9 +325,21 @@ locals {
       }
     },
     {
+      Sid      = "CreateTaggedSecurityGroupRules"
+      Effect   = "Allow"
+      Action   = ["ec2:AuthorizeSecurityGroupIngress"]
+      Resource = "arn:aws:ec2:${var.aws_region}:${var.authorized_account_id}:security-group-rule/*"
+      Condition = {
+        StringEquals = {
+          "aws:RequestTag/Project" = "OSC-IS"
+          "aws:RequestTag/RunId"   = var.run_id
+        }
+      }
+    },
+    {
       Sid      = "ManageTaggedNetworkResources"
       Effect   = "Allow"
-      Action   = ["ec2:Associate*", "ec2:Attach*", "ec2:Authorize*", "ec2:CreateRoute", "ec2:CreateTags", "ec2:Delete*", "ec2:Detach*", "ec2:Disassociate*", "ec2:Modify*", "ec2:ReleaseAddress", "ec2:Revoke*", "elasticloadbalancing:AddTags", "elasticloadbalancing:CreateListener", "elasticloadbalancing:CreateRule", "elasticloadbalancing:Delete*", "elasticloadbalancing:DeregisterTargets", "elasticloadbalancing:Modify*", "elasticloadbalancing:RegisterTargets", "elasticloadbalancing:RemoveTags", "elasticloadbalancing:Set*"]
+      Action   = ["ec2:Associate*", "ec2:Attach*", "ec2:Authorize*", "ec2:CreateNatGateway", "ec2:CreateRoute", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup", "ec2:CreateSubnet", "ec2:CreateTags", "ec2:Delete*", "ec2:Detach*", "ec2:Disassociate*", "ec2:Modify*", "ec2:ReleaseAddress", "ec2:Revoke*", "elasticloadbalancing:AddTags", "elasticloadbalancing:CreateListener", "elasticloadbalancing:CreateRule", "elasticloadbalancing:Delete*", "elasticloadbalancing:DeregisterTargets", "elasticloadbalancing:Modify*", "elasticloadbalancing:RegisterTargets", "elasticloadbalancing:RemoveTags", "elasticloadbalancing:Set*"]
       Resource = "*"
       Condition = {
         StringEquals = {
@@ -333,13 +351,19 @@ locals {
     {
       Sid      = "ExactRunLogs"
       Effect   = "Allow"
-      Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy"]
+      Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:ListTagsForResource", "logs:PutRetentionPolicy", "logs:TagResource", "logs:UntagResource"]
       Resource = "arn:aws:logs:${var.aws_region}:${var.authorized_account_id}:log-group:/aws/eks/${local.name_prefix}-*"
+    },
+    {
+      Sid      = "ExactCodeBuildLogs"
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = "arn:aws:logs:${var.aws_region}:${var.authorized_account_id}:log-group:/aws/codebuild/${local.name_prefix}-lifecycle:log-stream:*"
     },
     {
       Sid    = "ExactControlOperations"
       Effect = "Allow"
-      Action = ["codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
+      Action = ["codebuild:BatchGetProjects", "codebuild:UpdateProject", "sns:Publish", "states:StartExecution"]
       Resource = [
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-lifecycle",
         "arn:aws:codebuild:${var.aws_region}:${var.authorized_account_id}:project/${local.name_prefix}-cleanup",
@@ -350,7 +374,7 @@ locals {
     {
       Sid      = "CreateTaggedCloudFrontRuntimeOrigin"
       Effect   = "Allow"
-      Action   = ["cloudfront:CreateVpcOrigin"]
+      Action   = ["cloudfront:CreateVpcOrigin", "cloudfront:TagResource"]
       Resource = "*"
       Condition = {
         StringEquals = {
@@ -430,9 +454,9 @@ locals {
   # this shared boundary a compact, immutable run-scoped ceiling. Statement
   # IDs have no authorization semantics. The merged statements have identical
   # conditions, and every shortened ARN remains anchored to the exact run ID.
-  # PassRole is broader only in the ceiling: the intersecting identity policy
-  # continues to enumerate every fixed role and the runner cannot create or
-  # mutate roles.
+  # PassRole, control actions, and log management are broader only in the
+  # ceiling: the intersecting identity policy keeps those grants exact, and the
+  # runner cannot create or mutate roles.
   runtime_boundary_statement_inputs = concat(
     local.runtime_service_statements,
     local.runtime_workload_boundary_statements,
@@ -445,13 +469,22 @@ locals {
     "ExactRunS3Objects",
     "DeleteTaggedCloudFrontRuntimeOrigin",
     "UpdateTaggedControlDistribution",
+    "ExactCodeBuildLogs",
+    "ExactControlOperations",
+    "ExactRunLogs",
     "EksNodeCniBootstrap",
     "EksPodIdentityAgent",
+    "ReadOnlyExactRunRoles",
+    "CreateTaggedSecurityGroupRules",
   ]
   runtime_boundary_action_overrides = {
     ReadOnlyRuntimeDiscovery = concat(
       local.runtime_boundary_statement_by_sid["ReadOnlyRuntimeDiscovery"].Action,
+      local.runtime_boundary_statement_by_sid["ExactCodeBuildLogs"].Action,
+      local.runtime_boundary_statement_by_sid["ExactControlOperations"].Action,
+      local.runtime_boundary_statement_by_sid["ExactRunLogs"].Action,
       local.runtime_boundary_statement_by_sid["EksNodeCniBootstrap"].Action,
+      local.runtime_boundary_statement_by_sid["ReadOnlyExactRunRoles"].Action,
     )
     ExactRunS3Buckets = concat(
       local.runtime_boundary_statement_by_sid["ExactRunS3Buckets"].Action,
@@ -460,6 +493,10 @@ locals {
     ExactRunEks = concat(
       local.runtime_boundary_statement_by_sid["ExactRunEks"].Action,
       local.runtime_boundary_statement_by_sid["EksPodIdentityAgent"].Action,
+    )
+    CreateTaggedNetworkResources = concat(
+      local.runtime_boundary_statement_by_sid["CreateTaggedNetworkResources"].Action,
+      local.runtime_boundary_statement_by_sid["CreateTaggedSecurityGroupRules"].Action,
     )
     ReadTaggedCloudFrontResources = concat(
       local.runtime_boundary_statement_by_sid["DeleteTaggedCloudFrontRuntimeOrigin"].Action,

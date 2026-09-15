@@ -72,6 +72,11 @@ resource "aws_vpc_security_group_ingress_rule" "eks_from_lifecycle_runner" {
   from_port                    = 443
   to_port                      = 443
   description                  = "Private Kubernetes API access from the lifecycle runner"
+
+  # The EKS-managed cluster group is born with AWS/EKS tags only. Ensure the
+  # exact run tags exist before the lifecycle role authorizes this rule, so
+  # the existing resource-tag IAM condition can match without broader access.
+  depends_on = [aws_ec2_tag.eks_cluster_security_group]
 }
 
 resource "aws_launch_template" "eks_nodes" {

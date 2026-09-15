@@ -319,7 +319,7 @@ class Lifecycle:
 
     def put_json(self, key: str, value: Any, bucket: str | None = None) -> None:
         target = self.work / (hashlib.sha256(key.encode()).hexdigest() + ".json")
-        target.write_text(json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n", encoding="utf-8")
+        target.write_bytes((json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8"))
         aws(
             "s3api", "put-object", "--bucket", bucket or required("STATE_BUCKET"),
             "--key", key, "--body", str(target), "--content-type", "application/json",
@@ -945,12 +945,13 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         self.load_manifest(allow_expired=True)
         exported = self.private_control_json("/api/v1/demo/internal/export")
         validate_sanitized_export(exported)
-        serialized = json.dumps(exported)
+        # Match the exact canonical bytes written by put_json, including newline.
+        serialized = json.dumps(exported, separators=(",", ":"), sort_keys=True) + "\n"
         key = f"evidence/{self.run_id}/sanitized-export.json"
         self.put_json(key, exported)
         self.put_json(
             f"evidence/{self.run_id}/sanitized-export.checksum.json",
-            {"algorithm": "sha256", "sha256": hashlib.sha256((serialized + "\n").encode()).hexdigest(), "objectKey": key},
+            {"algorithm": "sha256", "sha256": hashlib.sha256(serialized.encode()).hexdigest(), "objectKey": key},
         )
 
     def detach_origin(self) -> None:
@@ -1030,7 +1031,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             return
         aws(
             "codebuild", "update-project", "--name", required("CODEBUILD_PROJECT"),
-            "--vpc-config", json.dumps({"vpcId": "", "subnets": [], "securityGroupIds": []}),
+            "--vpc-config", json.dumps({}),
         )
 
     def delete_workloads(self) -> None:
@@ -1433,6 +1434,24 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             evidence["teardownStarted"] = True
         self.put_json(f"evidence/{self.run_id}/monitor-{int(time.time())}.json", evidence)
 
+    def runtime_repository_inventory(self) -> list[dict[str, Any]]:
+        repositories = []
+        for image in sorted(RUNTIME_ECR_IMAGES):
+            name = f"osc-usrse26-{self.run_id}/{image}"
+            process = run([
+                "aws", "ecr", "describe-repositories", "--repository-names", name,
+                "--region", REGION, "--no-cli-pager", "--output", "json",
+            ], check=False)
+            if process.returncode:
+                if "RepositoryNotFoundException" in (process.stderr or ""):
+                    continue
+                raise RuntimeError(f"Could not verify runtime repository {name}: {(process.stderr or '')[-1000:]}")
+            found = json.loads(process.stdout).get("repositories", [])
+            if len(found) != 1 or found[0].get("repositoryName") != name:
+                raise RuntimeError(f"Unexpected repository lookup result for {name}")
+            repositories.extend(found)
+        return repositories
+
     def sweep(self) -> None:
         manifest = self.load_manifest(allow_expired=True)
         expected_prefix = f"osc-usrse26-{self.run_id}"
@@ -1516,7 +1535,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             ]
             clusters = aws_json("eks", "list-clusters").get("clusters", [])
             brokers = aws_json("mq", "list-brokers").get("BrokerSummaries", [])
-            ecr = aws_json("ecr", "describe-repositories").get("repositories", [])
+            ecr = self.runtime_repository_inventory()
             volumes = aws_json(
                 "ec2", "describe-volumes", "--filters",
                 f"Name=tag:RunId,Values={self.run_id}",
@@ -1576,7 +1595,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             "staticFallbackHealthy": True, "controlPlaneResourcesPreserved": True,
         }
         self.put_json(f"evidence/{self.run_id}/runtime-teardown-proof.json", proof)
-        self.write_status("CLOSED", "The temporary demonstration is closed and its runtime resources have been removed.")
+        self.write_status("READ_ONLY", "The temporary demonstration is closed and its runtime resources have been removed.")
         self.update_lifecycle_record("CLOSED", teardownVerifiedAt=proof["checkedAt"])
 
     @staticmethod

@@ -103,6 +103,34 @@ class TeardownTagIndexTests(unittest.TestCase):
         ))
 
 
+class RuntimeRepositoryInventoryTests(unittest.TestCase):
+    def test_missing_repositories_are_absent_and_queries_stay_in_exact_run(self) -> None:
+        instance = object.__new__(Lifecycle)
+        instance.run_id = "usrse26r1"
+        missing = subprocess.CompletedProcess([], 1, "", "RepositoryNotFoundException")
+        with patch.object(LIFECYCLE_MODULE, "run", return_value=missing) as query:
+            self.assertEqual(instance.runtime_repository_inventory(), [])
+        self.assertEqual(query.call_count, len(LIFECYCLE_MODULE.RUNTIME_ECR_IMAGES))
+        for call in query.call_args_list:
+            args = call.args[0]
+            self.assertTrue(args[args.index("--repository-names") + 1].startswith("osc-usrse26-usrse26r1/"))
+
+    def test_access_denied_cannot_be_interpreted_as_empty_inventory(self) -> None:
+        instance = object.__new__(Lifecycle)
+        instance.run_id = "usrse26r1"
+        denied = subprocess.CompletedProcess([], 1, "", "AccessDeniedException")
+        with patch.object(LIFECYCLE_MODULE, "run", return_value=denied):
+            with self.assertRaisesRegex(RuntimeError, "Could not verify runtime repository"):
+                instance.runtime_repository_inventory()
+
+    def test_existing_repository_is_reported(self) -> None:
+        instance = object.__new__(Lifecycle)
+        instance.run_id = "usrse26r1"
+        found = subprocess.CompletedProcess([], 0, '{"repositories":[{"repositoryName":"osc-usrse26-usrse26r1/chaincode"}]}', "")
+        with patch.object(LIFECYCLE_MODULE, "RUNTIME_ECR_IMAGES", {"chaincode"}), patch.object(LIFECYCLE_MODULE, "run", return_value=found):
+            self.assertEqual(instance.runtime_repository_inventory(), [{"repositoryName": "osc-usrse26-usrse26r1/chaincode"}])
+
+
 class AmazonMqLogCleanupTests(unittest.TestCase):
     def test_deletes_only_log_groups_under_the_exact_broker_prefix(self) -> None:
         instance = object.__new__(Lifecycle)
@@ -130,6 +158,28 @@ class AmazonMqLogCleanupTests(unittest.TestCase):
 
 
 class SanitizedExportAllowlistTests(unittest.TestCase):
+    def test_checksum_matches_exact_bytes_uploaded_by_put_json(self) -> None:
+        import hashlib
+        import json
+
+        with tempfile.TemporaryDirectory() as temp:
+            instance = object.__new__(Lifecycle)
+            instance.work = Path(temp)
+            instance.run_id = "usrse26r1"
+            instance.load_manifest = Mock(return_value={})
+            instance.private_control_json = Mock(return_value=valid_sanitized_export())
+            uploaded = {}
+
+            def capture_upload(*args):
+                uploaded[args[args.index("--key") + 1]] = Path(args[args.index("--body") + 1]).read_bytes()
+
+            with patch.object(LIFECYCLE_MODULE, "aws", side_effect=capture_upload), patch.dict(os.environ, {"STATE_BUCKET": "test-bucket"}):
+                instance.export()
+            export_key = "evidence/usrse26r1/sanitized-export.json"
+            checksum = json.loads(uploaded["evidence/usrse26r1/sanitized-export.checksum.json"])
+            self.assertEqual(checksum["objectKey"], export_key)
+            self.assertEqual(checksum["sha256"], hashlib.sha256(uploaded[export_key]).hexdigest())
+
     def test_accepts_the_exact_aggregate_schema(self) -> None:
         validate_sanitized_export(valid_sanitized_export())
 
@@ -241,6 +291,15 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
         self.assertIn('ResultPath = "$.runtimeDestroyFailure", Next = "Sweep"', machines)
         self.assertIn('ResultPath = "$.sweepFailure", Next = "NotifyIncompleteSweep"', machines)
         self.assertIn('ResultPath = "$.cleanupFailure", Next = "FailedStartDestroyRuntime"', machines)
+        for result_path in (
+            "readOnlyResult",
+            "exportResult",
+            "workloadDestroyResult",
+            "runtimeDestroyResult",
+            "sweepResult",
+        ):
+            with self.subTest(result_path=result_path):
+                self.assertIn(f'ResultPath = "$.{result_path}"', machines)
 
     def test_local_iam_simulation_denies_escape_cases(self) -> None:
         for run_id in ("usrse26r1", "a" * 20):

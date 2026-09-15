@@ -3,7 +3,7 @@ locals {
   artifact_manifest_parts  = split("/", trimprefix(var.artifact_manifest_s3_uri, "s3://"))
   artifact_manifest_bucket = local.artifact_manifest_parts[0]
   artifact_manifest_key    = join("/", slice(local.artifact_manifest_parts, 1, length(local.artifact_manifest_parts)))
-  artifact_manifest_prefix = dirname(local.artifact_manifest_key)
+  artifact_manifest_prefix = replace(dirname(local.artifact_manifest_key), "\\", "/")
 
   required_tags = {
     Project     = "OSC-IS"

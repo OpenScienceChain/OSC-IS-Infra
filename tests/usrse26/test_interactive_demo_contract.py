@@ -85,6 +85,8 @@ class RuntimeTopologyTests(unittest.TestCase):
         patcher = read("platform/scripts/patch_fabric_network.py")
         self.assertIn('for org in ("org0", "org1", "org2")', patcher)
         self.assertIn("launch_chaincode_service ${org} peer2", patcher)
+        self.assertIn("command -v sha256sum", patcher)
+        self.assertIn("command -v shasum", patcher)
 
     def test_fabric_topology_validator_accepts_only_the_required_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -208,8 +210,8 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn("$repositoryPolicyDescription = if ($name -eq 'lifecycle-runner')", publisher)
         self.assertIn("Retain only the five most recent control images", publisher)
         self.assertIn("Retain only the five most recent experiment images", publisher)
-        self.assertIn("([DateTimeOffset]$manifest.expiresAt).ToUniversalTime().ToString('o')", publisher)
-        self.assertIn("([DateTimeOffset]$manifest.createdAt).ToUniversalTime().ToString('o')", publisher)
+        self.assertIn("ToUniversalTime().ToString(\"yyyy-MM-dd'T'HH:mm:ss'Z'\")", publisher)
+        self.assertNotIn("ToUniversalTime().ToString('o')", publisher)
         cleanup = read("platform/aws/cleanup-aws-workloads.ps1")
         self.assertIn("get crd applications.argoproj.io", cleanup)
         self.assertIn("[string]::IsNullOrWhiteSpace([string]$applicationCrd)", cleanup)
@@ -295,11 +297,56 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('dead_letter_config { arn = aws_sqs_queue.scheduler_dlq.arn }', schedules)
         self.assertIn('Subject = "OSC-IS demo backup stop activated"', machines)
         self.assertIn('hardCloseAt    = { S = local.lifecycle_environment.HARD_CLOSE_AT }', machines)
+        reserve_run = machines[
+            machines.index("ReserveRun = {") : machines.index('Next = "ProvisionAndDeploy"')
+        ]
+        self.assertIn("ResultPath = null", reserve_run)
         runner = read("platform/lifecycle/osc_demo_lifecycle.py")
         self.assertIn('expiresAt=manifest["expiresAt"]', runner)
         self.assertIn('StringEquals = "CLOSED"', machines)
         self.assertIn('StopComplete = { Type = "Succeed" }', machines)
         self.assertIn('resource "aws_codebuild_project" "cleanup"', read("terraform/usrse26-control/lifecycle.tf"))
+
+    def test_lifecycle_role_can_write_only_its_codebuild_logs(self) -> None:
+        lifecycle = read("terraform/usrse26-control/lifecycle.tf")
+        self.assertIn('Sid      = "ExactCodeBuildLogs"', lifecycle)
+        self.assertIn('Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]', lifecycle)
+        self.assertIn('Sid      = "ReadOnlyExactRunRoles"', lifecycle)
+        self.assertIn('Action   = ["iam:GetRole", "iam:ListAttachedRolePolicies"]', lifecycle)
+        self.assertIn('Sid      = "CreateTaggedSecurityGroupRules"', lifecycle)
+        self.assertIn('Action   = ["ec2:AuthorizeSecurityGroupIngress"]', lifecycle)
+        self.assertIn(
+            'Resource = "arn:aws:ec2:${var.aws_region}:${var.authorized_account_id}:'
+            'security-group-rule/*"',
+            lifecycle,
+        )
+        self.assertIn('"aws:RequestTag/Project" = "OSC-IS"', lifecycle)
+        self.assertIn('"aws:RequestTag/RunId"   = var.run_id', lifecycle)
+        eks = read("terraform/usrse26-eks/eks.tf")
+        runner_rule = eks[
+            eks.index('resource "aws_vpc_security_group_ingress_rule" "eks_from_lifecycle_runner"') :
+            eks.index('resource "aws_launch_template" "eks_nodes"')
+        ]
+        self.assertIn("depends_on = [aws_ec2_tag.eks_cluster_security_group]", runner_rule)
+        self.assertIn('"codebuild:BatchGetProjects", "codebuild:UpdateProject"', lifecycle)
+        self.assertIn('"ec2:GetManagedPrefixListEntries", "ec2:GetSecurityGroupsForVpc"', lifecycle)
+        self.assertIn('"ec2:CreateRouteTable", "ec2:CreateSecurityGroup", "ec2:CreateSubnet"', lifecycle)
+        self.assertIn('"secretsmanager:GetResourcePolicy", "secretsmanager:GetSecretValue"', lifecycle)
+        self.assertIn('"logs:ListTagsForResource", "logs:PutRetentionPolicy", "logs:TagResource"', lifecycle)
+        self.assertIn(
+            'Action   = ["cloudfront:CreateVpcOrigin", "cloudfront:TagResource"]',
+            lifecycle,
+        )
+        self.assertIn('"s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject"', lifecycle)
+        self.assertIn(
+            'artifact_manifest_prefix = replace(dirname(local.artifact_manifest_key), "\\\\", "/")',
+            read("terraform/usrse26-control/locals.tf"),
+        )
+        self.assertIn(
+            'Resource = "arn:aws:logs:${var.aws_region}:${var.authorized_account_id}:'
+            'log-group:/aws/codebuild/${local.name_prefix}-lifecycle:log-stream:*"',
+            lifecycle,
+        )
 
     def test_monitoring_covers_lifecycle_failures(self) -> None:
         monitoring = read("terraform/usrse26-control/monitoring.tf")
@@ -358,6 +405,9 @@ class LifecycleContractTests(unittest.TestCase):
         self.assertIn('"elasticloadbalancing:targetgroup"', lifecycle_runner)
         self.assertIn("attachment.get(\"DeleteOnTermination\", False)", lifecycle_runner)
         self.assertIn('if not current[0].get("vpcConfig")', lifecycle_runner)
+        self.assertIn('"--vpc-config", json.dumps({})', lifecycle_runner)
+        self.assertNotIn('json.dumps({"vpcId": "", "subnets": [], "securityGroupIds": []})', lifecycle_runner)
+        self.assertIn('"ecr:DeleteLifecyclePolicy"', lifecycle)
         self.assertIn("delete_amazon_mq_log_groups", lifecycle_runner)
         self.assertIn('prefix = f"/aws/amazonmq/broker/{broker_id}/"', lifecycle_runner)
         self.assertNotIn('"ExpiresAt": manifest["expiresAt"]', lifecycle_runner)
@@ -578,9 +628,11 @@ class LifecycleContractTests(unittest.TestCase):
 
     def test_artifact_expiry_is_compared_as_a_utc_instant(self) -> None:
         publisher = read("platform/aws/push-aws-artifacts.ps1")
+        preparation = read("platform/aws/prepare-aws-artifacts.ps1")
         self.assertIn("([DateTimeOffset]$manifest.expiresAt).ToUniversalTime()", publisher)
         self.assertIn("$ExpiresAt.ToUniversalTime().Ticks", publisher)
         self.assertNotIn("Parse($manifest.expiresAt).ToString('o')", publisher)
+        self.assertIn("yyyy-MM-dd'T'HH:mm:ss'Z'", preparation)
 
     def test_ecr_repository_tags_use_a_cross_platform_json_payload(self) -> None:
         publisher = read("platform/aws/push-aws-artifacts.ps1")
@@ -764,6 +816,130 @@ class RenderingAndPolicyTests(unittest.TestCase):
             invalid_plans.append(wrong_expiry)
             destructive = copy.deepcopy(plan)
             destructive["resource_changes"][1]["change"]["actions"] = ["delete", "create"]
+            invalid_plans.append(destructive)
+
+            for invalid in invalid_plans:
+                path.write_text(json.dumps(invalid), encoding="utf-8")
+                rejected = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+
+    def test_runtime_plan_allows_only_exact_resume_reconciliations(self) -> None:
+        tags = {
+            "Project": "OSC-IS", "Purpose": "USRSE26-Interactive-Demo",
+            "Environment": "ephemeral", "ManagedBy": "Terraform", "Owner": "ofgarzon",
+            "RunId": "usrse26r1", "ExpiresAt": "2026-09-15T03:00:00Z",
+        }
+        broker_template = {
+            "Resources": {"Broker": {"Properties": {
+                "PubliclyAccessible": False,
+                "DeploymentMode": "CLUSTER_MULTI_AZ",
+                "EngineType": "RABBITMQ",
+                "HostInstanceType": {"Ref": "HostInstanceType"},
+                "Users": [{"Password": "{{resolve:secretsmanager:exact-run}}"}],
+            }}},
+        }
+        cloudformation_before = {
+            "name": "osc-usrse26-usrse26r1-rabbitmq",
+            "template_body": json.dumps(broker_template),
+            "parameters": {
+                "BrokerName": "osc-usrse26-usrse26r1-rabbitmq",
+                "SecretName": "****",
+            },
+            "outputs": {
+                "AmqpsEndpoint": "amqps://exact-run.mq.us-west-2.on.aws:5671",
+                "BrokerArn": "arn:aws:mq:us-west-2:269624229733:broker:osc-usrse26-usrse26r1-rabbitmq:exact-run",
+            },
+            "tags_all": tags,
+            "timeout_in_minutes": 30,
+        }
+        cloudformation_after = copy.deepcopy(cloudformation_before)
+        cloudformation_after["parameters"]["SecretName"] = "osc-usrse26-usrse26r1/rabbitmq"
+        cloudformation_after["outputs"] = None
+        eks_before = {
+            "name": "osc-usrse26-usrse26r1",
+            "tags_all": tags,
+            "vpc_config": [{
+                "cluster_security_group_id": "sg-cluster",
+                "endpoint_private_access": True,
+                "endpoint_public_access": True,
+                "public_access_cidrs": ["174.65.14.170/32", "52.43.76.95/32"],
+                "security_group_ids": [],
+                "subnet_ids": ["subnet-a", "subnet-b", "subnet-c"],
+                "vpc_id": "vpc-exact",
+            }],
+        }
+        eks_after = copy.deepcopy(eks_before)
+        eks_after["vpc_config"][0]["public_access_cidrs"] = [
+            "174.65.14.170/32", "52.43.76.92/32",
+        ]
+        plan = {
+            "resource_changes": [
+                {
+                    "address": "terraform_data.anchor",
+                    "type": "terraform_data",
+                    "change": {"actions": ["create"], "after": {}},
+                },
+                {
+                    "address": "aws_cloudformation_stack.rabbitmq",
+                    "type": "aws_cloudformation_stack",
+                    "change": {
+                        "actions": ["update"],
+                        "before": cloudformation_before,
+                        "after": cloudformation_after,
+                        "after_unknown": {
+                            "outputs": True, "parameters": {}, "tags": {}, "tags_all": {},
+                        },
+                    },
+                },
+                {
+                    "address": "aws_eks_cluster.experiment",
+                    "type": "aws_eks_cluster",
+                    "change": {
+                        "actions": ["update"],
+                        "before": eks_before,
+                        "after": eks_after,
+                        "after_unknown": {},
+                    },
+                },
+            ],
+            "planned_values": {"outputs": {
+                "account_id": {"value": "269624229733"},
+            }},
+            "variables": {
+                "run_id": {"value": "usrse26r1"},
+                "admin_cidr": {"value": "174.65.14.170/32"},
+                "runner_public_cidr": {"value": "52.43.76.92/32"},
+                "rabbitmq_instance_type": {"value": "mq.m7g.medium"},
+            },
+            "configuration": {"root_module": {"resources": [{
+                "address": "aws_cloudformation_stack.rabbitmq",
+                "expressions": {"parameters": {
+                    "references": ["var.rabbitmq_instance_type"],
+                }},
+            }]}},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "runtime-plan.json"
+            command = [sys.executable, str(ROOT / "platform/aws/check_terraform_plan.py"), str(path)]
+            path.write_text(json.dumps(plan), encoding="utf-8")
+            accepted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+            invalid_plans = []
+            broader_stack_update = copy.deepcopy(plan)
+            broader_stack_update["resource_changes"][1]["change"]["after"]["timeout_in_minutes"] = 60
+            invalid_plans.append(broader_stack_update)
+            broader_parameter_update = copy.deepcopy(plan)
+            broader_parameter_update["resource_changes"][1]["change"]["after"]["parameters"]["BrokerName"] = "other"
+            invalid_plans.append(broader_parameter_update)
+            broader_eks_update = copy.deepcopy(plan)
+            broader_eks_update["resource_changes"][2]["change"]["after"]["vpc_config"][0]["subnet_ids"] = ["subnet-other"]
+            invalid_plans.append(broader_eks_update)
+            wrong_runner = copy.deepcopy(plan)
+            wrong_runner["resource_changes"][2]["change"]["after"]["vpc_config"][0]["public_access_cidrs"][1] = "52.43.76.91/32"
+            invalid_plans.append(wrong_runner)
+            destructive = copy.deepcopy(plan)
+            destructive["resource_changes"][2]["change"]["actions"] = ["delete", "create"]
             invalid_plans.append(destructive)
 
             for invalid in invalid_plans:

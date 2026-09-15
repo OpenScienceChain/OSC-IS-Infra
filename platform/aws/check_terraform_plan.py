@@ -46,6 +46,14 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
         errors.append(message)
 
 
+def changed_fields(before: dict[str, Any], planned: dict[str, Any]) -> set[str]:
+    return {
+        key
+        for key in set(before) | set(planned)
+        if before.get(key) != planned.get(key)
+    }
+
+
 def check_ecr_import_reconciliation(
     resource: dict[str, Any], plan: dict[str, Any], errors: list[str]
 ) -> None:
@@ -64,17 +72,13 @@ def check_ecr_import_reconciliation(
     match = re.fullmatch(r'aws_ecr_repository\.experiment\["([a-z-]+)"\]', address)
     repository = match.group(1) if match else None
     expected_name = f"osc-usrse26-{run_id}/{repository}" if repository else None
-    changed_fields = {
-        key
-        for key in set(before) | set(planned)
-        if before.get(key) != planned.get(key)
-    }
+    changed = changed_fields(before, planned)
 
     require(repository in RUNTIME_ECR_REPOSITORIES, f"{address} is not an approved runtime repository", errors)
     require(planned.get("name") == expected_name, f"{address} has an unexpected repository name", errors)
     require(
-        changed_fields == {"force_delete", "tags", "tags_all"},
-        f"{address} changes fields outside the approved import reconciliation: {sorted(changed_fields)}",
+        changed == {"force_delete", "tags", "tags_all"},
+        f"{address} changes fields outside the approved import reconciliation: {sorted(changed)}",
         errors,
     )
     require(before.get("force_delete") is None, f"{address} was not imported from an unmanaged repository", errors)
@@ -82,6 +86,90 @@ def check_ecr_import_reconciliation(
     require(planned.get("tags") == {}, f"{address} has unexpected explicit tags", errors)
     require(planned.get("tags_all") == expected_tags, f"{address} tags do not match the reviewed run", errors)
     require(change.get("after_unknown", {}) == {}, f"{address} has unknown post-apply values", errors)
+
+
+def check_cloudformation_secret_reconciliation(
+    resource: dict[str, Any], plan: dict[str, Any], errors: list[str]
+) -> None:
+    """Allow only CloudFormation's masked NoEcho parameter to be restated on resume."""
+    address = resource.get("address", "unknown")
+    change = resource.get("change", {})
+    before = change.get("before") or {}
+    planned = after(change)
+    run_id = plan.get("variables", {}).get("run_id", {}).get("value")
+    expected_secret_name = f"osc-usrse26-{run_id}/rabbitmq"
+    before_parameters = before.get("parameters") or {}
+    planned_parameters = planned.get("parameters") or {}
+    parameter_changes = changed_fields(before_parameters, planned_parameters)
+    expected_outputs = before.get("outputs") or {}
+
+    require(address == "aws_cloudformation_stack.rabbitmq", f"{address} is not the reviewed RabbitMQ stack", errors)
+    require(
+        changed_fields(before, planned) == {"outputs", "parameters"},
+        f"{address} changes fields outside the approved NoEcho reconciliation: "
+        f"{sorted(changed_fields(before, planned))}",
+        errors,
+    )
+    require(parameter_changes == {"SecretName"}, f"{address} changes unexpected parameters: {sorted(parameter_changes)}", errors)
+    require(before_parameters.get("SecretName") == "****", f"{address} does not contain the expected masked NoEcho value", errors)
+    require(planned_parameters.get("SecretName") == expected_secret_name, f"{address} targets an unexpected secret", errors)
+    require(planned.get("outputs") is None, f"{address} has unexpected known post-update outputs", errors)
+    require(
+        set(expected_outputs) == {"AmqpsEndpoint", "BrokerArn"},
+        f"{address} has unexpected existing outputs",
+        errors,
+    )
+    require(
+        change.get("after_unknown", {})
+        == {"outputs": True, "parameters": {}, "tags": {}, "tags_all": {}},
+        f"{address} has unexpected unknown post-update values",
+        errors,
+    )
+
+
+def check_eks_runner_cidr_reconciliation(
+    resource: dict[str, Any], plan: dict[str, Any], errors: list[str]
+) -> None:
+    """Allow only replacement of the prior ephemeral runner /32 on resume."""
+    address = resource.get("address", "unknown")
+    change = resource.get("change", {})
+    before = change.get("before") or {}
+    planned = after(change)
+    variables = plan.get("variables", {})
+    admin_cidr = variables.get("admin_cidr", {}).get("value")
+    runner_cidr = variables.get("runner_public_cidr", {}).get("value")
+    before_vpc = before.get("vpc_config") or []
+    planned_vpc = planned.get("vpc_config") or []
+
+    require(address == "aws_eks_cluster.experiment", f"{address} is not the reviewed EKS cluster", errors)
+    require(
+        changed_fields(before, planned) == {"vpc_config"},
+        f"{address} changes fields outside the approved runner CIDR reconciliation: "
+        f"{sorted(changed_fields(before, planned))}",
+        errors,
+    )
+    require(len(before_vpc) == 1 and len(planned_vpc) == 1, f"{address} has an unexpected VPC configuration shape", errors)
+    if len(before_vpc) != 1 or len(planned_vpc) != 1:
+        return
+    before_config = dict(before_vpc[0])
+    planned_config = dict(planned_vpc[0])
+    before_cidrs = before_config.pop("public_access_cidrs", [])
+    planned_cidrs = planned_config.pop("public_access_cidrs", [])
+    require(before_config == planned_config, f"{address} changes VPC fields other than public_access_cidrs", errors)
+    require(
+        planned_cidrs == list(dict.fromkeys([admin_cidr, runner_cidr])),
+        f"{address} does not use the reviewed administrator and current runner CIDRs",
+        errors,
+    )
+    require(
+        len(before_cidrs) == 2
+        and before_cidrs[0] == admin_cidr
+        and before_cidrs[1] != runner_cidr
+        and re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}/32", before_cidrs[1] or "") is not None,
+        f"{address} does not replace exactly one prior runner /32",
+        errors,
+    )
+    require(change.get("after_unknown", {}) == {}, f"{address} has unknown post-update values", errors)
 
 
 def main() -> None:
@@ -92,6 +180,8 @@ def main() -> None:
     errors: list[str] = []
     creates = 0
     ecr_import_reconciliations = 0
+    cloudformation_secret_reconciliations = 0
+    eks_runner_cidr_reconciliations = 0
     configuration_resources = {
         resource.get("address"): resource
         for resource in plan.get("configuration", {}).get("root_module", {}).get("resources", [])
@@ -104,11 +194,28 @@ def main() -> None:
         if actions == ["create"]:
             creates += 1
         is_ecr_import_reconciliation = resource_type == "aws_ecr_repository" and actions == ["update"]
+        is_cloudformation_secret_reconciliation = (
+            resource_type == "aws_cloudformation_stack" and actions == ["update"]
+        )
+        is_eks_runner_cidr_reconciliation = (
+            resource_type == "aws_eks_cluster" and actions == ["update"]
+        )
         if is_ecr_import_reconciliation:
             ecr_import_reconciliations += 1
             check_ecr_import_reconciliation(resource, plan, errors)
+        if is_cloudformation_secret_reconciliation:
+            cloudformation_secret_reconciliations += 1
+            check_cloudformation_secret_reconciliation(resource, plan, errors)
+        if is_eks_runner_cidr_reconciliation:
+            eks_runner_cidr_reconciliations += 1
+            check_eks_runner_cidr_reconciliation(resource, plan, errors)
+        is_approved_reconciliation = (
+            is_ecr_import_reconciliation
+            or is_cloudformation_secret_reconciliation
+            or is_eks_runner_cidr_reconciliation
+        )
         require(
-            actions in (["create"], ["read"], ["no-op"]) or is_ecr_import_reconciliation,
+            actions in (["create"], ["read"], ["no-op"]) or is_approved_reconciliation,
             f"{address} has forbidden actions: {actions}",
             errors,
         )
@@ -195,7 +302,9 @@ def main() -> None:
 
     print(
         "Terraform plan policy check passed: "
-        f"{creates} creates, {ecr_import_reconciliations} exact ECR import reconciliations, zero deletes."
+        f"{creates} creates, {ecr_import_reconciliations} exact ECR import reconciliations, "
+        f"{cloudformation_secret_reconciliations} exact CloudFormation NoEcho reconciliations, "
+        f"{eks_runner_cidr_reconciliations} exact EKS runner CIDR reconciliations, zero deletes."
     )
 
 

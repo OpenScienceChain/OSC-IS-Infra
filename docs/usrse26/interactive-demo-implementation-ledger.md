@@ -49,3 +49,71 @@ No AWS resource or protected branch was changed while producing this ledger.
 
 See `interactive-demo-local-verification.md` for the exact checks performed and
 the product-interface blocker that prevents an honest end-to-end claim today.
+
+## Live `usrse26r1` recovery findings (2026-09-14)
+
+The first live AWS run demonstrated several deployment-contract gaps that the
+next showtime rehearsal must close before claiming a repeatable START:
+
+- the EKS-managed security group needs a narrowly bounded bootstrap-tag path;
+- EKS `RunInstances` authorization is evaluated independently for the instance,
+  launch template, AMI, subnet, security group, and volume resources;
+- the correct inventory action is `tag:GetResources`;
+- the lifecycle runner must apply `platform/gitops/aws/storage-class.yaml`
+  before Fabric PVCs request `gp3-osc`;
+- moving CodeBuild into the runtime VPC also requires the documented ENI
+  create/use/permission/delete actions, including CodeBuild's wildcard-resource
+  delete preflight while real subnet and service constraints remain enforced;
+- the fresh-create Terraform plan policy correctly rejects a no-create retry,
+  so a bounded phase-resume path is required after a partial successful apply;
+- Fabric certificate data and peer/orderer rollouts require explicit readiness
+  and timeout handling; retry must preserve an existing channel and resume at
+  the first incomplete chaincode operation.
+- recovery helpers must use fail-fast command boundaries so a trailing success
+  marker cannot mask an earlier failed lifecycle phase;
+- an ephemeral Fabric recovery runner must re-enroll the already-registered
+  organization admins before rebuilding organization wallet documents;
+- the lifecycle image's Python compatibility floor requires deterministic byte
+  writes instead of `Path.write_text(..., newline=...)`;
+- recovery-created immutable Kubernetes objects must use byte-for-byte frozen
+  values (including the artifact's serialized `ExpiresAt` timestamp) before
+  Argo CD can report `Synced`;
+- `cloudfront:CreateVpcOrigin` with tags also evaluates the dependent
+  `cloudfront:TagResource` action, which must remain bounded by the exact run
+  request tag in both the lifecycle identity policy and permissions boundary.
+- generated Fabric package-ID calculation must prefer the GNU/Linux
+  `sha256sum` utility and use `shasum -a 256` only as a portable fallback;
+- a recovery build must independently verify the presence of all four CCAAS
+  Deployments/Services and committed discovery metadata before calling the
+  official CANARY action.
+
+The live recovery used only frozen artifact revisions and the existing exact
+run resources. It did not build new application sources, create a replacement
+runtime, push, or merge. The detailed event and IAM sequence is maintained in
+`platform-evidence/20260911-usrse26r1/aws/LIVE-RESUME-STATUS-20260914.md`.
+
+## Live teardown verified (2026-09-15)
+
+The runtime is `DESTROYED_AND_VERIFIED` at `2026-09-15T15:47:03Z`, with zero
+active residual resources and healthy static `READ_ONLY`. The final evidence
+summary is `platform-evidence/20260911-usrse26r1/aws/RUNTIME-TEARDOWN-VERIFICATION-20260915.json`.
+Scheduled STOP did not complete unattended; bounded operator recovery was
+required. The frozen runner image was not rebuilt and these source changes
+are not a new release claim.
+
+Implemented/tested corrections: preserve the run input across the five STOP
+CodeBuild results; reset CodeBuild VPC placement with `{}`; permit
+`ecr:DeleteLifecyclePolicy` only on exact-run repositories in identity and
+boundary; inventory the eight repositories by explicit name, treating only
+not-found as absence; retain public `READ_ONLY` after marking lifecycle
+`CLOSED`; and hash the exact canonical UTF-8 export bytes, with an explicit LF
+write on every host. Final suite: 60 passed, one skipped, 24 subtests passed.
+
+Remaining release blockers discovered but not generalized during teardown:
+notification-success paths also need explicit result handling to preserve
+input; individual `aws_ec2_tag` destruction must not remove the authorization
+tags before dependent removals; MQ-managed ENI cleanup needs a reviewed exact
+service-authority design; and controller-owned security-group cleanup must
+be deterministic. NAT/EIP eventual consistency also required one fresh
+Terraform retry. Close these under a reviewed fault-injection rehearsal,
+without broadening runtime permissions or silently replacing frozen images.
