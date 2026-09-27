@@ -2,7 +2,8 @@
 param(
   [string]$RunId = ('local-real-ledger-' + (Get-Date -Format 'yyyyMMddHHmmss')),
   [ValidateRange(1, 24)]
-  [int]$Hours = 4
+  [int]$Hours = 4,
+  [datetime]$OpensAt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,11 +14,19 @@ if (-not $env:LOCAL_CONTROL_KEY -or $env:LOCAL_CONTROL_KEY.Length -lt 24) {
   throw 'Set a disposable LOCAL_CONTROL_KEY of at least 24 characters in this process'
 }
 $now = (Get-Date).ToUniversalTime()
+$current = Invoke-RestMethod -Uri 'http://localhost:13388/api/v1/demo/status' -TimeoutSec 10
+if (-not $PSBoundParameters.ContainsKey('OpensAt')) {
+  $OpensAt = if ($current.runId -eq $RunId -and $current.state -eq 'OPEN') {
+    [datetime]$current.opensAt
+  } else {
+    $now.AddMinutes(-1)
+  }
+}
 $payload = @{
   state = 'OPEN'
   runId = $RunId
   reason = 'isolated local real-ledger verification'
-  opensAt = $now.AddMinutes(-1).ToString('o')
+  opensAt = $OpensAt.ToUniversalTime().ToString('o')
   closesAt = $now.AddHours($Hours).ToString('o')
 } | ConvertTo-Json -Compress
 

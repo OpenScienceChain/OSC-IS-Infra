@@ -2,6 +2,11 @@
 param(
   [string]$OscIsRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
   [string]$GeneratedNetwork = (Join-Path $PSScriptRoot '.generated\test-network'),
+  [string]$WebAppDir = (Join-Path $PSScriptRoot '..\..\..\.codex-tmp\OSC-WebApp-real-ledger-e2e-20260926'),
+  [string]$WSLDistro = 'Ubuntu-24.04',
+  [string]$LinuxGoExecutable = '/usr/local/go/bin/go',
+  [hashtable]$ExpectedRevisions = @{},
+  [switch]$VerifySources,
   [switch]$RequireReady
 )
 
@@ -27,13 +32,42 @@ $repos = @{
   Chaincode = Join-Path $root '.codex-interactive-demo-worktrees\OSC-Chaincode'
   Submission = Join-Path $root '.codex-interactive-demo-worktrees\OSC-Artifact-Submission'
   Gateway = Join-Path $root '.codex-tmp\gateway-guest-reads'
+  WebApp = [IO.Path]::GetFullPath($WebAppDir)
+  E2ERunner = Join-Path $root '.codex-tmp\OSC-WebApp-live-e2e-prep-20260923'
+}
+if ($RequireReady -or $VerifySources) {
+  foreach ($name in $repos.Keys) {
+    if ([string]$ExpectedRevisions[$name] -notmatch '^[a-f0-9]{40}$') {
+      $failures.Add("Missing exact 40-character expected revision for $name")
+    }
+  }
 }
 foreach ($entry in $repos.GetEnumerator()) {
   if (Test-Path -LiteralPath $entry.Value) {
     $revision = & git -C $entry.Value rev-parse HEAD 2>$null
     if ($LASTEXITCODE -ne 0) { $failures.Add("Cannot read $($entry.Key) revision") }
-    else { Write-Output "$($entry.Key): $revision" }
+    else {
+      Write-Output "$($entry.Key): $revision"
+      if (($RequireReady -or $VerifySources) -and
+          $revision -ne [string]$ExpectedRevisions[$entry.Key]) {
+        $failures.Add("$($entry.Key) revision differs from pinned source")
+      }
+    }
+    if ($RequireReady -or $VerifySources) {
+      $changes = @(& git -C $entry.Value status --porcelain=v1 --untracked-files=all 2>$null)
+      if ($LASTEXITCODE -ne 0) { $failures.Add("Cannot inspect $($entry.Key) worktree") }
+      elseif ($changes.Count -gt 0) {
+        $failures.Add("$($entry.Key) worktree is not clean: $($changes[0])")
+      }
+    }
+  } elseif ($RequireReady -or $VerifySources) {
+    $failures.Add("Missing $($entry.Key) checkout: $($entry.Value)")
   }
+}
+
+$e2eSpec = Join-Path $repos.E2ERunner 'cypress\e2e\demo\local-real-ledger.cy.ts'
+if ($VerifySources -and -not (Test-Path -LiteralPath $e2eSpec)) {
+  $failures.Add('Pinned E2E runner lacks the real-ledger Cypress spec')
 }
 
 if ((Test-Path -LiteralPath $chaincode) -and
@@ -72,6 +106,17 @@ if ($RequireReady -and (Get-Command docker -ErrorAction SilentlyContinue)) {
   foreach ($relative in @('bin\peer', 'bin\cryptogen', 'bin\configtxgen', 'config\core.yaml')) {
     if (-not (Test-Path -LiteralPath (Join-Path $generatedParent $relative))) {
       $failures.Add("Missing version-pinned Fabric tool/config: $relative")
+    }
+  }
+  $goMod = Join-Path $root '.codex-interactive-demo-worktrees\OSC-Chaincode\chaincode-go\go.mod'
+  $requiredGo = [regex]::Match((Get-Content -LiteralPath $goMod -Raw), '(?m)^go\s+(\d+\.\d+\.\d+)').Groups[1].Value
+  if (-not $requiredGo) { $failures.Add('Cannot read exact Go version from chaincode go.mod') }
+  elseif (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+    $failures.Add('WSL is required for the generated Linux Fabric network')
+  } else {
+    $goVersion = [string](& wsl -d $WSLDistro -- env GOTOOLCHAIN=local $LinuxGoExecutable version 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $goVersion -notmatch [regex]::Escape("go$requiredGo")) {
+      $failures.Add("Linux Go toolchain must be exactly $requiredGo without auto-download (found: $goVersion)")
     }
   }
   & docker info --format '{{.ServerVersion}}' *> $null

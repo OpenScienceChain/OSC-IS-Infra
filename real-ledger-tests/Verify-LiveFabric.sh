@@ -12,7 +12,7 @@ if [[ ! -f "$network_dir/scripts/envVar.sh" || ! -f "$network_dir/configtx/confi
   exit 1
 fi
 export TEST_NETWORK_HOME="$network_dir"
-export FABRIC_CFG_PATH="$network_dir/configtx"
+export FABRIC_CFG_PATH="$network_dir/../config"
 export PATH="$network_dir/../bin:$PATH"
 export VERBOSE=false
 export OVERRIDE_ORG=
@@ -30,7 +30,7 @@ for org in 1 2; do
   setGlobals "$org"
   peer channel getinfo -c osc-channel >/dev/null
   committed=$(peer lifecycle chaincode querycommitted --channelID osc-channel --name osc-provenance --output json)
-  if ! printf '%s' "$committed" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("name")=="osc-provenance" and int(d.get("sequence",0))>=1'; then
+  if ! printf '%s' "$committed" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("version")=="1.0" and int(d.get("sequence",0))>=1 and d.get("approvals",{}).get("NSGMSP") is True and d.get("approvals",{}).get("CitizenScienceMSP") is True'; then
     echo "osc-provenance is not committed on organization $org" >&2
     exit 1
   fi

@@ -2,6 +2,7 @@
 param(
   [switch]$ConfirmLocalFaults,
   [switch]$IncludeFabricPeer,
+  [string]$EnvFile = (Join-Path $PSScriptRoot '.generated\local-staged.env'),
   [string]$EvidenceDirectory = (Join-Path $PSScriptRoot '.generated\fault-evidence')
 )
 
@@ -12,7 +13,11 @@ if (-not $ConfirmLocalFaults) {
 
 $composeFile = Join-Path $PSScriptRoot 'compose.yaml'
 $project = 'osc-is-real-ledger-e2e'
-$composeArgs = @('compose', '-p', $project, '-f', $composeFile)
+$envPath = [System.IO.Path]::GetFullPath($EnvFile)
+if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
+  throw "Missing ignored local Compose environment: $envPath"
+}
+$composeArgs = @('compose', '--env-file', $envPath, '-p', $project, '-f', $composeFile)
 $evidence = [System.IO.Path]::GetFullPath($EvidenceDirectory)
 $generated = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '.generated'))
 if (-not $evidence.StartsWith($generated + [System.IO.Path]::DirectorySeparatorChar,

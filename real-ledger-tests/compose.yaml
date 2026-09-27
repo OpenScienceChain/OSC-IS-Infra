@@ -125,6 +125,7 @@ services:
       RABBITMQ_PORT: '5672'
       RABBITMQ_USER: osc_local
       RABBITMQ_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+      RABBITMQ_ALLOW_INSECURE_LOCAL: 'true'
       NSG_ORGANIZATION_ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
       CITIZEN_SCIENCE_ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       GHW_NSG_URL: http://history-nsg:8002
@@ -184,13 +185,11 @@ services:
       context: ${WEBAPP_DIR:?Set WEBAPP_DIR to the frozen WebApp checkout}
     environment:
       API_UPSTREAM: http://gateway:3000
-      WEBAPP_API_BASE_URL: /api/v1
-      DEMO_MODE: 'true'
-    ports: ['127.0.0.1:18088:8080']
+    ports: ['127.0.0.1:18088:80']
     depends_on:
       gateway: {condition: service_healthy}
     healthcheck:
-      test: [CMD, wget, -qO-, 'http://127.0.0.1:8080/healthz']
+      test: [CMD, wget, -qO-, 'http://127.0.0.1/healthz']
       interval: 5s
       timeout: 3s
       retries: 20

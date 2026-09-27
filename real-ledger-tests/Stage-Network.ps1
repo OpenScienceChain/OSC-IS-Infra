@@ -70,6 +70,7 @@ foreach ($trackedPath in $tracked) {
   if ([System.IO.Path]::GetExtension($target) -in $textExtensions) {
     $contents = [System.IO.File]::ReadAllText($target)
     foreach ($old in $replacements.Keys) { $contents = $contents.Replace($old, $replacements[$old]) }
+    $contents = $contents.Replace("`r`n", "`n")
     [System.IO.File]::WriteAllText($target, $contents, [System.Text.UTF8Encoding]::new($false))
   }
   $copied++
