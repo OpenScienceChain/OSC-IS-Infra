@@ -99,7 +99,8 @@ intended result. The operator should not override this gate with simulation.
    createChannel -c osc-channel` and then `bash ./network.sh deployCC -c
    osc-channel -ccn osc-provenance -ccp <absolute-frozen-chaincode-go-dir>
    -ccl go`. Check the live channel MSPs and committed chaincode definition on
-   both peers before proceeding. Do not use `network.sh down` for teardown.
+   both peers with `bash Verify-LiveFabric.sh <generated-test-network>` before
+   proceeding. Do not use `network.sh down` for teardown.
 5. Set the required variables named in `compose.yaml` to exact frozen checkout
    paths, reviewed Postgres/RabbitMQ image digests, generated Fabric client
    cert/key and peer TLS CA files, and disposable local-only secrets. Use
