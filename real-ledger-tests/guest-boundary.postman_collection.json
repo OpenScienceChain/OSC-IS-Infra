@@ -1,0 +1,65 @@
+{
+  "info": {
+    "name": "OSC-IS local real-ledger guest boundary",
+    "description": "Read-only and denial smoke. The paired Cypress local-real-ledger spec proves two-organization writes and Fabric history. Never target AWS or production with this collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:18088" },
+    { "key": "origin", "value": "http://localhost:18088" }
+  ],
+  "item": [
+    {
+      "name": "Gateway health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/health" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Gateway is healthy', () => pm.response.to.have.status(200));"
+      ] } }]
+    },
+    {
+      "name": "Guest runtime is open",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/demo/status" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Explicit local run is OPEN', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().state).to.eql('OPEN'); });"
+      ] } }]
+    },
+    {
+      "name": "NSG public catalog",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/demo/artifacts?organization=neuroscience-gateway" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('NSG catalog is public', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });"
+      ] } }]
+    },
+    {
+      "name": "Citizen Science public catalog",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/demo/artifacts?organization=citizen-science" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Citizen Science catalog is public', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });"
+      ] } }]
+    },
+    {
+      "name": "Wrong-origin session denied",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Origin", "value": "http://untrusted.invalid" }, { "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"organization\":\"neuroscience-gateway\"}" },
+        "url": "{{baseUrl}}/api/v1/demo/session"
+      },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Wrong origin cannot obtain a guest session', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+      ] } }]
+    },
+    {
+      "name": "Unauthenticated create denied",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Origin", "value": "{{origin}}" }, { "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": "{{baseUrl}}/api/v1/demo/artifacts"
+      },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('No cookie cannot create an artifact', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+      ] } }]
+    }
+  ]
+}
