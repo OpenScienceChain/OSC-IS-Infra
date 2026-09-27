@@ -30,6 +30,14 @@ directory and pins Fabric images from `platform/versions.env`;
 verified. Fabric binaries/config must be supplied from a reviewed,
 version-pinned tool cache via `-ToolsRoot`; staging does not download them.
 
+On this workstation, the verified `ToolsRoot` is
+`C:\Users\ofgar\Projects\GithubProjects\OSC-IS\.codex-interactive-demo-worktrees\OSC-IS-Infra\.osc-tools\fabric-2.5.16-1.5.22`.
+Its Fabric 2.5.16 and CA 1.5.22 archives match the SHA-256 values in
+`platform/versions.env`; extracted `peer`, `cryptogen`, `configtxgen`,
+`fabric-ca-client`, `core.yaml`, and `configtx.yaml` matched archive members
+byte-for-byte on 2026-09-26. This path belongs to another local Infra worktree:
+read/copy it, but do not mutate that worktree. Reverify if the cache changes.
+
 ## Test matrix
 
 | ID | Journey / interruption | Oracle |
