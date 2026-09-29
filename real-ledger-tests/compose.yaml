@@ -130,6 +130,7 @@ services:
       CITIZEN_SCIENCE_ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       GHW_NSG_URL: http://history-nsg:8002
       GHW_CITIZEN_SCIENCE_URL: http://history-citizen-science:8002
+      CORS_ORIGINS: http://127.0.0.1:18091,http://localhost:18091
       DEMO_ALLOWED_ORIGIN: http://localhost:18088
       DEMO_JWT_SECRET: ${LOCAL_DEMO_JWT_SECRET:?Set disposable demo JWT secret}
       DEMO_ANALYTICS_HMAC_SECRET: ${LOCAL_ANALYTICS_SECRET:?Set disposable analytics HMAC secret}
