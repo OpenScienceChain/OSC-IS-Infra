@@ -1,5 +1,10 @@
 # Local real-ledger portal verification
 
+The in-progress three-organization Magnetic Arch showcase is described in
+`MAGNETIC-ARCH-SHOWCASE.md`. The two-organization revision pins and commands
+below document the previous run and must not be treated as a validated
+three-organization bring-up.
+
 This harness is for the restored guest portal. It is not the `ui-tests` HTTP
 simulator or the `system-tests` mock ledger. The target topology is one WebApp,
 Gateway, PostgreSQL, RabbitMQ, worker/listener, two history workers, two Fabric

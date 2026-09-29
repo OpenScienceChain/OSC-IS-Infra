@@ -50,6 +50,7 @@ New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
 $replacements = @{
   'Org1MSP' = 'NSGMSP'
   'Org2MSP' = 'CitizenScienceMSP'
+  'Org3MSP' = 'MagneticArchMSP'
   'hyperledger/fabric-peer:latest' = $versions.FABRIC_PEER_IMAGE
   'hyperledger/fabric-orderer:latest' = $versions.FABRIC_ORDERER_IMAGE
   'hyperledger/fabric-ca:latest' = $versions.FABRIC_CA_IMAGE
