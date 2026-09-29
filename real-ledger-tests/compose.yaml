@@ -28,6 +28,11 @@ x-history-common: &history-common
   depends_on:
     bridge-nsg: {condition: service_healthy}
     bridge-citizen-science: {condition: service_healthy}
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health',timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
 
 services:
   postgres:
@@ -48,6 +53,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: osc_local
       RABBITMQ_DEFAULT_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
     healthcheck:
       test: [CMD, rabbitmq-diagnostics, -q, ping]
       interval: 5s
@@ -138,6 +144,9 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}
+      submission-worker: {condition: service_healthy}
+      history-nsg: {condition: service_healthy}
+      history-citizen-science: {condition: service_healthy}
     ports: ['127.0.0.1:13388:3000']
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -164,6 +173,12 @@ services:
       rabbitmq: {condition: service_healthy}
       bridge-nsg: {condition: service_healthy}
       bridge-citizen-science: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import os,pika,sys; c=pika.BlockingConnection(pika.ConnectionParameters(host=os.environ['RABBITMQ_HOST'],credentials=pika.PlainCredentials(os.environ['RABBITMQ_USER'],os.environ['RABBITMQ_PASS']))); ch=c.channel(); ok=all(ch.queue_declare(queue=q,passive=True).method.consumer_count>0 for q in ('artifact.submit.queue','artifact.update.queue','workflow.submit.queue','workflow.update.queue')); c.close(); sys.exit(0 if ok else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   submission-listener:
     build:
@@ -180,6 +195,12 @@ services:
     depends_on:
       rabbitmq: {condition: service_healthy}
       gateway: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import os,pika,sys; c=pika.BlockingConnection(pika.ConnectionParameters(host=os.environ['RABBITMQ_HOST'],credentials=pika.PlainCredentials(os.environ['RABBITMQ_USER'],os.environ['RABBITMQ_PASS']))); ch=c.channel(); ok=all(ch.queue_declare(queue=q,passive=True).method.consumer_count>0 for q in ('artifact.submitted.queue','artifact.updated.queue','workflow.submitted.queue','workflow.updated.queue')); c.close(); sys.exit(0 if ok else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   webapp:
     build:
@@ -189,6 +210,7 @@ services:
     ports: ['127.0.0.1:18088:80']
     depends_on:
       gateway: {condition: service_healthy}
+      submission-listener: {condition: service_healthy}
     healthcheck:
       test: [CMD, wget, -qO-, 'http://127.0.0.1/healthz']
       interval: 5s
@@ -197,6 +219,7 @@ services:
 
 volumes:
   postgres-data:
+  rabbitmq-data:
 
 networks:
   fabric:
