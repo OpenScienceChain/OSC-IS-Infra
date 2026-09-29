@@ -48,7 +48,11 @@ application are not.
    issued its client identity. Run `docker compose --env-file
    .generated/local.env config --quiet`, then build/start exactly this
    Compose project. The app is intended at `http://localhost:18088/` and the
-   Gateway at `http://127.0.0.1:13388/api/v1/`.
+   Gateway at `http://127.0.0.1:13388/api/v1/`. After PostgreSQL and the
+   Gateway are healthy, run `./Initialize-LocalOrganizations.ps1
+   -ProjectName osc-is-magnetic-showcase` from this directory. A fresh local
+   database otherwise contains only the Magnetic Arch organization; account
+   registration for Neuroscience Gateway and Citizen Science returns 503.
 6. Run `node Seed-MagneticArch.mjs`. It creates a dedicated third-org curator
    through the local bootstrap admin, submits each artifact through the
    normal authenticated Gateway/outbox/worker path, waits for a confirmed
