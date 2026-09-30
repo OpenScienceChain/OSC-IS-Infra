@@ -34,6 +34,8 @@ async function main() {
     await page.waitForURL(url => !url.pathname.startsWith('/login'), { timeout: 30000 });
     await page.goto('https://127.0.0.1:18980/applications/osc-is-aws', { waitUntil: 'domcontentloaded' });
     await page.getByText('osc-is-aws', { exact: true }).first().waitFor({ timeout: 30000 });
+    await page.mouse.move(1200, 115);
+    await page.waitForTimeout(1500);
     await page.screenshot({ path: outputPath, fullPage: true });
     const labels = await page.locator('body').innerText();
     const metadata = {
