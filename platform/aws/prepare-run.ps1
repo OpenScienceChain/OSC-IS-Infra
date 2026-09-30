@@ -72,7 +72,7 @@ try {
 
     Push-Location $terraformRoot
     try {
-        terraform init -backend=false -input=false
+        terraform init -reconfigure -backend=false -input=false
         terraform validate
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
         $planArgs = @(
