@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "runId": "usrse260930",
-  "generatedAt": "2026-09-30T18:20:22.969Z",
+  "generatedAt": "2026-09-30T18:53:00.211Z",
   "scope": "Two AWS Fabric peer organizations; bounded synthetic private load; no third organization or real research file bytes.",
   "method": {
     "source": "One-off in-cluster Job using the already pinned API gateway image, with no Kubernetes service-account token and a read-only root filesystem.",
@@ -10,6 +10,9 @@
     "confirmation": "For a separate 155-write timing run, a 1-second poll on five to ten sampled records per rate measured submission to first observed API SUCCESS with a transaction ID. Timing resolution is approximately one second.",
     "backlog": "Accepted count minus the count with a Fabric transaction timestamp at each timeline sample. This is a proxy for work not yet written, not exact ledger finality or RabbitMQ queue depth. End-of-run drain is measured separately when all API records were first observed SUCCESS.",
     "integrity": "Original synthetic SHA-256 footprint compared with API detail and Fabric history payload, and API blockchainTxId compared with Fabric history transactionId.",
+    "sampledPending": "Accepted minus first-observed-success among 45 live-polled timing records, sampled every two seconds. This does not count the other 110 timing records or all 330 normal-run records.",
+    "orgComparison": "Per-organization latency is exploratory: two to five sampled records per organization and offered-rate stage.",
+    "revisions": "History item count for every timed load write; one item is expected for a newly created artifact.",
     "caveat": "These short controlled runs are demonstration evidence, not a capacity or availability SLA. Test traffic and its ledger records persist."
   },
   "normal": {
@@ -424,6 +427,266 @@
         "maxMs": 45425
       }
     ],
+    "sampledPendingTimeline": [
+      {
+        "second": 0,
+        "sampledAccepted": 0,
+        "sampledPending": 0,
+        "sampledSuccess": 0
+      },
+      {
+        "second": 2,
+        "sampledAccepted": 2,
+        "sampledPending": 2,
+        "sampledSuccess": 0
+      },
+      {
+        "second": 4,
+        "sampledAccepted": 4,
+        "sampledPending": 2,
+        "sampledSuccess": 2
+      },
+      {
+        "second": 6,
+        "sampledAccepted": 10,
+        "sampledPending": 5,
+        "sampledSuccess": 5
+      },
+      {
+        "second": 8,
+        "sampledAccepted": 15,
+        "sampledPending": 7,
+        "sampledSuccess": 8
+      },
+      {
+        "second": 10,
+        "sampledAccepted": 25,
+        "sampledPending": 14,
+        "sampledSuccess": 11
+      },
+      {
+        "second": 12,
+        "sampledAccepted": 25,
+        "sampledPending": 10,
+        "sampledSuccess": 15
+      },
+      {
+        "second": 14,
+        "sampledAccepted": 35,
+        "sampledPending": 20,
+        "sampledSuccess": 15
+      },
+      {
+        "second": 16,
+        "sampledAccepted": 45,
+        "sampledPending": 30,
+        "sampledSuccess": 15
+      },
+      {
+        "second": 18,
+        "sampledAccepted": 45,
+        "sampledPending": 30,
+        "sampledSuccess": 15
+      },
+      {
+        "second": 20,
+        "sampledAccepted": 45,
+        "sampledPending": 26,
+        "sampledSuccess": 19
+      },
+      {
+        "second": 22,
+        "sampledAccepted": 45,
+        "sampledPending": 22,
+        "sampledSuccess": 23
+      },
+      {
+        "second": 24,
+        "sampledAccepted": 45,
+        "sampledPending": 20,
+        "sampledSuccess": 25
+      },
+      {
+        "second": 26,
+        "sampledAccepted": 45,
+        "sampledPending": 20,
+        "sampledSuccess": 25
+      },
+      {
+        "second": 28,
+        "sampledAccepted": 45,
+        "sampledPending": 20,
+        "sampledSuccess": 25
+      },
+      {
+        "second": 30,
+        "sampledAccepted": 45,
+        "sampledPending": 20,
+        "sampledSuccess": 25
+      },
+      {
+        "second": 32,
+        "sampledAccepted": 45,
+        "sampledPending": 20,
+        "sampledSuccess": 25
+      },
+      {
+        "second": 34,
+        "sampledAccepted": 45,
+        "sampledPending": 19,
+        "sampledSuccess": 26
+      },
+      {
+        "second": 36,
+        "sampledAccepted": 45,
+        "sampledPending": 16,
+        "sampledSuccess": 29
+      },
+      {
+        "second": 38,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 40,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 42,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 44,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 46,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 48,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 50,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 52,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 54,
+        "sampledAccepted": 45,
+        "sampledPending": 10,
+        "sampledSuccess": 35
+      },
+      {
+        "second": 56,
+        "sampledAccepted": 45,
+        "sampledPending": 8,
+        "sampledSuccess": 37
+      },
+      {
+        "second": 58,
+        "sampledAccepted": 45,
+        "sampledPending": 4,
+        "sampledSuccess": 41
+      },
+      {
+        "second": 60,
+        "sampledAccepted": 45,
+        "sampledPending": 0,
+        "sampledSuccess": 45
+      }
+    ],
+    "latencyByOrgAndRate": [
+      {
+        "organization": "NSG",
+        "rate": 1,
+        "n": 3,
+        "medianMs": 3056,
+        "p95Ms": 3067
+      },
+      {
+        "organization": "Citizen Science",
+        "rate": 1,
+        "n": 2,
+        "medianMs": 2056,
+        "p95Ms": 2080
+      },
+      {
+        "organization": "NSG",
+        "rate": 5,
+        "n": 5,
+        "medianMs": 3051,
+        "p95Ms": 5076
+      },
+      {
+        "organization": "Citizen Science",
+        "rate": 5,
+        "n": 5,
+        "medianMs": 4062,
+        "p95Ms": 5069
+      },
+      {
+        "organization": "NSG",
+        "rate": 10,
+        "n": 5,
+        "medianMs": 11127,
+        "p95Ms": 13159
+      },
+      {
+        "organization": "Citizen Science",
+        "rate": 10,
+        "n": 5,
+        "medianMs": 11128,
+        "p95Ms": 13146
+      },
+      {
+        "organization": "NSG",
+        "rate": 20,
+        "n": 5,
+        "medianMs": 24241,
+        "p95Ms": 25246
+      },
+      {
+        "organization": "Citizen Science",
+        "rate": 20,
+        "n": 5,
+        "medianMs": 24246,
+        "p95Ms": 25244
+      },
+      {
+        "organization": "NSG",
+        "rate": 30,
+        "n": 5,
+        "medianMs": 43400,
+        "p95Ms": 45391
+      },
+      {
+        "organization": "Citizen Science",
+        "rate": 30,
+        "n": 5,
+        "medianMs": 43413,
+        "p95Ms": 45425
+      }
+    ],
     "sampledCount": 45
   },
   "fault": {
@@ -634,6 +897,26 @@
       }
     ]
   },
+  "revisionsByRun": [
+    {
+      "mode": "normal",
+      "n": 330,
+      "singleRevision": 330,
+      "multipleRevisions": 0
+    },
+    {
+      "mode": "fault",
+      "n": 90,
+      "singleRevision": 90,
+      "multipleRevisions": 0
+    },
+    {
+      "mode": "timing",
+      "n": 155,
+      "singleRevision": 155,
+      "multipleRevisions": 0
+    }
+  ],
   "finding": "All 575 timed load records were confirmed with matching SHA-256 footprints and one Fabric history revision each. Under the gateway interruption, one API transaction pointer differed from the history transaction ID (89/90 matched). The chaincode idempotency-receipt path is a plausible cause, not a verified runtime trace.",
   "evidence": {
     "normalRaw": "platform/.generated/aws/usrse260930/evidence/metrics/load/normal-raw.json",

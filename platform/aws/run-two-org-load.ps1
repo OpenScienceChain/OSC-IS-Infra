@@ -1,6 +1,7 @@
 param(
   [ValidateSet('normal', 'fault', 'timing')][string]$Mode = 'normal',
-  [string]$RunId = 'usrse260930'
+  [string]$RunId = 'usrse260930',
+  [ValidatePattern('^[a-z0-9-]{0,30}$')][string]$OutputLabel = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +25,7 @@ if ($LASTEXITCODE -ne 0 -or $image -notmatch '^269624229733\.dkr\.ecr\.us-west-2
 
 $scriptPath = Join-Path $PSScriptRoot 'measure-two-org-load.js'
 $evidenceDir = Join-Path $PSScriptRoot '..\.generated\aws\usrse260930\evidence\metrics\load'
+$reportName = if ($OutputLabel) { $OutputLabel } else { $Mode }
 New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
 $name = "osc-evidence-$Mode-$stamp"
@@ -126,9 +128,9 @@ try {
   $resultLine = $lines | Where-Object { $_ -like 'RESULT_JSON *' } | Select-Object -Last 1
   if (-not $resultLine) { throw "Load Job did not produce a report: $($lines | Select-Object -Last 4)" }
   $report = $resultLine.Substring('RESULT_JSON '.Length) | ConvertFrom-Json
-  $report | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $evidenceDir "$Mode-raw.json") -Encoding utf8
+  $report | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $evidenceDir "$reportName-raw.json") -Encoding utf8
   if ($Mode -eq 'fault') {
-    $faultEvents | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidenceDir 'fault-events.json') -Encoding utf8
+    $faultEvents | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidenceDir "$reportName-events.json") -Encoding utf8
   }
   Write-Host ($report.summary | ConvertTo-Json -Compress)
   if (-not $jobSucceeded) { throw 'Load Job completed with failure; raw report was preserved.' }

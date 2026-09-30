@@ -3,8 +3,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Presentation, PresentationFile } from '@oai/artifact-tool';
 
-const { SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON } = process.env;
-for (const [name, value] of Object.entries({ SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON })) {
+const { SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON, PRIVACY_METRICS_JSON, RESOURCE_METRICS_JSON } = process.env;
+for (const [name, value] of Object.entries({ SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON, PRIVACY_METRICS_JSON, RESOURCE_METRICS_JSON })) {
   if (!path.isAbsolute(value ?? '')) throw new Error(`${name} must be an absolute path`);
 }
 const { applyPresentationChartFont, finalizePresentation, resolvePresentationFont } = await import(
@@ -12,6 +12,8 @@ const { applyPresentationChartFont, finalizePresentation, resolvePresentationFon
 );
 const metrics = JSON.parse(await fs.readFile(METRICS_JSON, 'utf8'));
 const load = JSON.parse(await fs.readFile(LOAD_METRICS_JSON, 'utf8'));
+const privacy = JSON.parse(await fs.readFile(PRIVACY_METRICS_JSON, 'utf8'));
+const resources = JSON.parse(await fs.readFile(RESOURCE_METRICS_JSON, 'utf8'));
 const font = resolvePresentationFont({ fontFamily: 'Arial' });
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const C = {
@@ -59,7 +61,7 @@ function note(slide, text, top = 586) { addText(slide, text, 75, top, 1130, 66, 
   addText(slide, 'Two-organization AWS evidence', 74, 144, 1120, 78, 48, C.ink, true);
   addText(slide, 'Open Science Chain  |  US-RSE 2026', 76, 235, 1100, 42, 25, C.teal);
   addText(slide, '575 load submissions across Neuroscience Gateway and Citizen Science', 76, 345, 1080, 45, 26, C.ink);
-  addText(slide, '11 editable charts. One transaction-pointer discrepancy under a gateway interruption.', 76, 411, 1060, 62, 21, C.gray);
+  addText(slide, 'Added privacy and resource checks. One transaction-pointer discrepancy remains.', 76, 411, 1060, 62, 21, C.gray);
   addText(slide, sourceLine, 76, 679, 1100, 24, 13, C.gray);
   slide.speakerNotes.textFrame.setText(`Sources: ${METRICS_JSON}; ${LOAD_METRICS_JSON}. This deck describes the two-organization AWS baseline and bounded synthetic load. No third Fabric peer organization has been deployed. One of 90 fault-run API transaction pointers did not match Fabric history; see the integrity slide.`);
 }
@@ -327,6 +329,117 @@ function note(slide, text, top = 586) { addText(slide, text, 75, top, 1130, 66, 
   note(slide, 'Gateway scale-down +7.5s; scale-up +18.5s. 90/90 confirmed, but one API tx pointer differed from history.');
 }
 
+// 14. An exact sampled API-state count complements the transaction-timestamp proxy.
+{
+  const slide = baseSlide(
+    'Pending sampled records',
+    'Accepted minus first-observed SUCCESS among 45 live-polled timing records', 14,
+    `Source: ${LOAD_METRICS_JSON}, timing.sampledPendingTimeline. A 2-second time grid and 1-second polling introduce observation delay. This is a 45-record sample, not the entire 155-write run or broker queue depth.`,
+  );
+  const points = load.timing.sampledPendingTimeline.filter(item => item.second % 6 === 0 || item.second === load.timing.sampledPendingTimeline.at(-1).second);
+  chart(slide, 'line', {
+    position: { left: 110, top: 184, width: 1050, height: 375 },
+    categories: points.map(item => String(item.second)),
+    series: [
+      { name: 'Accepted sample', values: points.map(item => item.sampledAccepted), line: { style: 'solid', fill: C.blue, width: 3 }, marker: { symbol: 'circle', size: 6 } },
+      { name: 'Still pending', values: points.map(item => item.sampledPending), line: { style: 'solid', fill: C.gold, width: 3 }, marker: { symbol: 'square', size: 6 } },
+    ],
+    hasLegend: true, legend: { position: 'top', overlay: false, textStyle: { fill: C.ink, fontSize: 17 } },
+    yAxis: { title: 'Sampled records', min: 0, max: 50, majorUnit: 10, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 15 } },
+    xAxis: { title: 'Seconds since first POST', textStyle: { fill: C.ink, fontSize: 14 } },
+  });
+  note(slide, `The sampled pending count peaked at ${Math.max(...load.timing.sampledPendingTimeline.map(item => item.sampledPending))}; all 45 were later observed SUCCESS.`);
+}
+
+// 15. The small per-org sample must be visible in the caption, not hidden by a smooth trend.
+{
+  const slide = baseSlide(
+    'Latency by organization',
+    'Median first-observed SUCCESS time; 2-5 sampled writes per org and rate', 15,
+    `Source: ${LOAD_METRICS_JSON}, timing.latencyByOrgAndRate. The groups have only two to five observations; different stage ordering and polling may explain differences. Exploratory comparison, not a fairness benchmark.`,
+  );
+  const rates = [...new Set(load.timing.latencyByOrgAndRate.map(item => item.rate))];
+  const values = name => rates.map(rate => seconds(load.timing.latencyByOrgAndRate.find(item => item.organization === name && item.rate === rate).medianMs));
+  chart(slide, 'line', {
+    position: { left: 110, top: 184, width: 1050, height: 375 },
+    categories: rates.map(String),
+    series: [
+      { name: 'NSG', values: values('NSG'), line: { style: 'solid', fill: C.teal, width: 3 }, marker: { symbol: 'circle', size: 8 } },
+      { name: 'Citizen Science', values: values('Citizen Science'), line: { style: 'solid', fill: C.gold, width: 3 }, marker: { symbol: 'square', size: 8 } },
+    ],
+    hasLegend: true, legend: { position: 'top', overlay: false, textStyle: { fill: C.ink, fontSize: 17 } },
+    yAxis: { title: 'Observed seconds', min: 0, max: 50, majorUnit: 10, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 15 } },
+    xAxis: { title: 'Offered submissions / second', textStyle: { fill: C.ink, fontSize: 15 } },
+  });
+  note(slide, 'Both orgs remained active at every stage. This small sample cannot establish an org-level performance difference.');
+}
+
+// 16. Retry safety is a count, not a percentage that would obscure one duplicate.
+{
+  const slide = baseSlide(
+    'No duplicate ledger revisions observed',
+    'New artifact history entries across three bounded runs', 16,
+    `Source: ${LOAD_METRICS_JSON}, revisionsByRun. Each of 575 newly created records had exactly one Fabric history item when read after the run. This does not prove exactly-once processing for all failure modes.`,
+  );
+  const runs = load.revisionsByRun;
+  chart(slide, 'bar', {
+    position: { left: 125, top: 188, width: 1020, height: 355 },
+    categories: runs.map(item => item.mode),
+    series: [
+      { name: 'One revision', values: runs.map(item => item.singleRevision), fill: C.teal },
+      { name: 'More than one', values: runs.map(item => item.multipleRevisions), fill: C.gold },
+    ],
+    barOptions: { direction: 'column', grouping: 'clustered', gapWidth: 95 },
+    hasLegend: true, legend: { position: 'top', overlay: false, textStyle: { fill: C.ink, fontSize: 17 } },
+    yAxis: { title: 'Artifacts', min: 0, max: 350, majorUnit: 50, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 15 } },
+    xAxis: { textStyle: { fill: C.ink, fontSize: 16 } },
+  });
+  note(slide, '575 of 575 had one ledger history revision. No duplicate revision was seen, including the gateway fault run.');
+}
+
+// 17. The selected files are local fixtures; the actual outbound JSON is intercepted.
+{
+  const slide = baseSlide(
+    'File bytes stay in the browser',
+    'Actual intercepted request size after selecting synthetic local files', 17,
+    `Source: ${PRIVACY_METRICS_JSON}; OSC-WebApp/e2e/upload-privacy-evidence.spec.ts. The portal selected 1 KiB, 1 MiB, 10 MiB and 40 MiB synthetic files. Playwright intercepted the JSON POST; API was mocked. Neither filename nor file content appeared in the request. This does not measure a real backend upload.`,
+  );
+  const observations = privacy.observations;
+  chart(slide, 'bar', {
+    position: { left: 135, top: 188, width: 1000, height: 360 },
+    categories: ['1 KiB file', '1 MiB file', '10 MiB file', '40 MiB file'],
+    series: [{ name: 'POST JSON bytes', values: observations.map(item => item.requestBytes), fill: C.teal }],
+    barOptions: { direction: 'column', grouping: 'clustered', gapWidth: 100 }, hasLegend: false,
+    yAxis: { title: 'Request bytes', min: 0, max: 500, majorUnit: 100, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 15 } },
+    xAxis: { textStyle: { fill: C.ink, fontSize: 15 } },
+    dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 16 } },
+  });
+  note(slide, 'POST stayed at 450-454 bytes; no selected file bytes or original filename appeared in it. Local browser test.');
+}
+
+// 18-19. CPU and memory use separate units and separate charts.
+for (const [page, title, key, unit, max, major] of [
+  [18, 'CPU by service', 'meanCpuMilliCores', 'Mean millicores', 100, 20],
+  [19, 'Memory by service', 'meanWorkingSetMiB', 'Mean working-set MiB', 650, 100],
+]) {
+  const slide = baseSlide(
+    title,
+    'Twelve read-only kubelet snapshots during an additional 330-write staged run', page,
+    `Source: ${RESOURCE_METRICS_JSON}; capture-service-resources.ps1. Per-sample pod values were summed by logical service, then averaged over 12 snapshots. ${key} is an observed usage metric, not Kubernetes resource requests or a sustained capacity claim. The transient load Job is excluded.`,
+  );
+  const selected = resources.byService.filter(item => !['Fabric CAs', 'Chaincode'].includes(item.service)).sort((a, b) => b[key] - a[key]);
+  chart(slide, 'bar', {
+    position: { left: 180, top: 177, width: 920, height: 410 },
+    categories: selected.map(item => item.service),
+    series: [{ name: unit, values: selected.map(item => item[key]), fill: C.teal }],
+    barOptions: { direction: 'bar', grouping: 'clustered', gapWidth: 32 }, hasLegend: false,
+    xAxis: { title: unit, min: 0, max, majorUnit: major, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+    yAxis: { textStyle: { fill: C.ink, fontSize: 14 } },
+    dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 14 } },
+  });
+  note(slide, 'Observed usage during a bounded run; no Metrics Server or new collector was installed.', 602);
+}
+
 await fs.mkdir(TMP_DIR, { recursive: true });
 await fs.mkdir(path.dirname(FINAL_PPTX), { recursive: true });
 const candidatePath = path.join(TMP_DIR, 'candidate.pptx');
@@ -337,7 +450,7 @@ const result = await finalizePresentation({
   integrityValidatorPath: path.join(SKILL_DIR, 'container_tools/inspect_presentation_package_integrity.py'),
   layoutValidatorPath: path.join(SKILL_DIR, 'container_tools/inspect_presentation_layout_geometry.py'),
   layoutArgs: ['--expected-slide-size-emu', '12192000,6858000', '--validate-heading-fit'],
-  requiredNativeChartOwnerSlides: [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+  requiredNativeChartOwnerSlides: [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
   materializeLiteralChartWorkbooks: true,
   fontPolicy: { basis: 'design', families: [font] },
   verifyArtifactToolImport: true,

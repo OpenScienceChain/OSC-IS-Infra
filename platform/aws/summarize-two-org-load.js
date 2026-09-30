@@ -84,6 +84,38 @@ const stageLatency = timing.stages.map(stage => {
     p95Ms: percentile(times, 0.95), maxMs: Math.max(...times) };
 });
 
+const sampledTiming = timing.submissions.filter(row => row.sampled);
+const sampleFinish = Math.ceil((Math.max(...sampledTiming.map(row => ms(row.firstObservedSuccessAt))) - timingTime.start) / 2000) * 2;
+const sampledPendingTimeline = [];
+for (let second = 0; second <= sampleFinish; second += 2) {
+  const cutoff = timingTime.start + second * 1000;
+  const accepted = sampledTiming.filter(row => ms(row.acceptedAt) <= cutoff).length;
+  const succeeded = sampledTiming.filter(row => ms(row.firstObservedSuccessAt) <= cutoff).length;
+  sampledPendingTimeline.push({ second, sampledAccepted: accepted, sampledPending: accepted - succeeded, sampledSuccess: succeeded });
+}
+check(sampledPendingTimeline.at(-1).sampledPending === 0, 'Timing sample did not drain');
+
+const latencyByOrgAndRate = timing.stages.flatMap(stage =>
+  ['NSG', 'Citizen Science'].map(organization => {
+    const rows = sampledTiming.filter(row => row.stage === stage.rate && row.organization === organization);
+    check(rows.length >= 2, `Insufficient timing samples for ${organization} at ${stage.rate}/s`);
+    const times = rows.map(row => ms(row.firstObservedSuccessAt) - ms(row.offeredAt));
+    return { organization, rate: stage.rate, n: rows.length,
+      medianMs: percentile(times, 0.5), p95Ms: percentile(times, 0.95) };
+  }),
+);
+
+const revisionsByRun = [normal, fault, timing].map(run => {
+  const counts = run.submissions.reduce((acc, row) => {
+    const key = String(row.historyTotal);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  check(counts['1'] === run.summary.confirmed && Object.keys(counts).length === 1,
+    `${run.mode}: history revision distribution changed`);
+  return { mode: run.mode, n: run.summary.confirmed, singleRevision: counts['1'], multipleRevisions: 0 };
+});
+
 const crossOrgByRate = normal.stages.map((stage, index) => {
   const checks = normal.crossOrgChecks.filter(row => row.second >= index * 5 && row.second < (index + 1) * 5);
   return { rate: stage.rate, checks: checks.length, forbidden: checks.filter(row => row.actualStatus === 403).length };
@@ -121,6 +153,9 @@ const summary = {
     confirmation: 'For a separate 155-write timing run, a 1-second poll on five to ten sampled records per rate measured submission to first observed API SUCCESS with a transaction ID. Timing resolution is approximately one second.',
     backlog: 'Accepted count minus the count with a Fabric transaction timestamp at each timeline sample. This is a proxy for work not yet written, not exact ledger finality or RabbitMQ queue depth. End-of-run drain is measured separately when all API records were first observed SUCCESS.',
     integrity: 'Original synthetic SHA-256 footprint compared with API detail and Fabric history payload, and API blockchainTxId compared with Fabric history transactionId.',
+    sampledPending: 'Accepted minus first-observed-success among 45 live-polled timing records, sampled every two seconds. This does not count the other 110 timing records or all 330 normal-run records.',
+    orgComparison: 'Per-organization latency is exploratory: two to five sampled records per organization and offered-rate stage.',
+    revisions: 'History item count for every timed load write; one item is expected for a newly created artifact.',
     caveat: 'These short controlled runs are demonstration evidence, not a capacity or availability SLA. Test traffic and its ledger records persist.',
   },
   normal: {
@@ -139,6 +174,8 @@ const summary = {
     startUtc: timing.loadStartedAt, postEndUtc: timing.loadEndedAt,
     observedDrainSeconds: timingTime.observedDrainSeconds,
     counts: timing.summary, stageObservedConfirmationLatency: stageLatency,
+    sampledPendingTimeline,
+    latencyByOrgAndRate,
     sampledCount: stageLatency.reduce((sum, stage) => sum + stage.n, 0),
   },
   fault: {
@@ -153,6 +190,7 @@ const summary = {
     integrity: integrity(fault),
     timelineTwoSeconds: timeline(fault, faultTime, 2),
   },
+  revisionsByRun,
   finding: 'All 575 timed load records were confirmed with matching SHA-256 footprints and one Fabric history revision each. Under the gateway interruption, one API transaction pointer differed from the history transaction ID (89/90 matched). The chaincode idempotency-receipt path is a plausible cause, not a verified runtime trace.',
   evidence: {
     normalRaw: path.relative(process.cwd(), normalPath).replaceAll('\\', '/'),
