@@ -15,7 +15,7 @@ Captured 2026-09-30 UTC. Release owner: OSC-IS coordination chat.
 
 ## Security and trade-offs
 
-- The EKS API has private access enabled. Its public control endpoint is restricted to the operator's observed IP `173.255.173.19/32`. The application ALB is internal; the Argo UI is not publicly exposed. The release S3 bucket blocks public ACLs and policies.
+- The EKS API has private access enabled. Its public control endpoint is restricted to the operator's observed IP `174.65.14.170/32` as of 2026-09-30; a future IP change requires a deliberate allowlist update. The application ALB is internal; the Argo UI is not publicly exposed. The release S3 bucket blocks public ACLs and policies.
 - The pinned Fabric test-network manifests retain sample internal CA/CouchDB credentials, and `osc-fabric` has no namespace NetworkPolicy. Those services are ClusterIP/localhost-forward only in this run, but this deployment must not be presented as production-hardened or opened to untrusted networks without replacing credentials and reviewing Fabric traffic policy.
 - Ignored local Terraform state and Fabric wallet files initially inherited wider workspace ACLs. `platform/aws/protect-runtime-secrets.ps1 -RunId usrse260930` was applied and audited across 485 generated paths. Only the current Windows account, SYSTEM, and Administrators retain full-control DACL entries. This protects these local copies; it does not replace endpoint isolation, secret rotation, or the eventual teardown.
 - OCI runtime references are pinned to SHA-256 digests. The nine prepared local images passed a Trivy High/Critical scan with zero findings at build time. This is a bounded scan, not a claim that dependencies are vulnerability-free. The unused lifecycle-runner image was not promoted to ECR.
@@ -49,5 +49,9 @@ At the operator's direction, run `platform/aws/destroy-run.ps1 -RunId usrse26093
 - `aws-recovery-summary.json`: sanitized gateway, broker, and peer failure/recovery measurements.
 - `postman-post-recovery-summary.json`: authenticated smoke run after full restoration.
 - `aws-gitops-drift-summary.json`: single-run Argo replica self-heal timing and revision.
+- `two-org-metrics-20260930.json`: sanitized metrics and methodology for 30 confirmed submissions, authorization checks, repeated recovery and GitOps probes, footprint, and cost estimate. Detailed raw evidence remains local and ignored.
+- `OSC-IS-two-org-evidence-20260930.pptx`: eight-slide, editable-chart evidence deck. Chart values come from the sanitized metrics file; the speaker notes state sample sizes and limitations.
+
+The expanded measurement run observed 30/30 confirmed synthetic submissions, 10/10 expected own-org and cross-org access results, and a six-request Postman smoke with no failures after recovery. Repeated recovery observations were 50/72 seconds for the ledger gateway and 225/222 seconds for RabbitMQ/outbox; alternate-peer acceptance took 8/5 seconds while one peer was down. Four Argo drift observations returned to `Synced/Healthy` in 14, 16, 25, and 133 seconds. The 133-second result is retained, not trimmed. Three worker nodes and all 71 pods were ready afterward. These small samples are demonstration evidence, not production benchmarks or SLAs; artifact state polling was at one-second intervals. The USD 0.9425/hour run rate is a planning estimate, not a billing measurement.
 
 The ignored run workspace retains the reviewed Terraform plan, image manifests, scan/SBOM records, generated GitOps repository, and Kubernetes port-forward logs. These may contain operational details and should not be published wholesale.

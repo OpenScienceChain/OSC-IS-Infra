@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse260930",
+  "account": "269624229733",
+  "region": "us-west-2",
+  "generatedAt": "2026-09-30T16:49:20.473Z",
+  "measurementWindowUtc": {
+    "start": "2026-09-30T16:18:12.896Z",
+    "end": "2026-09-30T16:42:21.118Z"
+  },
+  "scope": "Two Fabric peer organizations on one EKS cluster. No third organization was deployed or timed.",
+  "methodology": {
+    "submissions": "Client monotonic time from POST start to the first observed state. Private synthetic hash-only probes, except one public catalog probe per org.",
+    "pollIntervalMs": 1000,
+    "timingPrecision": "Ledger, history, and catalog values include polling delay of up to approximately one second; small between-org differences are not meaningful.",
+    "drift": "Client-observed time from a deliberate API replica change to Argo Synced/Healthy with two replicas; four observations, not an SLA.",
+    "recovery": "Elapsed from disruption command through a confirmed probe transaction; peer scenario times alternate-peer acceptance while one peer is down. Two observations per scenario, not a reliability benchmark.",
+    "cpu": "AWS/EC2 five-minute CPUUtilization datapoints for the preceding hour, not pod-level CPU or memory usage.",
+    "cost": "Reviewed planning estimate, not actual AWS billing."
+  },
+  "submissions": {
+    "total": 30,
+    "confirmed": 30,
+    "failed": 0,
+    "artifacts": 26,
+    "workflows": 4
+  },
+  "submissionTiming": {
+    "NSG": {
+      "artifactSequential": {
+        "accepted": {
+          "n": 8,
+          "valuesMs": [
+            76,
+            60,
+            68,
+            54,
+            59,
+            60,
+            58,
+            74
+          ],
+          "medianMs": 60,
+          "minMs": 54,
+          "maxMs": 76
+        },
+        "confirmed": {
+          "n": 8,
+          "valuesMs": [
+            3322,
+            2249,
+            2256,
+            2232,
+            2226,
+            2237,
+            2238,
+            2277
+          ],
+          "medianMs": 2244,
+          "minMs": 2226,
+          "maxMs": 3322
+        },
+        "history": {
+          "n": 8,
+          "valuesMs": [
+            3639,
+            2347,
+            2344,
+            2327,
+            2317,
+            2321,
+            2329,
+            2367
+          ],
+          "medianMs": 2337,
+          "minMs": 2317,
+          "maxMs": 3639
+        }
+      },
+      "artifactPaired": {
+        "accepted": {
+          "n": 4,
+          "valuesMs": [
+            63,
+            63,
+            68,
+            65
+          ],
+          "medianMs": 64,
+          "minMs": 63,
+          "maxMs": 68
+        },
+        "confirmed": {
+          "n": 4,
+          "valuesMs": [
+            2242,
+            2233,
+            2347,
+            2253
+          ],
+          "medianMs": 2248,
+          "minMs": 2233,
+          "maxMs": 2347
+        }
+      },
+      "workflow": {
+        "accepted": {
+          "n": 2,
+          "valuesMs": [
+            58,
+            60
+          ],
+          "medianMs": 59,
+          "minMs": 58,
+          "maxMs": 60
+        },
+        "confirmed": {
+          "n": 2,
+          "valuesMs": [
+            2244,
+            2251
+          ],
+          "medianMs": 2248,
+          "minMs": 2244,
+          "maxMs": 2251
+        }
+      },
+      "publicArtifact": {
+        "acceptedMs": 60,
+        "confirmedMs": 2253,
+        "historyMs": 2345,
+        "catalogMs": 2402
+      }
+    },
+    "Citizen Science": {
+      "artifactSequential": {
+        "accepted": {
+          "n": 8,
+          "valuesMs": [
+            64,
+            63,
+            59,
+            65,
+            64,
+            64,
+            59,
+            72
+          ],
+          "medianMs": 64,
+          "minMs": 59,
+          "maxMs": 72
+        },
+        "confirmed": {
+          "n": 8,
+          "valuesMs": [
+            2258,
+            2250,
+            2251,
+            2252,
+            2247,
+            2250,
+            2243,
+            2266
+          ],
+          "medianMs": 2251,
+          "minMs": 2243,
+          "maxMs": 2266
+        },
+        "history": {
+          "n": 8,
+          "valuesMs": [
+            2495,
+            2340,
+            2335,
+            2340,
+            2344,
+            2339,
+            2342,
+            2354
+          ],
+          "medianMs": 2341,
+          "minMs": 2335,
+          "maxMs": 2495
+        }
+      },
+      "artifactPaired": {
+        "accepted": {
+          "n": 4,
+          "valuesMs": [
+            152,
+            93,
+            66,
+            63
+          ],
+          "medianMs": 80,
+          "minMs": 63,
+          "maxMs": 152
+        },
+        "confirmed": {
+          "n": 4,
+          "valuesMs": [
+            2331,
+            2280,
+            2230,
+            2252
+          ],
+          "medianMs": 2266,
+          "minMs": 2230,
+          "maxMs": 2331
+        }
+      },
+      "workflow": {
+        "accepted": {
+          "n": 2,
+          "valuesMs": [
+            61,
+            56
+          ],
+          "medianMs": 59,
+          "minMs": 56,
+          "maxMs": 61
+        },
+        "confirmed": {
+          "n": 2,
+          "valuesMs": [
+            2235,
+            2227
+          ],
+          "medianMs": 2231,
+          "minMs": 2227,
+          "maxMs": 2235
+        }
+      },
+      "publicArtifact": {
+        "acceptedMs": 60,
+        "confirmedMs": 2254,
+        "historyMs": 2342,
+        "catalogMs": 2403
+      }
+    }
+  },
+  "isolation": {
+    "checks": 10,
+    "passed": 10,
+    "checksByLabel": [
+      {
+        "label": "NSG own private artifact read",
+        "expectedStatus": 200,
+        "actualStatus": 200
+      },
+      {
+        "label": "Citizen own private artifact read",
+        "expectedStatus": 200,
+        "actualStatus": 200
+      },
+      {
+        "label": "Citizen cannot read NSG private artifact",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      },
+      {
+        "label": "NSG cannot read Citizen private artifact",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      },
+      {
+        "label": "Citizen cannot update NSG private artifact",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      },
+      {
+        "label": "Citizen cannot read NSG artifact history",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      },
+      {
+        "label": "NSG own workflow read",
+        "expectedStatus": 200,
+        "actualStatus": 200
+      },
+      {
+        "label": "Citizen own workflow read",
+        "expectedStatus": 200,
+        "actualStatus": 200
+      },
+      {
+        "label": "Citizen cannot read NSG private workflow",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      },
+      {
+        "label": "Citizen cannot update NSG private workflow",
+        "expectedStatus": 403,
+        "actualStatus": 403
+      }
+    ]
+  },
+  "postRecoveryPostman": {
+    "requests": 6,
+    "failures": 0,
+    "failedAssertions": 0
+  },
+  "recovery": {
+    "ledgerGatewaySeconds": [
+      50,
+      72
+    ],
+    "rabbitMqSeconds": [
+      225,
+      222
+    ],
+    "alternatePeerAcceptanceSeconds": [
+      8,
+      5
+    ],
+    "allLedgerRevisionsOne": true,
+    "duplicateWritesObserved": false
+  },
+  "gitops": {
+    "secondsToSyncedHealthy": [
+      14,
+      16,
+      25,
+      133
+    ],
+    "allSelfHealed": true,
+    "revision": "a6ece95a2a3aa5ba81357d21c0e3d79faf51384b"
+  },
+  "footprint": {
+    "nodes": 3,
+    "zones": [
+      "us-west-2a",
+      "us-west-2b",
+      "us-west-2c"
+    ],
+    "totalPods": 71,
+    "readyPods": 71,
+    "podCountsByNamespace": {
+      "argocd": {
+        "total": 8,
+        "ready": 8
+      },
+      "aws-secrets-manager": {
+        "total": 6,
+        "ready": 6
+      },
+      "cert-manager": {
+        "total": 3,
+        "ready": 3
+      },
+      "ingress-nginx": {
+        "total": 1,
+        "ready": 1
+      },
+      "kube-system": {
+        "total": 18,
+        "ready": 18
+      },
+      "osc-apps": {
+        "total": 21,
+        "ready": 21
+      },
+      "osc-fabric": {
+        "total": 14,
+        "ready": 14
+      }
+    },
+    "nodeCpuFiveMinutePercent": [
+      {
+        "zone": "us-west-2c",
+        "points": 12,
+        "mean": 4,
+        "peak": 6.2
+      },
+      {
+        "zone": "us-west-2b",
+        "points": 12,
+        "mean": 4,
+        "peak": 5.8
+      },
+      {
+        "zone": "us-west-2a",
+        "points": 12,
+        "mean": 3.7,
+        "peak": 5.4
+      }
+    ],
+    "cpuWindowUtc": {
+      "start": "2026-09-30T15:29:07.268Z",
+      "end": "2026-09-30T16:29:07.268Z"
+    },
+    "postRecoveryReadyPods": 71,
+    "memoryUsageAvailable": false
+  },
+  "estimatedHourlyUsd": 0.9425,
+  "estimated24HoursUsd": 22.62,
+  "evidence": {
+    "detailedProbePath": "platform/.generated/aws/usrse260930/evidence/metrics/two-org-baseline.json (local, ignored)",
+    "footprintPath": "platform/.generated/aws/usrse260930/evidence/metrics/two-org-footprint.json (local, ignored)",
+    "recoveryHistoricalPath": "docs/usrse26/platform-evidence/usrse260930/aws-recovery-summary.json",
+    "recoveryRepeatPath": "platform/.generated/aws/usrse260930/evidence/metrics/recovery-repeat-2/summary.json (local, ignored)",
+    "driftHistoricalPath": "docs/usrse26/platform-evidence/usrse260930/aws-gitops-drift-summary.json",
+    "driftRepeatPaths": [
+      "platform/.generated/aws/usrse260930/evidence/metrics/drift-repeat-1.json (local, ignored)",
+      "platform/.generated/aws/usrse260930/evidence/metrics/drift-repeat-2.json (local, ignored)",
+      "platform/.generated/aws/usrse260930/evidence/metrics/drift-repeat-3.json (local, ignored)"
+    ]
+  },
+  "credentialsRetained": false
+}

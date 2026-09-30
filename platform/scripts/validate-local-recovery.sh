@@ -13,6 +13,8 @@ NSG_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 TMP_DIR=$(mktemp -d)
 PORT_FORWARD_PIDS=()
 ORIGINAL_RABBIT_EGRESS=''
+ORIGINAL_GATEWAY_REPLICAS=''
+ORIGINAL_PEER_REPLICAS=''
 
 restore_rabbitmq_egress() {
   [[ -z "${ORIGINAL_RABBIT_EGRESS}" ]] && return 0
@@ -21,8 +23,12 @@ restore_rabbitmq_egress() {
 }
 
 restore_stack() {
-  kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas=1 >/dev/null 2>&1 || true
-  kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=1 >/dev/null 2>&1 || true
+  if [[ -n "${ORIGINAL_GATEWAY_REPLICAS}" ]]; then
+    kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas="${ORIGINAL_GATEWAY_REPLICAS}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${ORIGINAL_PEER_REPLICAS}" ]]; then
+    kubectl -n osc-fabric scale deployment/org1-peer1 --replicas="${ORIGINAL_PEER_REPLICAS}" >/dev/null 2>&1 || true
+  fi
   if [[ "${RECOVERY_MODE}" == "aws" ]]; then
     restore_rabbitmq_egress >/dev/null 2>&1 || true
     kubectl -n argocd patch application "${APPLICATION}" --type=merge \
@@ -47,6 +53,9 @@ if ! kubectl config current-context | grep -Fxq "${EXPECTED_CONTEXT}"; then
   echo "Refusing to validate outside ${EXPECTED_CONTEXT}"
   exit 1
 fi
+ORIGINAL_GATEWAY_REPLICAS=$(kubectl -n osc-apps get deployment ledger-gateway-nsg -o jsonpath='{.spec.replicas}')
+ORIGINAL_PEER_REPLICAS=$(kubectl -n osc-fabric get deployment org1-peer1 -o jsonpath='{.spec.replicas}')
+[[ "${ORIGINAL_GATEWAY_REPLICAS}" =~ ^[1-9][0-9]*$ && "${ORIGINAL_PEER_REPLICAS}" =~ ^[1-9][0-9]*$ ]]
 if [[ "${RECOVERY_MODE}" == "aws" && ! -f "${AWS_NETWORK_POLICIES:-}" ]]; then
   echo "AWS_NETWORK_POLICIES is required for the controlled Amazon MQ outage" >&2
   exit 1
@@ -143,7 +152,7 @@ GATEWAY_ARTIFACT_ID=$(create_artifact gateway "${RUN_ID}")
 sleep 2
 gateway_pending_state=$(artifact_state "${GATEWAY_ARTIFACT_ID}" | jq -r '.submissionState')
 [[ "${gateway_pending_state}" == PENDING ]]
-kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas=1 >/dev/null
+kubectl -n osc-apps scale deployment/ledger-gateway-nsg --replicas="${ORIGINAL_GATEWAY_REPLICAS}" >/dev/null
 kubectl -n osc-apps rollout status deployment/ledger-gateway-nsg --timeout=180s >/dev/null
 GATEWAY_TX=$(wait_for_success "${GATEWAY_ARTIFACT_ID}")
 gateway_recovery_seconds=$(( $(date +%s) - gateway_started ))
@@ -229,7 +238,7 @@ PEER_HISTORY=$(curl --fail-with-body --silent --show-error \
   "${LEDGER_URL}/history/${PEER_ARTIFACT_ID}")
 peer_revision_count=$(jq -er 'length' <<<"${PEER_HISTORY}")
 [[ "${peer_revision_count}" == 1 ]]
-kubectl -n osc-fabric scale deployment/org1-peer1 --replicas=1 >/dev/null
+kubectl -n osc-fabric scale deployment/org1-peer1 --replicas="${ORIGINAL_PEER_REPLICAS}" >/dev/null
 kubectl -n osc-fabric rollout status deployment/org1-peer1 --timeout=180s >/dev/null
 
 jq -n \
