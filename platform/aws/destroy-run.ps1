@@ -7,8 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$terraformRoot = Join-Path $repoRoot 'terraform\usrse26-eks'
 $runRoot = Join-Path $repoRoot "platform\.generated\aws\$RunId"
+$terraformRoot = Join-Path $runRoot 'terraform-local'
 $statePath = Join-Path $runRoot 'terraform.tfstate'
 $tfvarsPath = Join-Path $runRoot 'run.tfvars'
 $baselinePath = Join-Path $runRoot 'baseline-inventory.json'
@@ -16,7 +16,7 @@ $finalPath = Join-Path $runRoot 'final-inventory.json'
 $parityPath = Join-Path $runRoot 'inventory-parity.json'
 $metadataPath = Join-Path $runRoot 'run-metadata.json'
 
-foreach ($required in @($statePath, $tfvarsPath, $baselinePath, $metadataPath)) {
+foreach ($required in @($statePath, $tfvarsPath, $baselinePath, $metadataPath, (Join-Path $terraformRoot 'versions.tf'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing teardown artifact: $required" }
 }
 
@@ -32,7 +32,7 @@ try {
     Push-Location $terraformRoot
     try {
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
-        terraform destroy -input=false -auto-approve "-state=$statePath" "-var-file=$tfvarsPath"
+        terraform destroy -input=false -auto-approve "-var-file=$tfvarsPath"
         if ($LASTEXITCODE -ne 0) { throw 'Terraform destroy failed; do not leave this session.' }
     }
     finally {

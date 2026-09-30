@@ -22,8 +22,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$terraformRoot = Join-Path $repoRoot 'terraform\usrse26-eks'
+$terraformSource = Join-Path $repoRoot 'terraform\usrse26-eks'
 $runRoot = Join-Path $repoRoot "platform\.generated\aws\$RunId"
+$terraformRoot = Join-Path $runRoot 'terraform-local'
 $statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
@@ -37,6 +38,19 @@ if ($AdminCidr -eq '0.0.0.0/32' -or $AdminCidr -eq '0.0.0.0/0') {
 }
 
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
+$sourceVersion = Get-Content -LiteralPath (Join-Path $terraformSource 'versions.tf') -Raw
+if (-not $sourceVersion.Contains('backend "s3" {}')) {
+    throw 'Expected an unchanged S3 backend stanza in the reviewed Terraform source.'
+}
+New-Item -ItemType Directory -Force -Path $terraformRoot | Out-Null
+Copy-Item -LiteralPath (Join-Path $terraformSource '.terraform.lock.hcl') -Destination $terraformRoot -Force
+Get-ChildItem -LiteralPath $terraformSource -Filter '*.tf' -File | Where-Object Name -ne 'versions.tf' | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination $terraformRoot -Force
+}
+New-Item -ItemType Directory -Force -Path (Join-Path $terraformRoot 'scripts'), (Join-Path $terraformRoot 'templates') | Out-Null
+Copy-Item -LiteralPath (Join-Path $terraformSource 'scripts/populate_initial_secrets.py') -Destination (Join-Path $terraformRoot 'scripts/populate_initial_secrets.py') -Force
+Copy-Item -LiteralPath (Join-Path $terraformSource 'templates/rabbitmq.json') -Destination (Join-Path $terraformRoot 'templates/rabbitmq.json') -Force
+[IO.File]::WriteAllText((Join-Path $terraformRoot 'versions.tf'), $sourceVersion.Replace('backend "s3" {}', 'backend "local" {}'))
 $startedAt = [DateTimeOffset]::UtcNow
 $expiresAt = $startedAt.AddHours($Hours)
 
@@ -72,14 +86,13 @@ try {
 
     Push-Location $terraformRoot
     try {
-        terraform init -reconfigure -backend=false -input=false
+        terraform init -reconfigure -input=false "-backend-config=path=$statePath"
         terraform validate
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
         $planArgs = @(
             'plan'
             '-input=false'
             '-lock=true'
-            "-state=$statePath"
             "-var-file=$tfvarsPath"
             "-out=$planPath"
         )

@@ -7,14 +7,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$terraformRoot = Join-Path $repoRoot 'terraform\usrse26-eks'
 $runRoot = Join-Path $repoRoot "platform\.generated\aws\$RunId"
+$terraformRoot = Join-Path $runRoot 'terraform-local'
 $statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $metadataPath = Join-Path $runRoot 'run-metadata.json'
 
-foreach ($required in @($planPath, $planJsonPath, $metadataPath)) {
+foreach ($required in @($planPath, $planJsonPath, $metadataPath, (Join-Path $terraformRoot 'versions.tf'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing reviewed run artifact: $required" }
 }
 
@@ -33,9 +33,9 @@ try {
     Push-Location $terraformRoot
     try {
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
-        terraform apply -input=false -auto-approve "-state=$statePath" $planPath
+        terraform apply -input=false -auto-approve $planPath
         if ($LASTEXITCODE -ne 0) { throw 'Terraform apply failed.' }
-        terraform output "-state=$statePath" -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
+        terraform output -json | Out-File -LiteralPath (Join-Path $runRoot 'terraform-outputs.json') -Encoding utf8NoBOM
     }
     finally {
         Pop-Location

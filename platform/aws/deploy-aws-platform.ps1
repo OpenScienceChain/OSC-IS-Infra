@@ -118,7 +118,7 @@ try {
     python platform/aws/upload_fabric_identities.py --network $network --run-id $RunId
     if ($LASTEXITCODE -ne 0) { throw 'Fabric identity upload failed.' }
 
-    $rabbitEndpoint = terraform -chdir=terraform/usrse26-eks output -raw "-state=$statePath" rabbitmq_amqps_endpoint
+    $rabbitEndpoint = terraform "-chdir=$runRoot/terraform-local" output -raw rabbitmq_amqps_endpoint
     if ($LASTEXITCODE -ne 0) { throw 'Could not read the private broker endpoint.' }
     $rabbitUri = [Uri]$rabbitEndpoint.Trim()
     if ($rabbitUri.Scheme -ne 'amqps' -or $rabbitUri.Port -ne 5671) { throw 'Terraform returned an unexpected broker endpoint.' }
@@ -133,7 +133,7 @@ try {
     kubectl -n osc-apps create configmap aws-runtime-endpoints `
         --from-literal="rabbitmq-host=$($rabbitUri.Host)" `
         --dry-run=client -o yaml | kubectl apply -f - | Out-Null
-    $vpcId = terraform -chdir=terraform/usrse26-eks output -raw "-state=$statePath" vpc_id
+    $vpcId = terraform "-chdir=$runRoot/terraform-local" output -raw vpc_id
     if ($LASTEXITCODE -ne 0 -or $vpcId -notmatch '^vpc-[0-9a-f]+$') { throw 'Could not resolve the guarded runtime VPC.' }
     kubectl -n kube-system create configmap osc-runtime `
         --from-literal="vpc-id=$($vpcId.Trim())" `
