@@ -17,6 +17,7 @@ $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
 $manifestPath = Join-Path $runRoot 'artifacts\artifacts.json'
 $deploymentPath = Join-Path $runRoot 'artifacts\ecr-deployment.json'
+$metadataPath = Join-Path $runRoot 'run-metadata.json'
 $registry = '269624229733.dkr.ecr.us-west-2.amazonaws.com'
 $releasePrefix = "releases/$RunId"
 $manifestKey = "$releasePrefix/artifacts.json"
@@ -28,8 +29,13 @@ if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]:
 }
 
 if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Credential-free artifact manifest is absent.' }
+if (-not (Test-Path -LiteralPath $metadataPath)) { throw 'Reviewed run metadata is absent.' }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$runMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
 if ($manifest.runId -ne $RunId -or -not $manifest.credentialFreeBuild) { throw 'Artifact manifest provenance check failed.' }
+if ($runMetadata.runId -ne $RunId -or $runMetadata.account -ne '269624229733' -or $runMetadata.region -ne 'us-west-2') {
+    throw 'Reviewed run metadata does not match the release target.'
+}
 if ([DateTimeOffset]::Parse($manifest.expiresAt).ToString('o') -ne $ExpiresAt.ToString('o')) {
     throw 'ExpiresAt does not match the credential-free artifact manifest.'
 }
@@ -73,7 +79,7 @@ try {
     foreach ($image in $manifest.images.PSObject.Properties) {
         $name = $image.Name
         $repository = "osc-usrse26-$RunId/$name"
-        $repositoryExpiresAt = if ($name -eq 'lifecycle-runner') { $controlExpiresAt } else { $ExpiresAt.ToString('o') }
+        $repositoryExpiresAt = if ($name -eq 'lifecycle-runner') { $controlExpiresAt } else { $runMetadata.expiresAt }
         $existing = aws ecr describe-repositories `
             --repository-names $repository `
             --query 'repositories[0]' `
