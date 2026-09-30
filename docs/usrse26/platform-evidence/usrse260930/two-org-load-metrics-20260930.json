@@ -1,0 +1,646 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse260930",
+  "generatedAt": "2026-09-30T18:20:22.969Z",
+  "scope": "Two AWS Fabric peer organizations; bounded synthetic private load; no third organization or real research file bytes.",
+  "method": {
+    "source": "One-off in-cluster Job using the already pinned API gateway image, with no Kubernetes service-account token and a read-only root filesystem.",
+    "normal": "Five 5-second stages at 1, 5, 10, 20, 30 offered submissions/second, split evenly between NSG and Citizen Science; 330 timed writes plus two pre-test seed records.",
+    "fault": "Thirty seconds at 3 offered submissions/second, split between the two organizations; 90 timed writes plus two seed records. NSG ledger gateway was scaled from two replicas to zero, then back to two.",
+    "confirmation": "For a separate 155-write timing run, a 1-second poll on five to ten sampled records per rate measured submission to first observed API SUCCESS with a transaction ID. Timing resolution is approximately one second.",
+    "backlog": "Accepted count minus the count with a Fabric transaction timestamp at each timeline sample. This is a proxy for work not yet written, not exact ledger finality or RabbitMQ queue depth. End-of-run drain is measured separately when all API records were first observed SUCCESS.",
+    "integrity": "Original synthetic SHA-256 footprint compared with API detail and Fabric history payload, and API blockchainTxId compared with Fabric history transactionId.",
+    "caveat": "These short controlled runs are demonstration evidence, not a capacity or availability SLA. Test traffic and its ledger records persist."
+  },
+  "normal": {
+    "startUtc": "2026-09-30T17:59:39.416Z",
+    "postEndUtc": "2026-09-30T18:00:04.395Z",
+    "lastLedgerCommitUtc": "2026-09-30T18:02:40.612Z",
+    "recordTimestampDrainSeconds": 156.2,
+    "observedDrainSeconds": 158.6,
+    "peakUnrecordedAtTransactionTime": 284,
+    "counts": {
+      "offered": 330,
+      "accepted": 330,
+      "confirmed": 330,
+      "failed": 0,
+      "pending": 0,
+      "crossOrgDenied": 25,
+      "crossOrgChecks": 25,
+      "apiHashesMatched": 330,
+      "ledgerHashesMatched": 330,
+      "historyReadable": 330,
+      "duplicateHistories": 0,
+      "ledgerTransactionsMatched": 330
+    },
+    "stageThroughput": [
+      {
+        "offeredRate": 1,
+        "offeredPerSecond": 1,
+        "acceptedPerSecond": 1,
+        "fabricRecordTimestampsPerSecond": 1
+      },
+      {
+        "offeredRate": 5,
+        "offeredPerSecond": 5,
+        "acceptedPerSecond": 5,
+        "fabricRecordTimestampsPerSecond": 2.6
+      },
+      {
+        "offeredRate": 10,
+        "offeredPerSecond": 10,
+        "acceptedPerSecond": 10,
+        "fabricRecordTimestampsPerSecond": 1.6
+      },
+      {
+        "offeredRate": 20,
+        "offeredPerSecond": 20,
+        "acceptedPerSecond": 20,
+        "fabricRecordTimestampsPerSecond": 1.6
+      },
+      {
+        "offeredRate": 30,
+        "offeredPerSecond": 30,
+        "acceptedPerSecond": 30,
+        "fabricRecordTimestampsPerSecond": 2.4
+      }
+    ],
+    "crossOrgByRate": [
+      {
+        "rate": 1,
+        "checks": 5,
+        "forbidden": 5
+      },
+      {
+        "rate": 5,
+        "checks": 5,
+        "forbidden": 5
+      },
+      {
+        "rate": 10,
+        "checks": 5,
+        "forbidden": 5
+      },
+      {
+        "rate": 20,
+        "checks": 5,
+        "forbidden": 5
+      },
+      {
+        "rate": 30,
+        "checks": 5,
+        "forbidden": 5
+      }
+    ],
+    "integrity": {
+      "n": 330,
+      "apiHashMatched": 330,
+      "ledgerHashMatched": 330,
+      "ledgerTxPointerMatched": 330,
+      "singleRevision": 330
+    },
+    "timelineFiveSeconds": [
+      {
+        "second": 0,
+        "offered": 0,
+        "accepted": 0,
+        "recordedTransactionTime": 0,
+        "unrecordedAtTransactionTime": 0
+      },
+      {
+        "second": 5,
+        "offered": 5,
+        "accepted": 5,
+        "recordedTransactionTime": 5,
+        "unrecordedAtTransactionTime": 0
+      },
+      {
+        "second": 10,
+        "offered": 30,
+        "accepted": 30,
+        "recordedTransactionTime": 18,
+        "unrecordedAtTransactionTime": 12
+      },
+      {
+        "second": 15,
+        "offered": 81,
+        "accepted": 80,
+        "recordedTransactionTime": 26,
+        "unrecordedAtTransactionTime": 54
+      },
+      {
+        "second": 20,
+        "offered": 181,
+        "accepted": 180,
+        "recordedTransactionTime": 34,
+        "unrecordedAtTransactionTime": 146
+      },
+      {
+        "second": 25,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 46,
+        "unrecordedAtTransactionTime": 284
+      },
+      {
+        "second": 30,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 54,
+        "unrecordedAtTransactionTime": 276
+      },
+      {
+        "second": 35,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 62,
+        "unrecordedAtTransactionTime": 268
+      },
+      {
+        "second": 40,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 74,
+        "unrecordedAtTransactionTime": 256
+      },
+      {
+        "second": 45,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 82,
+        "unrecordedAtTransactionTime": 248
+      },
+      {
+        "second": 50,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 90,
+        "unrecordedAtTransactionTime": 240
+      },
+      {
+        "second": 55,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 98,
+        "unrecordedAtTransactionTime": 232
+      },
+      {
+        "second": 60,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 110,
+        "unrecordedAtTransactionTime": 220
+      },
+      {
+        "second": 65,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 118,
+        "unrecordedAtTransactionTime": 212
+      },
+      {
+        "second": 70,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 126,
+        "unrecordedAtTransactionTime": 204
+      },
+      {
+        "second": 75,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 138,
+        "unrecordedAtTransactionTime": 192
+      },
+      {
+        "second": 80,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 146,
+        "unrecordedAtTransactionTime": 184
+      },
+      {
+        "second": 85,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 154,
+        "unrecordedAtTransactionTime": 176
+      },
+      {
+        "second": 90,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 162,
+        "unrecordedAtTransactionTime": 168
+      },
+      {
+        "second": 95,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 174,
+        "unrecordedAtTransactionTime": 156
+      },
+      {
+        "second": 100,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 182,
+        "unrecordedAtTransactionTime": 148
+      },
+      {
+        "second": 105,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 190,
+        "unrecordedAtTransactionTime": 140
+      },
+      {
+        "second": 110,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 202,
+        "unrecordedAtTransactionTime": 128
+      },
+      {
+        "second": 115,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 210,
+        "unrecordedAtTransactionTime": 120
+      },
+      {
+        "second": 120,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 218,
+        "unrecordedAtTransactionTime": 112
+      },
+      {
+        "second": 125,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 230,
+        "unrecordedAtTransactionTime": 100
+      },
+      {
+        "second": 130,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 238,
+        "unrecordedAtTransactionTime": 92
+      },
+      {
+        "second": 135,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 246,
+        "unrecordedAtTransactionTime": 84
+      },
+      {
+        "second": 140,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 254,
+        "unrecordedAtTransactionTime": 76
+      },
+      {
+        "second": 145,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 266,
+        "unrecordedAtTransactionTime": 64
+      },
+      {
+        "second": 150,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 274,
+        "unrecordedAtTransactionTime": 56
+      },
+      {
+        "second": 155,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 282,
+        "unrecordedAtTransactionTime": 48
+      },
+      {
+        "second": 160,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 294,
+        "unrecordedAtTransactionTime": 36
+      },
+      {
+        "second": 165,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 301,
+        "unrecordedAtTransactionTime": 29
+      },
+      {
+        "second": 170,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 309,
+        "unrecordedAtTransactionTime": 21
+      },
+      {
+        "second": 175,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 321,
+        "unrecordedAtTransactionTime": 9
+      },
+      {
+        "second": 180,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 329,
+        "unrecordedAtTransactionTime": 1
+      },
+      {
+        "second": 185,
+        "offered": 330,
+        "accepted": 330,
+        "recordedTransactionTime": 330,
+        "unrecordedAtTransactionTime": 0
+      }
+    ]
+  },
+  "timing": {
+    "startUtc": "2026-09-30T18:17:21.271Z",
+    "postEndUtc": "2026-09-30T18:17:37.258Z",
+    "observedDrainSeconds": 71.4,
+    "counts": {
+      "offered": 155,
+      "accepted": 155,
+      "confirmed": 155,
+      "failed": 0,
+      "pending": 0,
+      "crossOrgDenied": 16,
+      "crossOrgChecks": 16,
+      "apiHashesMatched": 155,
+      "ledgerHashesMatched": 155,
+      "historyReadable": 155,
+      "duplicateHistories": 0,
+      "ledgerTransactionsMatched": 155,
+      "sampledConfirmations": 45
+    },
+    "stageObservedConfirmationLatency": [
+      {
+        "rate": 1,
+        "n": 5,
+        "medianMs": 2080,
+        "p95Ms": 3067,
+        "maxMs": 3067
+      },
+      {
+        "rate": 5,
+        "n": 10,
+        "medianMs": 3086,
+        "p95Ms": 5076,
+        "maxMs": 5076
+      },
+      {
+        "rate": 10,
+        "n": 10,
+        "medianMs": 11127,
+        "p95Ms": 13159,
+        "maxMs": 13159
+      },
+      {
+        "rate": 20,
+        "n": 10,
+        "medianMs": 24241,
+        "p95Ms": 25246,
+        "maxMs": 25246
+      },
+      {
+        "rate": 30,
+        "n": 10,
+        "medianMs": 43400,
+        "p95Ms": 45425,
+        "maxMs": 45425
+      }
+    ],
+    "sampledCount": 45
+  },
+  "fault": {
+    "startUtc": "2026-09-30T18:04:58.531Z",
+    "postEndUtc": "2026-09-30T18:05:28.218Z",
+    "lastLedgerCommitUtc": "2026-09-30T18:05:46.086Z",
+    "recordTimestampDrainSeconds": 17.9,
+    "observedDrainSeconds": 20.2,
+    "gatewayScaledDownUtc": "2026-09-30T18:05:06.000Z",
+    "gatewayScaledUpUtc": "2026-09-30T18:05:17.000Z",
+    "gatewayScaleWindowSeconds": 11,
+    "counts": {
+      "offered": 90,
+      "accepted": 90,
+      "confirmed": 90,
+      "failed": 0,
+      "pending": 0,
+      "crossOrgDenied": 30,
+      "crossOrgChecks": 30,
+      "apiHashesMatched": 90,
+      "ledgerHashesMatched": 90,
+      "historyReadable": 90,
+      "duplicateHistories": 0,
+      "ledgerTransactionsMatched": 89
+    },
+    "integrity": {
+      "n": 90,
+      "apiHashMatched": 90,
+      "ledgerHashMatched": 90,
+      "ledgerTxPointerMatched": 89,
+      "singleRevision": 90
+    },
+    "timelineTwoSeconds": [
+      {
+        "second": 0,
+        "offered": 0,
+        "accepted": 0,
+        "recordedTransactionTime": 0,
+        "unrecordedAtTransactionTime": 0
+      },
+      {
+        "second": 2,
+        "offered": 7,
+        "accepted": 6,
+        "recordedTransactionTime": 4,
+        "unrecordedAtTransactionTime": 2
+      },
+      {
+        "second": 4,
+        "offered": 13,
+        "accepted": 12,
+        "recordedTransactionTime": 8,
+        "unrecordedAtTransactionTime": 4
+      },
+      {
+        "second": 6,
+        "offered": 19,
+        "accepted": 18,
+        "recordedTransactionTime": 12,
+        "unrecordedAtTransactionTime": 6
+      },
+      {
+        "second": 8,
+        "offered": 25,
+        "accepted": 24,
+        "recordedTransactionTime": 16,
+        "unrecordedAtTransactionTime": 8
+      },
+      {
+        "second": 10,
+        "offered": 31,
+        "accepted": 30,
+        "recordedTransactionTime": 20,
+        "unrecordedAtTransactionTime": 10
+      },
+      {
+        "second": 12,
+        "offered": 37,
+        "accepted": 36,
+        "recordedTransactionTime": 24,
+        "unrecordedAtTransactionTime": 12
+      },
+      {
+        "second": 14,
+        "offered": 43,
+        "accepted": 42,
+        "recordedTransactionTime": 28,
+        "unrecordedAtTransactionTime": 14
+      },
+      {
+        "second": 16,
+        "offered": 49,
+        "accepted": 48,
+        "recordedTransactionTime": 32,
+        "unrecordedAtTransactionTime": 16
+      },
+      {
+        "second": 18,
+        "offered": 55,
+        "accepted": 54,
+        "recordedTransactionTime": 36,
+        "unrecordedAtTransactionTime": 18
+      },
+      {
+        "second": 20,
+        "offered": 61,
+        "accepted": 60,
+        "recordedTransactionTime": 40,
+        "unrecordedAtTransactionTime": 20
+      },
+      {
+        "second": 22,
+        "offered": 67,
+        "accepted": 66,
+        "recordedTransactionTime": 44,
+        "unrecordedAtTransactionTime": 22
+      },
+      {
+        "second": 24,
+        "offered": 73,
+        "accepted": 72,
+        "recordedTransactionTime": 48,
+        "unrecordedAtTransactionTime": 24
+      },
+      {
+        "second": 26,
+        "offered": 79,
+        "accepted": 78,
+        "recordedTransactionTime": 52,
+        "unrecordedAtTransactionTime": 26
+      },
+      {
+        "second": 28,
+        "offered": 85,
+        "accepted": 84,
+        "recordedTransactionTime": 52,
+        "unrecordedAtTransactionTime": 32
+      },
+      {
+        "second": 30,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 56,
+        "unrecordedAtTransactionTime": 34
+      },
+      {
+        "second": 32,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 60,
+        "unrecordedAtTransactionTime": 30
+      },
+      {
+        "second": 34,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 64,
+        "unrecordedAtTransactionTime": 26
+      },
+      {
+        "second": 36,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 68,
+        "unrecordedAtTransactionTime": 22
+      },
+      {
+        "second": 38,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 73,
+        "unrecordedAtTransactionTime": 17
+      },
+      {
+        "second": 40,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 77,
+        "unrecordedAtTransactionTime": 13
+      },
+      {
+        "second": 42,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 81,
+        "unrecordedAtTransactionTime": 9
+      },
+      {
+        "second": 44,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 85,
+        "unrecordedAtTransactionTime": 5
+      },
+      {
+        "second": 46,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 89,
+        "unrecordedAtTransactionTime": 1
+      },
+      {
+        "second": 48,
+        "offered": 90,
+        "accepted": 90,
+        "recordedTransactionTime": 90,
+        "unrecordedAtTransactionTime": 0
+      }
+    ]
+  },
+  "finding": "All 575 timed load records were confirmed with matching SHA-256 footprints and one Fabric history revision each. Under the gateway interruption, one API transaction pointer differed from the history transaction ID (89/90 matched). The chaincode idempotency-receipt path is a plausible cause, not a verified runtime trace.",
+  "evidence": {
+    "normalRaw": "platform/.generated/aws/usrse260930/evidence/metrics/load/normal-raw.json",
+    "faultRaw": "platform/.generated/aws/usrse260930/evidence/metrics/load/fault-raw.json",
+    "timingRaw": "platform/.generated/aws/usrse260930/evidence/metrics/load/timing-raw.json",
+    "faultEvents": "platform/.generated/aws/usrse260930/evidence/metrics/load/fault-events.json",
+    "rawReportsLocalIgnored": true
+  },
+  "credentialsRetained": false
+}
