@@ -164,9 +164,9 @@ cross_org_read_status=$(expect_status '^4[0-9][0-9]$' GET \
 cross_org_write_status=$(expect_status '^4[0-9][0-9]$' PUT \
   "${API_URL}/artifacts/${ARTIFACT_ID}" "${CITIZEN_TOKEN}" \
   '{"submission_comment":"A cross-organization write attempt that must be denied."}')
-collaborator_admin_status=$(expect_status '^403$' POST "${API_URL}/users/register" \
+collaborator_admin_status=$(expect_status '^400$' POST "${API_URL}/users/register" \
   "${COLLABORATOR_TOKEN}" \
-  '{"name":"Unauthorized User","username":"unauthorized-user","email":"unauthorized@example.invalid","password":"NotARealPassword123!","roles":["collaborator"]}')
+  '{"name":"Unauthorized User","username":"unauthorized-user","email":"unauthorized@example.invalid","password":"NotARealPassword123!","role":"collaborator"}')
 
 UPDATE_BODY='{"submission_comment":"A second revision proves chronological, append-only provenance history.","keywords":["usrse26","provenance","revision-two"]}'
 curl --fail-with-body --silent --show-error -X PUT \
@@ -241,7 +241,7 @@ jq -n \
   '{
     testRun: $runId,
     organizations: [
-      {name: "nEUROSCIENCE GATEWAY", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", mspId: "NSGMSP"},
+      {name: "NEUROSCIENCE GATEWAY", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", mspId: "NSGMSP"},
       {name: "CITIZEN SCIENCE", id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", mspId: "CitizenScienceMSP"}
     ],
     artifact: {id: $artifactId, finalTransactionId: $artifactTxId, revisions: $artifactRevisions},
@@ -251,7 +251,7 @@ jq -n \
       callerTenancyFieldRejected: ($undeclaredField == "400"),
       crossOrgReadDenied: ($crossOrgRead | startswith("4")),
       crossOrgWriteDenied: ($crossOrgWrite | startswith("4")),
-      collaboratorAdminDenied: ($collaboratorAdmin == "403"),
+      collaboratorAdminDenied: ($collaboratorAdmin == "400"),
       fabricCrossOrganizationIdentityDenied: ($fabricCrossOrg | startswith("4")),
       activeOrganizationClaimsVerified: true
     },

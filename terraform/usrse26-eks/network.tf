@@ -45,6 +45,15 @@ resource "aws_vpc_security_group_ingress_rule" "cloudfront_to_origin" {
   description       = "HTTP from the AWS-managed CloudFront origin-facing prefix list"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_to_api" {
+  security_group_id            = aws_eks_cluster.experiment.vpc_config[0].cluster_security_group_id
+  referenced_security_group_id = aws_security_group.cloudfront_origin.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3000
+  to_port                      = 3000
+  description                  = "Internal ALB to API Gateway pod targets"
+}
+
 resource "aws_subnet" "public" {
   count = 3
 
