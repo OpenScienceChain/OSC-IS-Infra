@@ -186,7 +186,8 @@ function Get-ImageEvidence {
     $digest = $repoDigest.Split('@')[1]
     $metadata = docker image inspect $Reference | ConvertFrom-Json
     $user = [string]$metadata[0].Config.User
-    if ([string]::IsNullOrWhiteSpace($user) -or $user -in @('0', 'root', '0:0')) {
+    $staticExtractionOnly = $Name -eq 'webapp'
+    if (-not $staticExtractionOnly -and ([string]::IsNullOrWhiteSpace($user) -or $user -in @('0', 'root', '0:0'))) {
         throw "$Name does not declare a non-root runtime user."
     }
 
@@ -218,6 +219,7 @@ function Get-ImageEvidence {
         architecture = $metadata[0].Architecture
         os = $metadata[0].Os
         runtimeUser = $user
+        staticExtractionOnly = $staticExtractionOnly
         archive = $archivePath
         archiveSha256 = $archiveSha
         sbom = $sbomPath
