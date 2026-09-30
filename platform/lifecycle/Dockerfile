@@ -46,7 +46,7 @@ COPY --from=fabric-tools /out/fabric-ca-client /fabric-ca-client
 
 FROM public.ecr.aws/aws-cli/aws-cli:2.36.1@sha256:406ca32d31e640a56e8d52921b40528cc64bfa59ec9cb4ee1456db6746cb7292
 
-ARG AL2023_REPOSITORY_GUID=59479e247947fb5165d81aa2364f556030fe518713c50b111a30f75cb118dc0f
+ARG AL2023_REPOSITORY_GUID=27384c19eab24101875840d56fc763871cf62d016a2119ac2982b575b54bf295
 RUN dnf --setopt=amazonlinux.mirrorlist= \
       --setopt=amazonlinux.baseurl="https://cdn.amazonlinux.com/al2023/core/guids/${AL2023_REPOSITORY_GUID}/x86_64/" \
       upgrade -y \
@@ -78,7 +78,9 @@ COPY platform/.generated/lifecycle-context/chaincode-go/go.mod /opt/osc/chaincod
 COPY platform/lifecycle/osc_demo_lifecycle.py /usr/local/bin/osc-demo-lifecycle
 COPY platform/lifecycle/terraform.rc /opt/osc/terraform.rc
 
-RUN chmod 0755 /usr/local/bin/osc-demo-lifecycle \
+RUN sed -i 's/\r$//' /usr/local/bin/osc-demo-lifecycle \
+    && find /opt/osc/infra/platform -type f \( -name '*.sh' -o -name '*.py' \) -exec sed -i 's/\r$//' {} + \
+    && chmod 0755 /usr/local/bin/osc-demo-lifecycle \
     && terraform -chdir=/opt/osc/infra/terraform/usrse26-eks providers mirror /opt/osc/provider-mirror \
     && useradd --uid 10001 --create-home --home-dir /opt/osc/home --shell /bin/bash osc-runner \
     && chown -R 10001:10001 /opt/osc/home /opt/osc/infra /opt/osc/chaincode-go

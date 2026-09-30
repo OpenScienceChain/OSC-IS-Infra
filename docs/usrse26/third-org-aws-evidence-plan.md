@@ -1,6 +1,7 @@
 # Two-to-three-organization AWS evidence run
 
-Status: reviewed 2026-09-29; catalog integration complete; AWS launch gated.
+Status: reviewed 2026-09-29; catalog integration complete; two-org AWS
+baseline authorized for the overnight window.
 Target handoff:
 2026-09-30 08:00 America/Los_Angeles. The review found no existing
 incremental AWS add-org3 operation or unattended teardown in the simple run.
@@ -15,17 +16,18 @@ Neither is assumed below.
 - The AWS account currently has no EKS cluster in `us-west-2`. The existing
   `usrse26m1` and `usrse26r1` lifecycle state machines belong to earlier
   experiments; there is no active EventBridge Scheduler schedule for this run.
-- The simple AWS run has only a manual destroy command. No tested automatic
-  primary or independent backup teardown exists for this run. The EKS
-  two-to-three-organization operation and local rehearsal are also incomplete.
-  Do not launch a billable overnight EKS runtime until these gates pass.
+- The simple AWS run has only a manual destroy command. The operator explicitly
+  accepted an overnight run without automated teardown on 2026-09-29. Keep
+  the run ID, cost estimate, private access, and manual destroy command in the
+  handoff; do not imply an expiry tag shuts down resources. The EKS
+  two-to-three-organization operation and local rehearsal remain incomplete.
 
-2026-09-29 operator direction: leave AWS available overnight for the morning
-session. This explicitly changes the earlier eight-hour/same-session experiment
-assumption. The run may use that exception only after a tested automatic stop
-and independent backup stop are installed, with a planned end no later than
-2026-09-30 10:00 PDT. If those controls cannot be proven, do not launch an
-overnight runtime; report the blocker and continue local preparation.
+2026-09-29 operator direction: build a two-organization EKS baseline, add the
+third organization, collect as much evidence as can be validated, and leave
+healthy infrastructure available for the morning session. This explicitly
+changes the earlier eight-hour/same-session experiment assumption. The
+operator accepted manual teardown for this run. Security failures, unexpected
+scope, or a cost-ceiling breach still require stopping or isolating the run.
 
 ## Purpose and claim boundary
 
@@ -49,13 +51,10 @@ transactions are the evidence.
   exact tagged run ID, guarded Terraform plan, no pre-existing resources
   modified. The existing $200 plan ceiling and $150 read-only/teardown threshold
   remain hard stops. Recalculate the current run estimate before apply.
-- The experimental EKS runtime must have a bounded expiry and a verified
-  teardown path. An expiry timestamp is not automated teardown. For this
-  user-authorized overnight exception, install and test a primary stop plus
-  an independent backup stop before apply. A local laptop scheduled task
-  alone is not independent of power/connectivity. If the existing controlled
-  AWS lifecycle cannot be configured and proven for this window, do not leave
-  the simple run unattended.
+- The experimental EKS runtime must have a bounded planned window and a
+  verified manual teardown path. An expiry timestamp is not automated teardown.
+  This user-authorized overnight exception relies on a morning operator
+  shutdown; report that trade-off prominently and monitor the scoped run.
 
 ## Phase 1: Catalog integration (local)
 
@@ -72,9 +71,12 @@ transactions are the evidence.
 3. Run focused unit/component tests and live browser tests against `18088`.
    Commit a clean checkpoint and record the exact WebApp/Gateway revisions.
 
-## Phase 2: Third-org readiness (local first)
+## Phase 2: Two-org AWS baseline and third-org readiness
 
-1. Implement a versioned, idempotent `add-org3` command and runbook. The EKS
+1. Freeze the current scanned release, prepare and apply a reviewed two-org
+   Terraform plan, then validate private API, Argo, Fabric, and Postman baseline.
+   This can proceed while the incremental third-org path is developed.
+2. Implement a versioned, idempotent `add-org3` command and runbook. The EKS
    bootstrap currently only deploys Org1/Org2, and the app manifests only
    define two ledger gateways/history workers. The addition needs peer/CA
    identity, channel config update and join, chaincode package/install/approval
@@ -82,17 +84,17 @@ transactions are the evidence.
    IAM/secrets, network policy, API membership, rollback, and evidence probes.
    Fabric bootstrap remains outside Argo CD; app workloads remain inside it.
    Do not replace the two-org baseline with a three-org cold start.
-2. Rehearse that sequence in an isolated local Kubernetes environment. Start
+3. Rehearse that sequence in an isolated local Kubernetes environment. Start
    with two organizations, add the third without restarting or replacing the
    first two, and prove a new Magnetic Arch transaction/history plus continued
    NSG/Citizen Science operations and cross-org denials. Do not claim an AWS
    onboarding time if this gate fails.
-3. Prepare immutable, scanned images and a reviewed release manifest for the
+4. Prepare immutable, scanned images and a reviewed release manifest for the
    exact frozen revisions. Pre-provision dormant third-org IAM/secrets/capacity
    in the reviewed initial Terraform plan, or review a second saved add-org
    plan before baseline apply. Never improvise Terraform during timing. Run
    static checks and the existing local E2E gates.
-4. Build and validate an AWS-specific sanitized Postman collection locally.
+5. Build and validate an AWS-specific sanitized Postman collection locally.
    The existing guest-boundary collection explicitly forbids AWS. Store
    credentials in an ignored environment, poll confirmation with bounded time,
    assert transaction/history and negative cross-org responses, and export
@@ -131,9 +133,10 @@ By 2026-09-30 08:00 PDT, provide the user a status: private endpoint/access
 method if safely active, Chrome/Argo evidence paths, measured timings with
 start/end definitions if achieved, replayable Postman results/instructions, and
 any failed gate. Keep the guarded runtime available only through the morning
-window; automatic primary teardown is planned for 10:00 PDT with an independent
-backup stop afterward. Verify baseline inventory parity and zero tagged
-runtime resources. If any gate prevents an overnight run, provide the completed
+window at the operator's direction. No automatic teardown is configured for
+this run; the operator will authorize shutdown after the morning session.
+At shutdown, verify baseline inventory parity and zero tagged runtime
+resources. If any gate prevents an overnight run, provide the completed
 local work and the exact AWS blocker; do not imply an AWS endpoint is waiting.
 Retain sanitized evidence
 under `docs/usrse26/platform-evidence/<run-id>/` with checksums, cost estimate,
@@ -143,10 +146,13 @@ limitations, and teardown proof. Never represent an incomplete run as success.
 
 - Wrong AWS account/region, changed operator CIDR, unexpected Terraform plan,
   unavailable credentials, secret exposure, missing rollback/teardown path,
-  unreviewed mutable image, failed local third-org rehearsal, or unresolved
-  cross-org authorization defect: stop before apply or transition to teardown.
+   unreviewed mutable image, or unresolved cross-org authorization defect:
+   stop before apply or transition to teardown. Failed local third-org rehearsal
+   blocks the onboarding measurement, not an already healthy two-org baseline.
 - If the two-org baseline is healthy but the third-org addition fails, preserve
-  the failure evidence, do not improvise a broader cloud change, and teardown.
+  the failure evidence and do not improvise a broader cloud change. Leave only
+  a verified healthy two-org baseline running for the morning session; isolate
+  or tear down any failed third-org components.
 - If the user cannot reach the private endpoint at the morning handoff, give
   exact recovery steps; do not make Argo or the API public for convenience.
 
