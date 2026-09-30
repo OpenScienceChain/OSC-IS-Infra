@@ -1,0 +1,11 @@
+{
+  "runId": "usrse260930",
+  "startedAt": "2026-09-30T05:14:47.9854948+00:00",
+  "healedAt": "2026-09-30T05:15:01.6039308+00:00",
+  "secondsToSyncedHealthy": 14,
+  "gitopsRevision": "a6ece95a2a3aa5ba81357d21c0e3d79faf51384b",
+  "injectedReplicas": 1,
+  "restoredReplicas": 2,
+  "selfHealVerified": true,
+  "credentialsRetained": false
+}

@@ -10,6 +10,7 @@ Captured 2026-09-30 UTC. Release owner: OSC-IS coordination chat.
 - Maintained Postman public readiness: 2 requests, 2 assertions, 0 failures. Authenticated multi-org smoke: 6 requests, 0 failed assertions, 0 failures. The negative cross-org update returned HTTP 403.
 - Full-stack validation confirmed one NSG artifact with two Fabric revisions, one NSG workflow with a Fabric transaction, ledger history, active-organization claims, and application- and Fabric-level cross-organization denials. See `aws-stack-summary.json` for the IDs and results.
 - Controlled dependency-failure validation passed: ledger gateway recovered in 50 seconds, RabbitMQ/outbox in 225 seconds, and an alternate peer accepted a transaction during an NSG peer failure in 8 seconds. Every artifact had one Fabric revision and no duplicate ledger write was observed. These are single-run recovery observations, not benchmark distributions. Argo returned to `Synced/Healthy`, all original replicas became ready, and a fresh six-request Postman smoke passed after recovery.
+- A separate, bounded GitOps drift test reduced the API deployment from two replicas to one. Argo restored the declared two replicas and returned to `Synced/Healthy` in 14 seconds without a Git revision change. The forwarded API health check passed afterward. This is one observation, not a reconciliation SLA.
 - Public catalog eventually exposed both Postman-created public artifacts. The catalog intentionally omits organization metadata; authentication and cross-org tests establish tenancy separately.
 
 ## Security and trade-offs
@@ -46,5 +47,6 @@ At the operator's direction, run `platform/aws/destroy-run.ps1 -RunId usrse26093
 - `aws-stack-summary.json`: sanitized end-to-end provenance and authorization results.
 - `aws-recovery-summary.json`: sanitized gateway, broker, and peer failure/recovery measurements.
 - `postman-post-recovery-summary.json`: authenticated smoke run after full restoration.
+- `aws-gitops-drift-summary.json`: single-run Argo replica self-heal timing and revision.
 
 The ignored run workspace retains the reviewed Terraform plan, image manifests, scan/SBOM records, generated GitOps repository, and Kubernetes port-forward logs. These may contain operational details and should not be published wholesale.
