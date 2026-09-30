@@ -1,0 +1,78 @@
+{
+  "runId": "usrse260930",
+  "capturedAt": "2026-09-30T04:40:33.374Z",
+  "target": "localhost-only EKS API port-forward",
+  "collection": "OSC-IS Core Smoke",
+  "folder": "Multi-organization smoke",
+  "requests": 6,
+  "failedAssertions": 0,
+  "failures": 0,
+  "executions": [
+    {
+      "item": "NSG login",
+      "status": 201,
+      "responseTimeMs": 1131,
+      "assertions": [
+        {
+          "name": "NSG token contains organization and expiry",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "item": "NSG submits artifact",
+      "status": 201,
+      "responseTimeMs": 311,
+      "assertions": [
+        {
+          "name": "NSG artifact is accepted for asynchronous submission",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "item": "Citizen Science login",
+      "status": 201,
+      "responseTimeMs": 505,
+      "assertions": [
+        {
+          "name": "Citizen Science token is organization scoped",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "item": "Citizen Science submits artifact",
+      "status": 201,
+      "responseTimeMs": 313,
+      "assertions": [
+        {
+          "name": "Citizen Science artifact is accepted",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "item": "Citizen Science cannot update NSG artifact",
+      "status": 403,
+      "responseTimeMs": 306,
+      "assertions": [
+        {
+          "name": "Cross-organization update is rejected",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "item": "Catalog contains both public smoke artifacts",
+      "status": 200,
+      "responseTimeMs": 304,
+      "assertions": [
+        {
+          "name": "Both public smoke artifacts are discoverable",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

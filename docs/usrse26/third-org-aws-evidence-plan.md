@@ -1,21 +1,23 @@
 # Two-to-three-organization AWS evidence run
 
 Status: reviewed 2026-09-29; catalog integration complete; two-org AWS
-baseline authorized for the overnight window.
+baseline deployed and verified 2026-09-30. Third-org onboarding is not yet
+implemented or measured. See `platform-evidence/usrse260930/README.md`.
 Target handoff:
 2026-09-30 08:00 America/Los_Angeles. The review found no existing
 incremental AWS add-org3 operation or unattended teardown in the simple run.
 Neither is assumed below.
 
-## Current checkpoint (2026-09-29 17:33 PDT)
+## Current checkpoint (2026-09-30 04:50 UTC)
 
 - Phase 1 is implemented in WebApp commit `35598e5`, pushed on
   `feature/magnetic-arch-showcase`. The local `localhost:18088` service and
   three-organization Docker/Fabric stack are healthy. Focused unit tests,
   production build, and desktop/mobile live Playwright/Axe checks passed.
-- The AWS account currently has no EKS cluster in `us-west-2`. The existing
-  `usrse26m1` and `usrse26r1` lifecycle state machines belong to earlier
-  experiments; there is no active EventBridge Scheduler schedule for this run.
+- EKS cluster `osc-usrse26-usrse260930-eks` is active in `us-west-2` with
+  two Fabric peer organizations. Argo CD is `Synced/Healthy`; Postman and
+  full-stack provenance/authorization validation pass. This run has no
+  automatic EventBridge teardown schedule.
 - The simple AWS run has only a manual destroy command. The operator explicitly
   accepted an overnight run without automated teardown on 2026-09-29. Keep
   the run ID, cost estimate, private access, and manual destroy command in the
