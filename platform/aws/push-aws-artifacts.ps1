@@ -22,7 +22,6 @@ $registry = '269624229733.dkr.ecr.us-west-2.amazonaws.com'
 $releasePrefix = "releases/$RunId"
 $manifestKey = "$releasePrefix/artifacts.json"
 $repositoryPolicyPath = Join-Path $runRoot 'artifacts\ecr-lifecycle-policy.json'
-$controlExpiresAt = '2026-11-22T15:00:00Z'
 
 if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]::UtcNow.AddHours(72)) {
     throw 'ExpiresAt must be in the future and no more than 72 hours from now.'
@@ -41,6 +40,7 @@ if ([DateTimeOffset]::Parse($manifest.expiresAt).ToString('o') -ne $ExpiresAt.To
 }
 
 foreach ($image in $manifest.images.PSObject.Properties) {
+    if ($image.Name -eq 'lifecycle-runner') { continue }
     $actualSha = (Get-FileHash -LiteralPath $image.Value.archive -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha -ne $image.Value.archiveSha256) { throw "Archive checksum mismatch for $($image.Name)." }
     docker load --input $image.Value.archive | Out-Null
@@ -78,8 +78,9 @@ try {
     $releasedImages = [ordered]@{}
     foreach ($image in $manifest.images.PSObject.Properties) {
         $name = $image.Name
+        if ($name -eq 'lifecycle-runner') { continue }
         $repository = "osc-usrse26-$RunId/$name"
-        $repositoryExpiresAt = if ($name -eq 'lifecycle-runner') { $controlExpiresAt } else { $runMetadata.expiresAt }
+        $repositoryExpiresAt = $runMetadata.expiresAt
         $existing = aws ecr describe-repositories `
             --repository-names $repository `
             --query 'repositories[0]' `
@@ -135,10 +136,24 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Could not apply the bounded lifecycle policy to $repository." }
 
         $tagged = "$registry/$repository`:$RunId"
-        docker tag $image.Value.localReference $tagged
-        if ($LASTEXITCODE -ne 0) { throw "Could not tag $name for ECR." }
-        docker push $tagged | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Could not push $name to ECR." }
+        $existingDigest = aws ecr describe-images `
+            --repository-name $repository `
+            --image-ids "imageTag=$RunId" `
+            --query 'imageDetails[0].imageDigest' `
+            --output text `
+            --profile default `
+            --region us-west-2 `
+            --no-cli-pager 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            if ($existingDigest.Trim() -ne $image.Value.localDigest) {
+                throw "Immutable ECR tag for $name has an unexpected digest."
+            }
+        } else {
+            docker tag $image.Value.localReference $tagged
+            if ($LASTEXITCODE -ne 0) { throw "Could not tag $name for ECR." }
+            docker push $tagged | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not push $name to ECR." }
+        }
 
         python platform/aws/aws_guard.py | Out-Null
         $actualDigest = (aws ecr describe-images `
