@@ -93,7 +93,7 @@ spec:
             - name: SUBMISSION_LISTENER_API_KEY
               valueFrom: {secretKeyRef: {name: api-listener-auth, key: api-key}}
             - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
-            - {name: DEMO_ALLOWED_ORIGIN, value: "https://demo.osc-staging.org"}
+            - {name: DEMO_ALLOWED_ORIGIN, value: "__DEMO_ALLOWED_ORIGIN__"}
             - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
             - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
             - {name: MAGNETIC_ARCH_ORGANIZATION_ID, value: dddddddd-dddd-4ddd-8ddd-dddddddddddd}

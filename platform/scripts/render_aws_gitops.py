@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 from pathlib import Path
+from urllib.parse import urlsplit
 
 TOKEN = re.compile(r"__[A-Z0-9_]+__")
 
@@ -18,7 +19,31 @@ def main() -> None:
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--demo-origin", default="https://demo.osc-staging.org")
     args = parser.parse_args()
+
+    origin = urlsplit(args.demo_origin)
+    https_origin = re.fullmatch(
+        r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?", args.demo_origin
+    )
+    loopback_origin = re.fullmatch(
+        r"http://(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?", args.demo_origin
+    )
+    try:
+        origin.port
+    except ValueError as error:
+        raise SystemExit("Demo origin has an invalid port") from error
+    if (
+        not (https_origin or loopback_origin)
+        or origin.scheme not in ("http", "https")
+        or not origin.netloc
+        or origin.path
+        or origin.query
+        or origin.fragment
+        or origin.username
+        or origin.password
+    ):
+        raise SystemExit("Demo origin must be an HTTPS origin or a loopback HTTP origin")
 
     artifacts = json.loads(args.artifacts.read_text(encoding="utf-8"))
     if artifacts.get("runId") != args.run_id:
@@ -34,6 +59,8 @@ def main() -> None:
         "__RUN_ID__": args.run_id,
         "__EXPIRES_AT__": expires_at,
         "__API_GATEWAY_IMAGE__": images["api-gateway"]["ecrReference"],
+        "__WEBAPP_IMAGE__": images["webapp"]["ecrReference"],
+        "__DEMO_ALLOWED_ORIGIN__": args.demo_origin,
         "__LEDGER_GATEWAY_IMAGE__": images["ledger-gateway"]["ecrReference"],
         "__SUBMISSION_WORKER_IMAGE__": images["submission-worker"]["ecrReference"],
         "__SUBMISSION_LISTENER_IMAGE__": images["submission-listener"]["ecrReference"],
