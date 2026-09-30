@@ -65,7 +65,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [postgres, ledger-gateway-nsg, ledger-gateway-citizen-science]
+        values: [postgres, ledger-gateway-nsg, ledger-gateway-citizen-science, ledger-gateway-magnetic-arch]
   policyTypes: [Ingress]
   ingress:
     - from: [{podSelector: {}}]
@@ -83,7 +83,7 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [ledger-gateway-nsg, ledger-gateway-citizen-science]
+                values: [ledger-gateway-nsg, ledger-gateway-citizen-science, ledger-gateway-magnetic-arch]
       ports: [{protocol: TCP, port: 4000}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -125,7 +125,7 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [history-worker-nsg, history-worker-citizen-science]
+                values: [history-worker-nsg, history-worker-citizen-science, history-worker-magnetic-arch]
       ports: [{protocol: TCP, port: 8002}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -136,7 +136,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [history-worker-nsg, history-worker-citizen-science]
+        values: [history-worker-nsg, history-worker-citizen-science, history-worker-magnetic-arch]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -152,7 +152,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [history-worker-nsg, history-worker-citizen-science]
+        values: [history-worker-nsg, history-worker-citizen-science, history-worker-magnetic-arch]
   policyTypes: [Egress]
   egress:
     - to:
@@ -160,7 +160,7 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: [ledger-gateway-nsg, ledger-gateway-citizen-science]
+                values: [ledger-gateway-nsg, ledger-gateway-citizen-science, ledger-gateway-magnetic-arch]
       ports: [{protocol: TCP, port: 4000}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -171,7 +171,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [ledger-gateway-nsg, ledger-gateway-citizen-science]
+        values: [ledger-gateway-nsg, ledger-gateway-citizen-science, ledger-gateway-magnetic-arch]
   policyTypes: [Egress]
   egress:
     - to:

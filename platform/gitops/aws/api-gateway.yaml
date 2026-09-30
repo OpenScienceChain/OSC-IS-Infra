@@ -96,8 +96,10 @@ spec:
             - {name: DEMO_ALLOWED_ORIGIN, value: "https://demo.osc-staging.org"}
             - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
             - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: MAGNETIC_ARCH_ORGANIZATION_ID, value: dddddddd-dddd-4ddd-8ddd-dddddddddddd}
             - {name: GHW_NSG_URL, value: http://history-worker-nsg:8002}
             - {name: GHW_CITIZEN_SCIENCE_URL, value: http://history-worker-citizen-science:8002}
+            - {name: GHW_MAGNETIC_ARCH_URL, value: http://history-worker-magnetic-arch:8002}
             - name: DEMO_JWT_SECRET
               valueFrom: {secretKeyRef: {name: api-demo-auth, key: jwt-secret}}
             - name: DEMO_ANALYTICS_HMAC_SECRET

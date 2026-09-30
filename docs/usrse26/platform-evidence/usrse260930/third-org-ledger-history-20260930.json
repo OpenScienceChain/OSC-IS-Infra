@@ -1,0 +1,19 @@
+{
+  "runId": "usrse260930",
+  "capturedAt": "2026-09-30T19:59:58.120Z",
+  "method": "Private localhost-only port-forward to the MagneticArchMSP ledger gateway; direct Fabric history reads for the confirmed artifact and workflow.",
+  "checks": [
+    {
+      "type": "artifact",
+      "historyItems": 1,
+      "transactionIdMatchesApi": true
+    },
+    {
+      "type": "workflow",
+      "historyItems": 1,
+      "transactionIdMatchesApi": true
+    }
+  ],
+  "passed": true,
+  "credentialsRetained": false
+}

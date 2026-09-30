@@ -1,0 +1,371 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse260930",
+  "account": "269624229733",
+  "region": "us-west-2",
+  "method": {
+    "boundary": "Observed operator-led third-org addition. Elapsed includes manual preparation, verification, and pauses; it is not an automated provisioning benchmark.",
+    "timelineSamples": 154,
+    "firstSampleUtc": "2026-09-30T19:22:36.7403342Z",
+    "lastSampleUtc": "2026-09-30T19:52:35.9941889Z",
+    "sampling": "Approximately 10-14 seconds between completed Kubernetes/Argo snapshots; readiness is first observed, not exact transition time.",
+    "probe": "Single synthetic hash-only artifact per org, one linked third-org workflow; 1-second polls for state/history; localhost EKS port-forward.",
+    "e2ePollResolution": "1 second; confirmation and history may be observed up to approximately one poll late."
+  },
+  "events": [
+    {
+      "label": "Kickoff snapshot",
+      "atUtc": "2026-09-30T19:22:36.7403342Z",
+      "elapsedSec": 0,
+      "source": "Kubernetes sampler",
+      "precision": "sample timestamp"
+    },
+    {
+      "label": "Fabric identity ready",
+      "atUtc": "2026-09-30T19:27:18Z",
+      "elapsedSec": 281,
+      "source": "Fabric operator event",
+      "precision": "one-second timestamp"
+    },
+    {
+      "label": "Fabric peer pod ready",
+      "atUtc": "2026-09-30T19:28:42Z",
+      "elapsedSec": 365,
+      "source": "Fabric operator event",
+      "precision": "one-second timestamp"
+    },
+    {
+      "label": "Channel includes org three",
+      "atUtc": "2026-09-30T19:32:20Z",
+      "elapsedSec": 583,
+      "source": "Fabric operator event",
+      "precision": "one-second timestamp"
+    },
+    {
+      "label": "Peer joined channel",
+      "atUtc": "2026-09-30T19:34:00Z",
+      "elapsedSec": 683,
+      "source": "Fabric operator event",
+      "precision": "one-second timestamp"
+    },
+    {
+      "label": "Chaincode ready",
+      "atUtc": "2026-09-30T19:35:12Z",
+      "elapsedSec": 755,
+      "source": "Fabric operator event",
+      "precision": "one-second timestamp"
+    },
+    {
+      "label": "Third app services ready observed",
+      "atUtc": "2026-09-30T19:48:09.6953300Z",
+      "elapsedSec": 1533,
+      "source": "Kubernetes sampler",
+      "precision": "up to next sample"
+    },
+    {
+      "label": "Argo Synced and Healthy observed",
+      "atUtc": "2026-09-30T19:48:19.6552817Z",
+      "elapsedSec": 1543,
+      "source": "Kubernetes sampler",
+      "precision": "up to next sample"
+    },
+    {
+      "label": "First third-org artifact confirmed",
+      "atUtc": "2026-09-30T19:51:21.483Z",
+      "elapsedSec": 1725,
+      "source": "API plus Fabric transaction ID",
+      "precision": "one-second API polling"
+    },
+    {
+      "label": "First third-org workflow confirmed",
+      "atUtc": "2026-09-30T19:51:24.144Z",
+      "elapsedSec": 1727,
+      "source": "API plus Fabric transaction ID",
+      "precision": "one-second API polling"
+    }
+  ],
+  "readiness": [
+    {
+      "elapsedSec": 0,
+      "fabricReady": 0,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 64,
+      "fabricReady": 0,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 127,
+      "fabricReady": 1,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 184,
+      "fabricReady": 1,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 254,
+      "fabricReady": 1,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 308,
+      "fabricReady": 1,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 363,
+      "fabricReady": 1,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 432,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 491,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 544,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 607,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 661,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 721,
+      "fabricReady": 2,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 788,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 843,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 906,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 961,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1026,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1081,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1144,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1201,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1267,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1321,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1381,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1440,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1502,
+      "fabricReady": 3,
+      "appReady": 0,
+      "argoReady": 0,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1563,
+      "fabricReady": 3,
+      "appReady": 2,
+      "argoReady": 1,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1622,
+      "fabricReady": 3,
+      "appReady": 2,
+      "argoReady": 1,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1681,
+      "fabricReady": 3,
+      "appReady": 2,
+      "argoReady": 1,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1740,
+      "fabricReady": 3,
+      "appReady": 2,
+      "argoReady": 1,
+      "nodesReady": 3
+    },
+    {
+      "elapsedSec": 1799,
+      "fabricReady": 3,
+      "appReady": 2,
+      "argoReady": 1,
+      "nodesReady": 3
+    }
+  ],
+  "gitops": {
+    "revision": "88c34a5f9cd0c7b7516e93da3cfceca596b4c5ad",
+    "firstSyncedHealthyObservedAt": "2026-09-30T19:48:19.6552817Z",
+    "firstThirdAppReadyObservedAt": "2026-09-30T19:48:09.6953300Z"
+  },
+  "firstProvenance": {
+    "artifact": {
+      "acceptedMs": 79,
+      "confirmedMs": 3334,
+      "historyMs": 3689,
+      "catalogMs": 3740,
+      "historyTotal": 1
+    },
+    "workflow": {
+      "acceptedMs": 64,
+      "confirmedMs": 2253
+    }
+  },
+  "continuity": {
+    "artifacts": [
+      {
+        "organization": "NSG",
+        "result": "SUCCESS",
+        "confirmedMs": 3331,
+        "historyTotal": 1
+      },
+      {
+        "organization": "Citizen Science",
+        "result": "SUCCESS",
+        "confirmedMs": 2270,
+        "historyTotal": 1
+      },
+      {
+        "organization": "Magnetic Arch",
+        "result": "SUCCESS",
+        "confirmedMs": 3334,
+        "historyTotal": 1
+      }
+    ],
+    "passedOwnershipChecks": 9,
+    "totalOwnershipChecks": 9
+  },
+  "footprint": {
+    "before": {
+      "capturedAt": "2026-09-30T16:29:07.268Z",
+      "nodes": 3,
+      "pods": 71,
+      "readyPods": 71,
+      "fabricPods": 14,
+      "appPods": 21
+    },
+    "after": {
+      "capturedAt": "2026-09-30T19:53:10.889Z",
+      "nodes": 3,
+      "pods": 76,
+      "readyPods": 76,
+      "fabricPods": 17,
+      "appPods": 23
+    }
+  },
+  "caveats": [
+    "The first peer-join attempt used a config block and failed; the corrected genesis-block join succeeded. The correction is included in observed wall time.",
+    "One original two-org fault-run API transaction pointer differed from Fabric history; this onboarding test does not resolve that separate integrity finding.",
+    "The third peer and CA share an existing node with Citizen Science, so no fourth node was added but host failure isolation is weaker."
+  ]
+}

@@ -26,19 +26,19 @@ Sources: `two-org-metrics-20260930.json`, `two-org-load-metrics-20260930.json`, 
 
 ## Third-organization candidate plots
 
-Candidate peer organization: the existing **Magnetic Arch Plasma Showcase** (`MagneticArchMSP`). This is an OSC-curated demonstration identity, not an assertion that the source researchers operate a Fabric organization. It is currently present as a database/application model only; promotion to a third peer organization requires a real CA/service identity, channel configuration update, peer(s), chaincode installation and approval, application routing, and end-to-end confirmation.
+Peer organization: **Magnetic Arch Plasma Showcase** (`MagneticArchMSP`). This is an OSC-curated demonstration identity, not an assertion that the source researchers operate a Fabric organization. Before this experiment it existed only in the database/application model. The experiment added its own CA and Fabric identity, peer, channel membership, chaincode approval/service, application routing, and confirmed transactions.
 
 | Rank | Possible plot | Selected? | Measurement boundary |
 | --- | --- | --- | --- |
 | 1 | Milestone elapsed time from kickoff to CA/identity, channel update, peer ready, chaincode ready, app ready, first artifact, first workflow | Yes | UTC event stamps from controller and Fabric/API probes; no guessed duration. |
-| 2 | Desired versus ready third-org pods over time, with Argo sync and health transitions | Yes | Kubernetes/Argo snapshots every 5-10 seconds. |
-| 3 | Third peer ledger block-height catch-up relative to the orderer and existing peers | Yes | Repeated peer channel-info queries; block heights only, not record counts. |
-| 4 | Before/after ready pod count, requested CPU and memory, node count, and estimated run rate | Yes | Same Kubernetes and cost definitions on both sides. |
-| 5 | Original-org availability/confirmation during the addition, then all-org ownership and cross-org isolation checks | Yes | Small continuous sentinel probes and explicit authorization matrix. |
-| 6 | Channel config block version/sequence over time | No | Useful audit point but low explanatory value as a standalone plot. |
-| 7 | CA enrollment and identity readiness latency | No | Fold into the milestone chart. |
-| 8 | Chaincode install, approval, and first evaluation times | No | Fold into the milestone chart. |
-| 9 | First artifact and workflow confirmation latency by org after onboarding | No | Capture as values in continuity/validation evidence. |
+| 2 | Ready third-org Fabric/application pods over time, with Argo sync and health | Yes | 154 Kubernetes/Argo snapshots, roughly 10-14 seconds apart. |
+| 3 | Third peer block-height catch-up relative to existing peers | No | Only join/readability and later block continuation were measured; no repeated height series. Do not plot an invented curve. |
+| 4 | First third-org public artifact: API acceptance, Fabric confirmation, history, catalog; linked workflow | Yes | One client-timed synthetic probe and direct third-peer ledger history verification. |
+| 5 | All-org post-addition confirmation and cross-org ownership checks | Yes | One artifact per org after the change, plus nine exact expected-status checks. No continuous sentinel was running throughout the addition. |
+| 6 | Before/after Fabric/app/other ready pods and node count | Yes | Two read-only snapshots; 71/71 then 76/76 ready pods, three nodes both times. |
+| 7 | Channel config sequence/block and endorsement membership | No | The config change is verified but is an audit fact, not a meaningful time series. |
+| 8 | CA enrollment, secret rotation, and chaincode approval intervals | No | Included as operational steps/milestones, not separately plotted. |
+| 9 | Third-org CPU/memory and billed cost delta | No | No matched quiet-window usage samples or billing readout; same nodes does not mean zero added cost. |
 | 10 | Storage/PVC growth by organization | No | Requires a longer stabilization window than this demonstration. |
 
 ## Onboarding acceptance criteria
@@ -50,6 +50,22 @@ Candidate peer organization: the existing **Magnetic Arch Plasma Showcase** (`Ma
 5. Existing orgs: post-addition submissions and histories still work; unauthorized cross-org reads/updates remain rejected.
 6. Evidence: record each actual milestone and failure, recheck Argo and Kubernetes after the experiment, and update plots from measured data only.
 
-## Results
+## Measured third-org results and five selected plots
 
-Third-org work pending. Do not claim third-organization onboarding time before criterion 4 is met. The two-org baseline and expanded deck are complete; no third-org milestones or plots should be fabricated from these sources.
+Slides 20-24 of `OSC-IS-three-org-evidence-20260930.pptx` add **five** native editable charts to the 19-slide baseline. The 24-slide deck has 22 charts total. The chart-ready source is `third-org-onboarding-metrics-20260930.json`; raw snapshots, milestones, and E2E request-level details remain ignored under `platform/.generated/aws/usrse260930/evidence/metrics/`. `third-org-ledger-history-20260930.json` records the independent direct-ledger checks.
+
+| Slide | Parameters and result | Why it matters; limits |
+| --- | --- | --- |
+| 20, operator-led milestones | First sampler snapshot 19:22:36 UTC; identity 19:27:18; channel config committed 19:32:20; peer joined/readable 19:34:00; chaincode ready 19:35:12; app ready first observed 19:48:09; first artifact 19:51:21; first workflow 19:51:24. Last milestone 28.8 minutes from kickoff. | Shows what "adding an organization" actually entails beyond a pod appearing. This includes operator verification, pauses, and a corrected peer-join command; **not** an automated provisioning benchmark. |
+| 21, readiness/GitOps | 154 snapshots from 19:22:36 to about 19:52 UTC, roughly every 10-14 seconds. Third Fabric CA/peer/chaincode reached 3/3 ready; ledger gateway/history worker 2/2; Argo first observed `Synced/Healthy` on revision `88c34a5` at 19:48:19. | Makes the infrastructure/application sequence visible. First observed state can lag the actual transition by one sample; it does not certify a working write. |
+| 22, first provenance path | One public synthetic Magnetic Arch artifact: API accepted 79 ms, confirmed with Fabric transaction ID 3,334 ms, history readable 3,689 ms, public catalog visible 3,740 ms. Linked private workflow accepted 64 ms and confirmed 2,253 ms. Direct gateway history found the API transaction ID for **both** records (2/2). | Demonstrates the application-to-ledger-to-history path, not just pod health. One probe with one-second polling is not a latency distribution. No research bytes were uploaded. |
+| 23, continuity and isolation | One post-addition artifact per org: NSG 3,331 ms; Citizen Science 2,270 ms; Magnetic Arch 3,334 ms to first observed confirmation. All three histories had one item. Nine own-org/cross-org checks passed, including rejected reads and updates. | Shows the two original orgs still worked after onboarding and tenant boundaries held. Sequential, n=1 per org; no claim of uninterrupted availability *during* all 29 minutes or equal long-run performance. |
+| 24, footprint | Before: 71/71 ready pods, 14 Fabric, 21 app, 36 other, three nodes. After: 76/76 ready pods, 17 Fabric, 23 app, 36 other, three nodes. | Shows the added deployment surface without a fourth worker. It is **not** a cost estimate: added Secrets Manager entries, a 1 GiB gp3 PVC, and resource consumption still cost money; colocating org3 with Citizen Science weakens node-failure isolation. |
+
+The channel configuration advanced from sequence 0 to 1 and explicitly contains `MagneticArchMSP`; the third peer joined, saw the committed chaincode definition, and later committed blocks carrying the smoke transactions. The first join attempt used a config block and failed. Retrying with genesis block 0 succeeded. No block-height *time series* was collected, so none is plotted.
+
+The new CA generated random enrollment secrets. Two registration secrets appeared in local tool output during the initial enrollment and were immediately rotated before the application was enabled; the CA root secret was not printed. New application credentials are held in AWS Secrets Manager and mounted via pod identity/CSI; no values are in the deck or sanitized JSON. The test user reuses the existing private E2E password hash for a bounded smoke test. Existing Fabric sample internal credentials and missing `osc-fabric` NetworkPolicy remain limitations. The application ALB is still internal, Fabric ingress is ClusterIP-only, and the EKS public control endpoint is restricted to the operator IP. Images are pinned to existing digests; the GitOps repository image uses the existing pinned BusyBox base.
+
+The exact newly built GitOps image passed a pinned Trivy 0.74.0 High/Critical scan with zero findings and a fresh database (the mirror failed, then the primary database downloaded). A targeted ACL audit of 29 third-org credential paths found no unexpected principals. The broader ACL helper refused to traverse an existing generated Node junction, so do not claim that helper re-audited the entire runtime after this addition.
+
+One pre-existing two-org fault-run API transaction pointer differed from its Fabric history transaction ID (89/90 matched). The new direct third-peer artifact/workflow checks were 2/2 matches; they do **not** erase that older discrepancy. AWS remains running at the operator's request; expiry tags are not teardown automation.

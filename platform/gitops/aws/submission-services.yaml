@@ -42,12 +42,16 @@ spec:
               valueFrom: {secretKeyRef: {name: worker-rabbitmq-credentials, key: password}}
             - {name: LEDGER_GATEWAY_NSG_URL, value: http://ledger-gateway-nsg:4000}
             - {name: LEDGER_GATEWAY_CITIZEN_SCIENCE_URL, value: http://ledger-gateway-citizen-science:4000}
+            - {name: LEDGER_GATEWAY_MAGNETIC_ARCH_URL, value: http://ledger-gateway-magnetic-arch:4000}
             - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
             - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: MAGNETIC_ARCH_ORGANIZATION_ID, value: dddddddd-dddd-4ddd-8ddd-dddddddddddd}
             - name: LEDGER_GATEWAY_NSG_TOKEN
               valueFrom: {secretKeyRef: {name: worker-ledger-auth, key: nsg-token}}
             - name: LEDGER_GATEWAY_CITIZEN_SCIENCE_TOKEN
               valueFrom: {secretKeyRef: {name: worker-ledger-auth, key: citizen-science-token}}
+            - name: LEDGER_GATEWAY_MAGNETIC_ARCH_TOKEN
+              valueFrom: {secretKeyRef: {name: worker-ledger-auth, key: magnetic-arch-token}}
           readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
           livenessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 10}
           securityContext:

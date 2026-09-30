@@ -45,10 +45,12 @@ def main() -> None:
         "__LISTENER_SECRET_NAME__": f"{prefix}/listener",
         "__LEDGER_NSG_TOKEN_SECRET_NAME__": f"{prefix}/ledger-token/nsg",
         "__LEDGER_CITIZEN_TOKEN_SECRET_NAME__": f"{prefix}/ledger-token/citizen-science",
+        "__LEDGER_MAGNETIC_ARCH_TOKEN_SECRET_NAME__": f"{prefix}/ledger-token/magnetic-arch",
         "__POSTGRES_SECRET_NAME__": f"{prefix}/postgres",
         "__RABBITMQ_SECRET_NAME__": f"{prefix}/rabbitmq",
         "__FABRIC_NSG_SECRET_NAME__": f"{prefix}/fabric/nsg",
         "__FABRIC_CITIZEN_SECRET_NAME__": f"{prefix}/fabric/citizen-science",
+        "__FABRIC_MAGNETIC_ARCH_SECRET_NAME__": f"{prefix}/fabric/magnetic-arch",
     }
 
     if args.destination.exists():

@@ -224,6 +224,7 @@ locals {
     submission-worker = [
       aws_secretsmanager_secret.ledger_nsg_token.arn,
       aws_secretsmanager_secret.ledger_citizen_science_token.arn,
+      aws_secretsmanager_secret.ledger_magnetic_arch_token.arn,
       aws_secretsmanager_secret.rabbitmq.arn,
     ]
     submission-listener = [
@@ -237,6 +238,10 @@ locals {
     ledger-gateway-citizen-science = [
       aws_secretsmanager_secret.ledger_citizen_science_token.arn,
       aws_secretsmanager_secret.fabric_citizen_science.arn,
+    ]
+    ledger-gateway-magnetic-arch = [
+      aws_secretsmanager_secret.ledger_magnetic_arch_token.arn,
+      aws_secretsmanager_secret.fabric_magnetic_arch.arn,
     ]
   }
 }

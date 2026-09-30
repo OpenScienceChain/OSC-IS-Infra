@@ -3,7 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Presentation, PresentationFile } from '@oai/artifact-tool';
 
-const { SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON, PRIVACY_METRICS_JSON, RESOURCE_METRICS_JSON } = process.env;
+const { SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON, PRIVACY_METRICS_JSON, RESOURCE_METRICS_JSON, ONBOARDING_METRICS_JSON } = process.env;
 for (const [name, value] of Object.entries({ SKILL_DIR, TMP_DIR, FINAL_PPTX, RUNTIME_PYTHON, METRICS_JSON, LOAD_METRICS_JSON, PRIVACY_METRICS_JSON, RESOURCE_METRICS_JSON })) {
   if (!path.isAbsolute(value ?? '')) throw new Error(`${name} must be an absolute path`);
 }
@@ -14,6 +14,7 @@ const metrics = JSON.parse(await fs.readFile(METRICS_JSON, 'utf8'));
 const load = JSON.parse(await fs.readFile(LOAD_METRICS_JSON, 'utf8'));
 const privacy = JSON.parse(await fs.readFile(PRIVACY_METRICS_JSON, 'utf8'));
 const resources = JSON.parse(await fs.readFile(RESOURCE_METRICS_JSON, 'utf8'));
+const onboarding = ONBOARDING_METRICS_JSON ? JSON.parse(await fs.readFile(ONBOARDING_METRICS_JSON, 'utf8')) : null;
 const font = resolvePresentationFont({ fontFamily: 'Arial' });
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const C = {
@@ -58,12 +59,12 @@ function note(slide, text, top = 586) { addText(slide, text, 75, top, 1130, 66, 
 {
   const slide = presentation.slides.add();
   slide.background.fill = C.white;
-  addText(slide, 'Two-organization AWS evidence', 74, 144, 1120, 78, 48, C.ink, true);
+  addText(slide, onboarding ? 'AWS evidence: two to three organizations' : 'Two-organization AWS evidence', 74, 144, 1120, 78, 48, C.ink, true);
   addText(slide, 'Open Science Chain  |  US-RSE 2026', 76, 235, 1100, 42, 25, C.teal);
   addText(slide, '575 load submissions across Neuroscience Gateway and Citizen Science', 76, 345, 1080, 45, 26, C.ink);
   addText(slide, 'Added privacy and resource checks. One transaction-pointer discrepancy remains.', 76, 411, 1060, 62, 21, C.gray);
   addText(slide, sourceLine, 76, 679, 1100, 24, 13, C.gray);
-  slide.speakerNotes.textFrame.setText(`Sources: ${METRICS_JSON}; ${LOAD_METRICS_JSON}. This deck describes the two-organization AWS baseline and bounded synthetic load. No third Fabric peer organization has been deployed. One of 90 fault-run API transaction pointers did not match Fabric history; see the integrity slide.`);
+  slide.speakerNotes.textFrame.setText(`Sources: ${METRICS_JSON}; ${LOAD_METRICS_JSON}${onboarding ? `; ${ONBOARDING_METRICS_JSON}` : ''}. The opening section describes the two-organization AWS baseline and bounded synthetic load.${onboarding ? ' Slides 20-24 document the real third Fabric peer onboarding.' : ' No third Fabric peer organization has been deployed.'} One of 90 fault-run API transaction pointers did not match Fabric history; see the integrity slide.`);
 }
 
 // 2. One public artifact per org shows the observable provenance path.
@@ -440,17 +441,118 @@ for (const [page, title, key, unit, max, major] of [
   note(slide, 'Observed usage during a bounded run; no Metrics Server or new collector was installed.', 602);
 }
 
+if (onboarding) {
+  const minutes = secondsValue => Math.round(secondsValue / 6) / 10;
+  const milestones = onboarding.events.filter(item => !['Kickoff snapshot', 'Argo Synced and Healthy observed'].includes(item.label));
+  {
+    const slide = baseSlide(
+      'Adding a real third Fabric organization',
+      'Observed elapsed time from first onboarding snapshot; manual work included', 20,
+      `Source: ${ONBOARDING_METRICS_JSON}, events. UTC timestamps from operator milestones, 154 Kubernetes/Argo snapshots, and API confirmation probes. This is one operator-led run, not an automated provisioning benchmark. The first peer-join attempt failed because a config block was used; the corrected genesis-block join succeeded and its repair time is included.`,
+    );
+    chart(slide, 'bar', {
+      position: { left: 205, top: 175, width: 875, height: 405 },
+      categories: milestones.map(item => item.label.replace('Fabric ', '').replace(' observed', '').replace('Third app services', 'App services').replace('First third-org ', 'First ')),
+      series: [{ name: 'Elapsed minutes', values: milestones.map(item => minutes(item.elapsedSec)), fill: C.teal }],
+      barOptions: { direction: 'bar', grouping: 'clustered', gapWidth: 35 }, hasLegend: false,
+      xAxis: { title: 'Minutes', min: 0, max: 30, majorUnit: 5, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+      yAxis: { textStyle: { fill: C.ink, fontSize: 14 } },
+      dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 13 } },
+    });
+    note(slide, 'First confirmed workflow at 28.8 minutes. This includes operator checks and a corrected peer-join step.', 604);
+  }
+  {
+    const slide = baseSlide(
+      'Pods ready, then GitOps converged',
+      'Third-organization pods observed by Kubernetes, sampled about every 10-14 seconds', 21,
+      `Source: ${ONBOARDING_METRICS_JSON}, readiness and gitops. Each plotted point is the first sample in a two-minute bucket; readiness is first observed, not the exact state-transition time. Fabric is CA, peer and chaincode; application is ledger gateway and history worker. Argo is 1 only when Synced and Healthy at revision ${onboarding.gitops.revision}.`,
+    );
+    const points = onboarding.readiness.filter((_, index) => index % 2 === 0 || index === onboarding.readiness.length - 1);
+    chart(slide, 'line', {
+      position: { left: 102, top: 186, width: 1070, height: 385 },
+      categories: points.map(item => String(minutes(item.elapsedSec))),
+      series: [
+        { name: 'Fabric ready / 3', values: points.map(item => item.fabricReady), line: { style: 'solid', fill: C.teal, width: 3 }, marker: { symbol: 'circle', size: 6 } },
+        { name: 'App ready / 2', values: points.map(item => item.appReady), line: { style: 'solid', fill: C.blue, width: 3 }, marker: { symbol: 'square', size: 6 } },
+        { name: 'Argo healthy / 1', values: points.map(item => item.argoReady), line: { style: 'solid', fill: C.gold, width: 3 }, marker: { symbol: 'diamond', size: 6 } },
+      ],
+      hasLegend: true, legend: { position: 'top', overlay: false, textStyle: { fill: C.ink, fontSize: 15 } },
+      yAxis: { title: 'Ready components', min: 0, max: 3.2, majorUnit: 1, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+      xAxis: { title: 'Minutes since first snapshot', textStyle: { fill: C.ink, fontSize: 12 } },
+    });
+    note(slide, 'Argo reached Synced/Healthy on the reviewed revision; all five third-org pods were ready.', 601);
+  }
+  {
+    const slide = baseSlide(
+      'The first third-org artifact was traceable',
+      'Client-observed elapsed time from POST start for one public synthetic artifact', 22,
+      `Source: ${ONBOARDING_METRICS_JSON}, firstProvenance. Cumulative client timing; 1-second state/history polling can observe confirmation late. The artifact was written through the MagneticArchMSP gateway/peer, had a Fabric transaction ID and one readable history revision, and appeared in the public catalog. The linked private workflow confirmed in ${seconds(onboarding.firstProvenance.workflow.confirmedMs)} seconds. No research bytes were uploaded.`,
+    );
+    const a = onboarding.firstProvenance.artifact;
+    chart(slide, 'bar', {
+      position: { left: 150, top: 188, width: 995, height: 365 },
+      categories: ['API accepted', 'Ledger confirmed', 'History readable', 'Catalog visible'],
+      series: [{ name: 'Seconds', values: [a.acceptedMs, a.confirmedMs, a.historyMs, a.catalogMs].map(seconds), fill: C.teal }],
+      barOptions: { direction: 'column', grouping: 'clustered', gapWidth: 80 }, hasLegend: false,
+      yAxis: { title: 'Seconds', min: 0, max: 4.2, majorUnit: 1, numberFormatCode: '0.0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+      xAxis: { textStyle: { fill: C.ink, fontSize: 14 } },
+      dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 14 } },
+    });
+    note(slide, 'Workflow confirmed in 2.25 seconds. Pod readiness alone would not prove this provenance path.');
+  }
+  {
+    const slide = baseSlide(
+      'The original organizations still worked',
+      'One post-onboarding synthetic artifact per organization; all had readable history', 23,
+      `Source: ${ONBOARDING_METRICS_JSON}, continuity. One artifact per organization after onboarding, sequentially submitted, 1-second state polling. All three confirmed and had one history item. Nine ownership/denial checks passed, including cross-org reads and updates. This is a functional smoke test, not comparative performance evidence or continuous availability during the entire addition.`,
+    );
+    chart(slide, 'bar', {
+      position: { left: 157, top: 185, width: 965, height: 370 },
+      categories: onboarding.continuity.artifacts.map(item => item.organization),
+      series: [{ name: 'Confirmation seconds', values: onboarding.continuity.artifacts.map(item => seconds(item.confirmedMs)), fill: C.teal }],
+      barOptions: { direction: 'column', grouping: 'clustered', gapWidth: 90 }, hasLegend: false,
+      yAxis: { title: 'Seconds', min: 0, max: 4, majorUnit: 1, numberFormatCode: '0.0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+      xAxis: { textStyle: { fill: C.ink, fontSize: 15 } },
+      dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 14 } },
+    });
+    note(slide, 'Three confirmed artifacts; 3/3 histories readable; 9/9 ownership checks passed.');
+  }
+  {
+    const slide = baseSlide(
+      'Five more pods, no fourth node',
+      'Ready Kubernetes pods before and after third-org onboarding', 24,
+      `Source: ${ONBOARDING_METRICS_JSON}, footprint. Before snapshot ${onboarding.footprint.before.capturedAt}; after snapshot ${onboarding.footprint.after.capturedAt}. Both had three ready m7i.large nodes and all pods ready. The three Fabric-side pods and two app services were placed on existing nodes. This is pod-count footprint, not a measured cloud-cost delta; shared-host placement weakens failure isolation.`,
+    );
+    const before = onboarding.footprint.before;
+    const after = onboarding.footprint.after;
+    chart(slide, 'bar', {
+      position: { left: 152, top: 185, width: 977, height: 377 },
+      categories: ['Fabric', 'Application', 'Other'],
+      series: [
+        { name: 'Before', values: [before.fabricPods, before.appPods, before.pods - before.fabricPods - before.appPods], fill: C.blue },
+        { name: 'After', values: [after.fabricPods, after.appPods, after.pods - after.fabricPods - after.appPods], fill: C.teal },
+      ],
+      barOptions: { direction: 'column', grouping: 'clustered', gapWidth: 80 },
+      hasLegend: true, legend: { position: 'top', overlay: false, textStyle: { fill: C.ink, fontSize: 16 } },
+      yAxis: { title: 'Ready pods', min: 0, max: 40, majorUnit: 10, numberFormatCode: '0', majorGridlines: { style: 'solid', fill: C.light, width: 1 }, textStyle: { fill: C.gray, fontSize: 14 } },
+      xAxis: { textStyle: { fill: C.ink, fontSize: 15 } },
+      dataLabels: { showValue: true, position: 'outEnd', textStyle: { fill: C.ink, fontSize: 14 } },
+    });
+    note(slide, '71 to 76 ready pods; EKS nodes stayed at three. This is not a zero-cost addition.');
+  }
+}
+
 await fs.mkdir(TMP_DIR, { recursive: true });
 await fs.mkdir(path.dirname(FINAL_PPTX), { recursive: true });
 const candidatePath = path.join(TMP_DIR, 'candidate.pptx');
 await (await PresentationFile.exportPptx(presentation)).save(candidatePath);
 const result = await finalizePresentation({
-  workspaceDir: path.dirname(TMP_DIR), candidatePath, finalPath: FINAL_PPTX,
+  workspaceDir: process.env.WORKSPACE_DIR || path.dirname(TMP_DIR), candidatePath, finalPath: FINAL_PPTX,
   pythonExecutable: RUNTIME_PYTHON,
   integrityValidatorPath: path.join(SKILL_DIR, 'container_tools/inspect_presentation_package_integrity.py'),
   layoutValidatorPath: path.join(SKILL_DIR, 'container_tools/inspect_presentation_layout_geometry.py'),
   layoutArgs: ['--expected-slide-size-emu', '12192000,6858000', '--validate-heading-fit'],
-  requiredNativeChartOwnerSlides: [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  requiredNativeChartOwnerSlides: [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, ...(onboarding ? [20, 21, 22, 23, 24] : [])],
   materializeLiteralChartWorkbooks: true,
   fontPolicy: { basis: 'design', families: [font] },
   verifyArtifactToolImport: true,
