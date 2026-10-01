@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '.generated');
 const envFile = resolve(root, 'local.env');
 const manifestFile = resolve(root, 'research-examples-manifest.json');
-const reportFile = resolve(root, 'research-examples-seed-report.json');
-const baseUrl = 'http://127.0.0.1:13388/api/v1';
+const reportFile = resolve(root, process.env.OSC_SEED_REPORT_NAME || 'research-examples-seed-report.json');
+const baseUrl = process.env.OSC_SEED_API_BASE_URL || 'http://127.0.0.1:13388/api/v1';
+if (!/^http:\/\/127\.0\.0\.1:\d+\/api\/v1$/.test(baseUrl)) {
+  throw new Error('Curator seeding requires a loopback-only Gateway URL');
+}
 const definitions = {
   'eeg-eye-state': {
     organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -47,8 +50,11 @@ const env = Object.fromEntries(readFileSync(envFile, 'utf8').split(/\r?\n/)
     const index = line.indexOf('=');
     return [line.slice(0, index), line.slice(index + 1)];
   }));
-if (!env.LOCAL_ADMIN_PASSWORD || !env.LOCAL_MAGNETIC_CURATOR_PASSWORD) {
-  throw new Error('Local administrator and curator secrets are required');
+const adminPassword = process.env.OSC_SEED_ADMIN_PASSWORD || env.LOCAL_ADMIN_PASSWORD;
+const adminUsername = process.env.OSC_SEED_ADMIN_USERNAME || 'localadmin';
+const curatorPassword = process.env.OSC_SEED_CURATOR_PASSWORD || env.LOCAL_MAGNETIC_CURATOR_PASSWORD;
+if (!adminPassword || !curatorPassword) {
+  throw new Error('Administrator and curator secrets are required');
 }
 const prepared = JSON.parse(readFileSync(manifestFile, 'utf8'));
 if (!Array.isArray(prepared.examples) || prepared.examples.length !== 2 ||
@@ -79,7 +85,7 @@ async function api(path, { method = 'GET', token, body } = {}) {
 
 async function curatorToken(example, definition) {
   const password = createHash('sha256')
-    .update(`${env.LOCAL_MAGNETIC_CURATOR_PASSWORD}:${example.organizationId}`)
+    .update(`${curatorPassword}:${example.organizationId}`)
     .digest('hex');
   const login = () => api('/users/login', {
     method: 'POST',
@@ -92,7 +98,7 @@ async function curatorToken(example, definition) {
   }
   const admin = await api('/users/login', {
     method: 'POST',
-    body: { username: 'localadmin', password: env.LOCAL_ADMIN_PASSWORD },
+    body: { username: adminUsername, password: adminPassword },
   });
   await api('/users/register', {
     method: 'POST',
@@ -210,7 +216,7 @@ async function seedExample(example) {
 const report = { seededAt: new Date().toISOString(), examples: [] };
 for (const example of prepared.examples) {
   report.examples.push(await seedExample(example));
-  console.log(`Confirmed ${example.key} on the local Fabric network`);
+  console.log(`Confirmed ${example.key} on the connected Fabric network`);
 }
 writeFileSync(reportFile, JSON.stringify(report, null, 2) + '\n');
 console.log(`Hash-only report: ${reportFile}`);

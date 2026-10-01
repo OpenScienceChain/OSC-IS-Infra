@@ -5,13 +5,16 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '.generated');
 const envFile = resolve(root, 'local.env');
 const manifestFile = resolve(root, 'magnetic-arch-manifest.json');
-const reportFile = resolve(root, 'magnetic-arch-seed-report.json');
+const reportFile = resolve(root, process.env.OSC_SEED_REPORT_NAME || 'magnetic-arch-seed-report.json');
 const organizationId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const marker = 'magnetic-arch-plasma-example';
 const sourceUrl = 'https://zenodo.org/records/13987138';
 const sourceDoi = '10.5281/zenodo.13987138';
 const workflowTitle = 'Magnetic arch plasma RPA and FC measurement workflow';
-const baseUrl = 'http://127.0.0.1:13388/api/v1';
+const baseUrl = process.env.OSC_SEED_API_BASE_URL || 'http://127.0.0.1:13388/api/v1';
+if (!/^http:\/\/127\.0\.0\.1:\d+\/api\/v1$/.test(baseUrl)) {
+  throw new Error('Curator seeding requires a loopback-only Gateway URL');
+}
 
 for (const path of [envFile, manifestFile, reportFile]) {
   if (!path.startsWith(root + sep)) throw new Error('Showcase files must remain inside .generated');
@@ -30,8 +33,11 @@ if (source.sourceUrl !== sourceUrl || source.sourceDoi !== sourceDoi ||
     source.fileCount !== 80 || source.artifacts?.length !== 5) {
   throw new Error('The prepared source manifest is not the reviewed magnetic arch dataset');
 }
-if (!env.LOCAL_MAGNETIC_CURATOR_PASSWORD || !env.LOCAL_ADMIN_PASSWORD) {
-  throw new Error('Local curator and administrator passwords are required');
+const curatorPassword = process.env.OSC_SEED_CURATOR_PASSWORD || env.LOCAL_MAGNETIC_CURATOR_PASSWORD;
+const adminPassword = process.env.OSC_SEED_ADMIN_PASSWORD || env.LOCAL_ADMIN_PASSWORD;
+const adminUsername = process.env.OSC_SEED_ADMIN_USERNAME || 'localadmin';
+if (!curatorPassword || !adminPassword) {
+  throw new Error('Curator and administrator passwords are required');
 }
 
 async function api(path, { method = 'GET', token, body } = {}) {
@@ -67,13 +73,13 @@ async function login(username, password) {
 
 async function curatorToken() {
   try {
-    return await login('magnetic-curator', env.LOCAL_MAGNETIC_CURATOR_PASSWORD);
+    return await login('magnetic-curator', curatorPassword);
   } catch (error) {
     if (error.status !== 401 && error.status !== 404) throw error;
   }
   const admin = await api('/users/login', {
     method: 'POST',
-    body: { username: 'localadmin', password: env.LOCAL_ADMIN_PASSWORD },
+    body: { username: adminUsername, password: adminPassword },
   });
   await api('/users/register', {
     method: 'POST',
@@ -82,12 +88,12 @@ async function curatorToken() {
       name: 'Magnetic Arch Curator',
       email: 'magnetic-curator@example.test',
       username: 'magnetic-curator',
-      password: env.LOCAL_MAGNETIC_CURATOR_PASSWORD,
+      password: curatorPassword,
       role: 'pi',
       organizationId,
     },
   });
-  return login('magnetic-curator', env.LOCAL_MAGNETIC_CURATOR_PASSWORD);
+  return login('magnetic-curator', curatorPassword);
 }
 
 async function waitForConfirmation(type, id) {
