@@ -670,7 +670,25 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             time.sleep(10)
         raise RuntimeError("The tagged internal ALB did not become active")
 
+    def assert_distribution_not_external_api(self) -> dict[str, Any]:
+        current = aws_json(
+            "cloudfront", "get-distribution-config", "--id", required("CLOUDFRONT_DISTRIBUTION")
+        )
+        origins = current["DistributionConfig"].get("Origins", {}).get("Items", [])
+        if any(origin.get("Id") == "private-demo-api-usrse260930" for origin in origins):
+            raise RuntimeError(
+                "The usrse260930 API origin is Terraform-managed by the persistent edge; "
+                "detach it there before running the usrse26r1 lifecycle."
+            )
+        return current
+
     def attach_origin(self, load_balancer: dict[str, Any]) -> None:
+        if required("CLOUDFRONT_DISTRIBUTION") == "E26XTII1H57RTX":
+            raise RuntimeError(
+                "This distribution's API origin is owned by Terraform; "
+                "the legacy lifecycle must not attach an origin."
+            )
+        self.assert_distribution_not_external_api()
         origin_name = f"osc-usrse26-{self.run_id}-api"
         endpoint = {
             "Name": origin_name,
@@ -956,32 +974,32 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
 
     def detach_origin(self) -> None:
         distribution_id = required("CLOUDFRONT_DISTRIBUTION")
-        current = aws_json("cloudfront", "get-distribution-config", "--id", distribution_id)
+        current = self.assert_distribution_not_external_api()
         config = current["DistributionConfig"]
         origins = config.get("Origins", {"Quantity": 0})
+        has_legacy_origin = any(item.get("Id") == "runtime-api" for item in origins.get("Items", []))
+        behaviors = config.get("CacheBehaviors", {"Quantity": 0})
+        api_behaviors = [item for item in behaviors.get("Items", []) if item.get("PathPattern") == "/api/*"]
+        if api_behaviors and any(item.get("TargetOriginId") != "runtime-api" for item in api_behaviors):
+            raise RuntimeError("Refusing to alter an API behavior not owned by this lifecycle")
+        if bool(api_behaviors) != has_legacy_origin:
+            raise RuntimeError("Legacy runtime origin and API behavior disagree")
         origins["Items"] = [item for item in origins.get("Items", []) if item.get("Id") != "runtime-api"]
         origins["Quantity"] = len(origins["Items"])
         if not origins["Items"]:
             origins.pop("Items", None)
-        behaviors = config.get("CacheBehaviors", {"Quantity": 0})
         behaviors["Items"] = [item for item in behaviors.get("Items", []) if item.get("PathPattern") != "/api/*"]
         behaviors["Quantity"] = len(behaviors["Items"])
         if not behaviors["Items"]:
             behaviors.pop("Items", None)
-        config["CustomErrorResponses"] = {
-            "Quantity": 2,
-            "Items": [
-                {"ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 0},
-                {"ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 0},
-            ],
-        }
-        payload = self.work / "distribution-detached.json"
-        payload.write_text(json.dumps(config), encoding="utf-8")
-        aws(
-            "cloudfront", "update-distribution", "--id", distribution_id,
-            "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
-        )
-        aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
+        if has_legacy_origin:
+            payload = self.work / "distribution-detached.json"
+            payload.write_text(json.dumps(config), encoding="utf-8")
+            aws(
+                "cloudfront", "update-distribution", "--id", distribution_id,
+                "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
+            )
+            aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
         metadata = self.work / "vpc-origin.json"
         result = run([
             "aws", "s3api", "get-object", "--bucket", required("STATE_BUCKET"),

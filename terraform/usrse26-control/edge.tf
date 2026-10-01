@@ -65,6 +65,15 @@ resource "aws_s3_object" "status" {
   lifecycle { ignore_changes = [content] }
 }
 
+resource "aws_s3_object" "status_script" {
+  bucket                 = aws_s3_bucket.edge.id
+  key                    = "status.js"
+  source                 = "${path.module}/templates/status.js"
+  source_hash            = filemd5("${path.module}/templates/status.js")
+  content_type           = "application/javascript"
+  server_side_encryption = "AES256"
+}
+
 resource "aws_cloudfront_origin_access_control" "edge" {
   name                              = "${local.name_prefix}-edge"
   description                       = "Private OSC-IS demo status origin"
@@ -73,11 +82,45 @@ resource "aws_cloudfront_origin_access_control" "edge" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_function" "spa_rewrite" {
+  name    = "${local.name_prefix}-spa-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Rewrite only static SPA routes; preserve API error status codes"
+  publish = true
+  code    = file("${path.module}/templates/spa-rewrite.js")
+}
+
+data "aws_lb" "external_demo_api" {
+  count = var.external_demo_api_alb_arn == null ? 0 : 1
+  arn   = var.external_demo_api_alb_arn
+}
+
+resource "aws_cloudfront_vpc_origin" "external_demo_api" {
+  count = var.external_demo_api_alb_arn == null ? 0 : 1
+  vpc_origin_endpoint_config {
+    name                   = "${local.name_prefix}-usrse260930-api"
+    arn                    = data.aws_lb.external_demo_api[0].arn
+    http_port              = 80
+    https_port             = 443
+    origin_protocol_policy = "http-only"
+    origin_ssl_protocols {
+      quantity = 1
+      items    = ["TLSv1.2"]
+    }
+  }
+  lifecycle {
+    precondition {
+      condition     = data.aws_lb.external_demo_api[0].internal
+      error_message = "The interactive demo API must use an internal ALB."
+    }
+  }
+}
+
 resource "aws_cloudfront_response_headers_policy" "security" {
   name = "${local.name_prefix}-security"
   security_headers_config {
     content_security_policy {
-      content_security_policy = "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; upgrade-insecure-requests"
+      content_security_policy = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; upgrade-insecure-requests"
       override                = true
     }
     content_type_options { override = true }
@@ -217,7 +260,11 @@ resource "aws_wafv2_web_acl" "edge" {
     name     = "RejectOversizeBody"
     priority = 20
     action {
-      block {}
+      block {
+        custom_response {
+          response_code = 413
+        }
+      }
     }
     statement {
       size_constraint_statement {
@@ -240,23 +287,95 @@ resource "aws_wafv2_web_acl" "edge" {
   }
 
   rule {
-    name     = "DemoHistoryRateLimit"
-    priority = 25
+    name     = "RejectAmbiguousApiPaths"
+    priority = 21
     action {
       block {
         custom_response {
-          response_code = 429
+          response_code = 410
         }
       }
     }
     statement {
-      rate_based_statement {
-        aggregate_key_type    = "CONSTANT"
-        evaluation_window_sec = 60
-        limit                 = 300
-        scope_down_statement {
+      or_statement {
+        statement {
+          byte_match_statement {
+            search_string         = "%"
+            positional_constraint = "CONTAINS"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          byte_match_statement {
+            search_string         = "\\"
+            positional_constraint = "CONTAINS"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
           regex_match_statement {
-            regex_string = "^/api/v1/demo/(artifacts|workflows)/[^/]+/history/?$"
+            regex_string = "(//|/\\.\\.?(/|$))"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "RejectAmbiguousApiPaths"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "BlockPrivateApiPaths"
+    priority = 22
+    action {
+      block {
+        custom_response {
+          response_code = 410
+        }
+      }
+    }
+    statement {
+      or_statement {
+        statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/demo/internal(/|$)"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
+            }
+          }
+        }
+        statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/demo/session/?$"
             field_to_match {
               uri_path {}
             }
@@ -274,7 +393,185 @@ resource "aws_wafv2_web_acl" "edge" {
     }
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "DemoHistoryRate"
+      metric_name                = "BlockPrivateApiPaths"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "BlockUnlistedApiPaths"
+    priority = 23
+    action {
+      block {
+        custom_response {
+          response_code = 410
+        }
+      }
+    }
+    statement {
+      and_statement {
+        statement {
+          byte_match_statement {
+            search_string         = "/api/"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
+            }
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              regex_match_statement {
+                regex_string = "^/api/v1/(demo|showcase)(/|$)|^/api/v1/health/?$"
+                field_to_match {
+                  uri_path {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "URL_DECODE"
+                }
+                text_transformation {
+                  priority = 1
+                  type     = "LOWERCASE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "BlockUnlistedApiPaths"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "DemoHistoryRateLimit"
+    priority = 25
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type    = "IP"
+        evaluation_window_sec = 60
+        limit                 = 300
+        scope_down_statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/(demo/(public/)?(artifacts|workflows)/[^/]+|showcase/(examples/[^/]+/)?(artifacts|workflows)/[^/]+)/history/?$"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "DemoHistoryRateLimit"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "DemoAccountEntryRateLimit"
+    priority = 26
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type    = "IP"
+        limit                 = 100
+        evaluation_window_sec = 300
+        scope_down_statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/demo/account/(register|sign-in)/?$"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "DemoAccountEntryRateLimit"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "DemoAccountGlobalRateLimit"
+    priority = 27
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type    = "CONSTANT"
+        limit                 = 600
+        evaluation_window_sec = 300
+        scope_down_statement {
+          regex_match_statement {
+            regex_string = "^/api/v1/demo/account/(register|sign-in)/?$"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "URL_DECODE"
+            }
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "DemoAccountGlobalRateLimit"
       sampled_requests_enabled   = false
     }
   }
@@ -343,6 +640,17 @@ resource "aws_cloudfront_distribution" "edge" {
     origin_access_control_id = aws_cloudfront_origin_access_control.edge.id
   }
 
+  dynamic "origin" {
+    for_each = var.external_demo_api_alb_arn == null ? [] : [1]
+    content {
+      domain_name = data.aws_lb.external_demo_api[0].dns_name
+      origin_id   = "private-demo-api-usrse260930"
+      vpc_origin_config {
+        vpc_origin_id = aws_cloudfront_vpc_origin.external_demo_api[0].id
+      }
+    }
+  }
+
   default_cache_behavior {
     target_origin_id           = "static-edge"
     viewer_protocol_policy     = "redirect-to-https"
@@ -351,19 +659,25 @@ resource "aws_cloudfront_distribution" "edge" {
     cache_policy_id            = aws_cloudfront_cache_policy.edge.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
     compress                   = true
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_rewrite.arn
+    }
   }
 
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
+  dynamic "ordered_cache_behavior" {
+    for_each = var.external_demo_api_alb_arn == null ? [] : [1]
+    content {
+      path_pattern               = "/api/*"
+      target_origin_id           = "private-demo-api-usrse260930"
+      viewer_protocol_policy     = "https-only"
+      allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods             = ["GET", "HEAD"]
+      cache_policy_id            = aws_cloudfront_cache_policy.api.id
+      origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+      compress                   = true
+    }
   }
 
   restrictions {
