@@ -218,6 +218,187 @@ resource "aws_wafv2_web_acl" "edge" {
     allow {}
   }
 
+  association_config {
+    request_body {
+      cloudfront {
+        default_size_inspection_limit = "KB_64"
+      }
+    }
+  }
+
+  rule {
+    name     = "RejectEncodedApiBodies"
+    priority = 8
+    action {
+      block {
+        custom_response { response_code = 415 }
+      }
+    }
+    statement {
+      and_statement {
+        statement {
+          byte_match_statement {
+            search_string         = "/api/"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          size_constraint_statement {
+            comparison_operator = "GT"
+            size                = 0
+            field_to_match {
+              single_header { name = "content-encoding" }
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "RejectEncodedApiBodies"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  rule {
+    name     = "RejectLargeNonManifestBody"
+    priority = 9
+    action {
+      block {
+        custom_response { response_code = 413 }
+      }
+    }
+    statement {
+      and_statement {
+        statement {
+          size_constraint_statement {
+            comparison_operator = "GT"
+            size                = 8192
+            field_to_match {
+              body { oversize_handling = "MATCH" }
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              and_statement {
+                statement {
+                  regex_match_statement {
+                    regex_string = "^/api/v1/demo/artifacts$"
+                    field_to_match {
+                      uri_path {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+                statement {
+                  byte_match_statement {
+                    search_string         = "POST"
+                    positional_constraint = "EXACTLY"
+                    field_to_match {
+                      method {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+                statement {
+                  byte_match_statement {
+                    search_string         = "application/json"
+                    positional_constraint = "EXACTLY"
+                    field_to_match {
+                      single_header {
+                        name = "content-type"
+                      }
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "LOWERCASE"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              and_statement {
+                statement {
+                  regex_match_statement {
+                    regex_string = "^/api/v1/demo/artifacts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    field_to_match {
+                      uri_path {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+                statement {
+                  byte_match_statement {
+                    search_string         = "PATCH"
+                    positional_constraint = "EXACTLY"
+                    field_to_match {
+                      method {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+                statement {
+                  byte_match_statement {
+                    search_string         = "application/json"
+                    positional_constraint = "EXACTLY"
+                    field_to_match {
+                      single_header {
+                        name = "content-type"
+                      }
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "LOWERCASE"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "RejectLargeNonManifestBody"
+      sampled_requests_enabled   = false
+    }
+  }
+
   rule {
     name     = "AWSManagedCommon"
     priority = 10
@@ -228,6 +409,12 @@ resource "aws_wafv2_web_acl" "edge" {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
         vendor_name = "AWS"
+        rule_action_override {
+          name = "SizeRestrictions_BODY"
+          action_to_use {
+            count {}
+          }
+        }
       }
     }
     visibility_config {
@@ -269,7 +456,7 @@ resource "aws_wafv2_web_acl" "edge" {
     statement {
       size_constraint_statement {
         comparison_operator = "GT"
-        size                = 11534336
+        size                = 65536
         field_to_match {
           body { oversize_handling = "MATCH" }
         }
@@ -641,7 +828,7 @@ resource "aws_cloudfront_distribution" "edge" {
   }
 
   dynamic "origin" {
-    for_each = var.external_demo_api_alb_arn == null ? [] : [1]
+    for_each = var.external_demo_api_alb_arn != null && var.external_demo_api_attached ? [1] : []
     content {
       domain_name = data.aws_lb.external_demo_api[0].dns_name
       origin_id   = "private-demo-api-usrse260930"
@@ -666,7 +853,7 @@ resource "aws_cloudfront_distribution" "edge" {
   }
 
   dynamic "ordered_cache_behavior" {
-    for_each = var.external_demo_api_alb_arn == null ? [] : [1]
+    for_each = var.external_demo_api_alb_arn != null && var.external_demo_api_attached ? [1] : []
     content {
       path_pattern               = "/api/*"
       target_origin_id           = "private-demo-api-usrse260930"

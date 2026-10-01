@@ -20,6 +20,8 @@ impact.
 
 ## Documents
 
+- [Public demo showtime notes (2026-09-30)](public-demo-showtime-notes-20260930.md)
+- [Public demo cutover and rollback](public-demo-cutover-20260930.md)
 - [Current state](current-state.md)
 - [Risk register](risk-register.md)
 - [Acceptance and evidence contract](acceptance-and-evidence.md)

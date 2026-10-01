@@ -49,6 +49,12 @@ variable "external_demo_api_alb_arn" {
   }
 }
 
+variable "external_demo_api_attached" {
+  description = "Whether the staged private demo API origin is attached to the public distribution."
+  type        = bool
+  default     = false
+}
+
 variable "hosted_zone_id" {
   description = "Existing Route 53 hosted zone ID. The zone is never created or deleted here."
   type        = string
