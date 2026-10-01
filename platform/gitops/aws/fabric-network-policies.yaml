@@ -1,0 +1,85 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fabric-ca-ingress, namespace: osc-fabric}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [org0-ca, org1-ca, org2-ca, org3-ca]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [org0-ca, org1-ca, org2-ca, org3-ca]}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fabric-orderer-ingress, namespace: osc-fabric}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [org0-orderer1, org0-orderer2, org0-orderer3]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [org0-orderer1, org0-orderer2, org0-orderer3, org1-peer1, org1-peer2, org2-peer1, org2-peer2, org3-peer1]}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports:
+        - {protocol: TCP, port: 6050}
+        - {protocol: TCP, port: 8443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fabric-peer-ingress, namespace: osc-fabric}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [org1-peer1, org1-peer2, org2-peer1, org2-peer2, org3-peer1]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [org1-peer1, org1-peer2, org2-peer1, org2-peer2, org3-peer1]}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: osc-apps}
+          podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [ledger-gateway-nsg, ledger-gateway-citizen-science, ledger-gateway-magnetic-arch]}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: controller}
+      ports: [{protocol: TCP, port: 7051}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fabric-chaincode-ingress, namespace: osc-fabric}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [org1peer1-ccaas-osc-provenance, org1peer2-ccaas-osc-provenance, org2peer1-ccaas-osc-provenance, org2peer2-ccaas-osc-provenance, org3peer1-ccaas-osc-provenance]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [org1-peer1, org1-peer2, org2-peer1, org2-peer2, org3-peer1]}
+      ports: [{protocol: TCP, port: 9999}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fabric-default-deny-ingress, namespace: osc-fabric}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

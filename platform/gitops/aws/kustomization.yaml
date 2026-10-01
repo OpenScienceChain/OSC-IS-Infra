@@ -16,3 +16,4 @@ resources:
   - internal-ingress.yaml
   - load-balancer-controller.yaml
   - network-policies.yaml
+  - fabric-network-policies.yaml

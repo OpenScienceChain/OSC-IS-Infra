@@ -17,11 +17,15 @@ spec:
   rules:
     - http:
         paths:
-          - path: /api
+          - path: /api/v1/demo
             pathType: Prefix
             backend:
               service: {name: api-gateway, port: {number: 3000}}
-          - path: /demo
+          - path: /api/v1/showcase
             pathType: Prefix
+            backend:
+              service: {name: api-gateway, port: {number: 3000}}
+          - path: /api/v1/health
+            pathType: Exact
             backend:
               service: {name: api-gateway, port: {number: 3000}}

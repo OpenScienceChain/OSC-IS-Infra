@@ -20,6 +20,24 @@ foreach ($required in @($statePath, $tfvarsPath, $baselinePath, $metadataPath, (
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing teardown artifact: $required" }
 }
 
+if ($RunId -eq 'usrse260930') {
+    $edge = aws cloudfront get-distribution-config --id E26XTII1H57RTX --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the persistent demo edge before teardown.' }
+    $attached = @($edge.DistributionConfig.Origins.Items | Where-Object { $_.Id -eq 'private-demo-api-usrse260930' })
+    if ($attached.Count -ne 0) {
+        throw 'Detach the usrse260930 API from the persistent demo edge and verify the static fallback before destroying EKS.'
+    }
+    $vpcOrigins = aws cloudfront list-vpc-origins --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify CloudFront VPC origins before teardown.' }
+    $staged = @($vpcOrigins.VpcOriginList.Items | Where-Object {
+        $_.Name -eq 'osc-usrse26-usrse26r1-usrse260930-api' -or
+        $_.OriginEndpointArn -eq 'arn:aws:elasticloadbalancing:us-west-2:269624229733:loadbalancer/app/k8s-oscapps-oscdemoa-5938afeb16/f59ddecd5a4a24ef'
+    })
+    if ($staged.Count -ne 0) {
+        throw 'Remove the usrse260930 CloudFront VPC origin before destroying EKS.'
+    }
+}
+
 Push-Location $repoRoot
 try {
     python platform/aws/aws_guard.py
