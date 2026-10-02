@@ -30,6 +30,22 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - run: python3 scripts/security/check_python_locks.py
 
+  source-duplication:
+    name: Maintained source duplication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install checksum-locked duplication scanner
+        run: npm ci --prefix tools/duplication --no-audit --no-fund
+      - name: Reject new duplicated source blocks
+        run: >-
+          tools/duplication/node_modules/.bin/jscpd
+          --config .jscpd.json
+          --baseline .jscpd-baseline.json
+          --fail-on-new-clones
+          --fail-on-empty
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'

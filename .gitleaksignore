@@ -9,3 +9,6 @@ a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260
 a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:13
 0e8c4f5c35d1ddbbb06d7daefe13475f4d0de934:docs/usrse26/platform-evidence/20260902a/source-revisions.json:generic-api-key:7
 523e2fbe1f738b8a54c82600a772227c7293cdd5:system-tests/docker-compose.yml:generic-api-key:35
+# Immutable sibling-repository commit IDs in the 2026-09-11 evidence bundle.
+2d518f128285d3df81566e5f11efc7652bd3764b:docs/usrse26/platform-evidence/20260911-usrse26r1/aws/artifact-manifest.json:generic-api-key:112
+2d518f128285d3df81566e5f11efc7652bd3764b:docs/usrse26/platform-evidence/20260911-usrse26r1/source-revisions.json:generic-api-key:8

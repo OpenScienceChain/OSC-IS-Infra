@@ -1,0 +1,16 @@
+{
+  "path": [
+    "fabric-test",
+    "platform/aws",
+    "platform/lifecycle",
+    "platform/scripts",
+    "terraform/usrse26-control",
+    "terraform/usrse26-eks",
+    "tests/usrse26"
+  ],
+  "minLines": 10,
+  "minTokens": 70,
+  "mode": "mild",
+  "reporters": ["console"],
+  "gitignore": true
+}
