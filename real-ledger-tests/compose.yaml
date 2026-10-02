@@ -1,0 +1,258 @@
+name: osc-is-real-ledger-e2e
+
+x-bridge-common: &bridge-common
+  build:
+    context: ${SUBMISSION_DIR:?Set SUBMISSION_DIR to the frozen Artifact Submission checkout}/fabric-bridge
+  environment: &bridge-env
+    NODE_ENV: production
+    PORT: '4000'
+    FABRIC_REAL_MODE: 'true'
+    FABRIC_CHANNEL: osc-channel
+    FABRIC_CHAINCODE: osc-provenance
+    NSG_ORGANIZATION_ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+    CITIZEN_SCIENCE_ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    MAGNETIC_ARCH_ORGANIZATION_ID: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+    LEDGER_GATEWAY_TOKEN: ${LEDGER_TOKEN:?Set a disposable local ledger token}
+  networks: [default, fabric]
+  healthcheck:
+    test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+
+x-history-common: &history-common
+  build:
+    context: ${SUBMISSION_DIR:?Set SUBMISSION_DIR to the frozen Artifact Submission checkout}/get_history_worker
+  environment: &history-env
+    LEDGER_GATEWAY_TOKEN: ${LEDGER_TOKEN:?Set a disposable local ledger token}
+    CACHE_TTL_SECONDS: '2'
+  depends_on:
+    bridge-nsg: {condition: service_healthy}
+    bridge-citizen-science: {condition: service_healthy}
+    bridge-magnetic-arch: {condition: service_healthy}
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health',timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?Use reviewed Postgres digest from platform/versions.env}
+    environment:
+      POSTGRES_DB: osc_local
+      POSTGRES_USER: osc_local
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?Set disposable local DB password}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U osc_local -d osc_local]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:?Use reviewed RabbitMQ digest from platform/versions.env}
+    environment:
+      RABBITMQ_DEFAULT_USER: osc_local
+      RABBITMQ_DEFAULT_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bridge-nsg:
+    <<: *bridge-common
+    environment:
+      <<: *bridge-env
+      MSP_ID: NSGMSP
+      ORGANIZATION_ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+      PEER_ENDPOINT: peer0.org1.example.com:7051
+      TLS_SERVER_NAME: peer0.org1.example.com
+      TLS_CERT_PATH: /var/run/fabric/tls/ca.crt
+      CERTIFICATE_PATH: /var/run/fabric/identity/cert.pem
+      PRIVATE_KEY_PATH: /var/run/fabric/identity/key.pem
+    volumes:
+      - ${NSG_CERT_FILE:?Set generated NSG client cert}:/var/run/fabric/identity/cert.pem:ro
+      - ${NSG_KEY_FILE:?Set generated NSG private key}:/var/run/fabric/identity/key.pem:ro
+      - ${NSG_TLS_CA_FILE:?Set generated NSG peer TLS CA}:/var/run/fabric/tls/ca.crt:ro
+
+  bridge-citizen-science:
+    <<: *bridge-common
+    environment:
+      <<: *bridge-env
+      MSP_ID: CitizenScienceMSP
+      ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      PEER_ENDPOINT: peer0.org2.example.com:9051
+      TLS_SERVER_NAME: peer0.org2.example.com
+      TLS_CERT_PATH: /var/run/fabric/tls/ca.crt
+      CERTIFICATE_PATH: /var/run/fabric/identity/cert.pem
+      PRIVATE_KEY_PATH: /var/run/fabric/identity/key.pem
+    volumes:
+      - ${CS_CERT_FILE:?Set generated Citizen Science client cert}:/var/run/fabric/identity/cert.pem:ro
+      - ${CS_KEY_FILE:?Set generated Citizen Science private key}:/var/run/fabric/identity/key.pem:ro
+      - ${CS_TLS_CA_FILE:?Set generated Citizen Science peer TLS CA}:/var/run/fabric/tls/ca.crt:ro
+
+  bridge-magnetic-arch:
+    <<: *bridge-common
+    environment:
+      <<: *bridge-env
+      MSP_ID: MagneticArchMSP
+      ORGANIZATION_ID: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+      PEER_ENDPOINT: peer0.org3.example.com:11051
+      TLS_SERVER_NAME: peer0.org3.example.com
+      TLS_CERT_PATH: /var/run/fabric/tls/ca.crt
+      CERTIFICATE_PATH: /var/run/fabric/identity/cert.pem
+      PRIVATE_KEY_PATH: /var/run/fabric/identity/key.pem
+    volumes:
+      - ${MAGNETIC_CERT_FILE:?Set generated Magnetic Arch client cert}:/var/run/fabric/identity/cert.pem:ro
+      - ${MAGNETIC_KEY_FILE:?Set generated Magnetic Arch private key}:/var/run/fabric/identity/key.pem:ro
+      - ${MAGNETIC_TLS_CA_FILE:?Set generated Magnetic Arch peer TLS CA}:/var/run/fabric/tls/ca.crt:ro
+
+  history-nsg:
+    <<: *history-common
+    environment:
+      <<: *history-env
+      BRIDGE_URL: http://bridge-nsg:4000
+
+  history-citizen-science:
+    <<: *history-common
+    environment:
+      <<: *history-env
+      BRIDGE_URL: http://bridge-citizen-science:4000
+
+  history-magnetic-arch:
+    <<: *history-common
+    environment:
+      <<: *history-env
+      BRIDGE_URL: http://bridge-magnetic-arch:4000
+
+  gateway:
+    build:
+      context: ${GATEWAY_DIR:?Set GATEWAY_DIR to the frozen Gateway checkout}
+      target: production
+    environment:
+      NODE_ENV: development
+      PORT: '3000'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: osc_local
+      DB_USER: osc_local
+      DB_PASSWORD: ${LOCAL_DB_PASSWORD:?Set disposable local DB password}
+      DB_SSL: 'false'
+      DB_MIGRATIONS_RUN: 'true'
+      DB_SYNCHRONIZE: 'false'
+      JWT_SECRET: ${LOCAL_JWT_SECRET:?Set disposable local JWT secret}
+      JWT_EXPIRES_IN: 30m
+      ADMIN1_USERNAME: localadmin
+      ADMIN1_EMAIL: localadmin@example.test
+      ADMIN1_PASSWORD: ${LOCAL_ADMIN_PASSWORD:?Set disposable local admin password}
+      ADMIN1_ROLES: admin
+      SUBMISSION_LISTENER_API_KEY: ${LOCAL_LISTENER_KEY:?Set disposable listener key}
+      SUBMISSION_LISTENER_SERVICE_ROLE: submitter_listener
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: '5672'
+      RABBITMQ_USER: osc_local
+      RABBITMQ_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+      RABBITMQ_ALLOW_INSECURE_LOCAL: 'true'
+      NSG_ORGANIZATION_ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+      CITIZEN_SCIENCE_ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      MAGNETIC_ARCH_ORGANIZATION_ID: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+      GHW_NSG_URL: http://history-nsg:8002
+      GHW_CITIZEN_SCIENCE_URL: http://history-citizen-science:8002
+      GHW_MAGNETIC_ARCH_URL: http://history-magnetic-arch:8002
+      CORS_ORIGINS: http://127.0.0.1:18091,http://localhost:18091
+      DEMO_ALLOWED_ORIGIN: http://localhost:18088
+      DEMO_JWT_SECRET: ${LOCAL_DEMO_JWT_SECRET:?Set disposable demo JWT secret}
+      DEMO_ANALYTICS_HMAC_SECRET: ${LOCAL_ANALYTICS_SECRET:?Set disposable analytics HMAC secret}
+      DEMO_CONTROL_API_KEY: ${LOCAL_CONTROL_KEY:?Set disposable control key}
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      submission-worker: {condition: service_healthy}
+      history-nsg: {condition: service_healthy}
+      history-citizen-science: {condition: service_healthy}
+      history-magnetic-arch: {condition: service_healthy}
+    ports: ['127.0.0.1:13388:3000']
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  submission-worker:
+    build:
+      context: ${SUBMISSION_DIR:?Set SUBMISSION_DIR to the frozen Artifact Submission checkout}/submission_worker
+    environment:
+      ENVIRONMENT: local-real-ledger-e2e
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: '5672'
+      RABBITMQ_USER: osc_local
+      RABBITMQ_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+      LEDGER_GATEWAY_NSG_URL: http://bridge-nsg:4000
+      LEDGER_GATEWAY_CITIZEN_SCIENCE_URL: http://bridge-citizen-science:4000
+      LEDGER_GATEWAY_MAGNETIC_ARCH_URL: http://bridge-magnetic-arch:4000
+      LEDGER_GATEWAY_NSG_TOKEN: ${LEDGER_TOKEN:?Set a disposable local ledger token}
+      LEDGER_GATEWAY_CITIZEN_SCIENCE_TOKEN: ${LEDGER_TOKEN:?Set a disposable local ledger token}
+      LEDGER_GATEWAY_MAGNETIC_ARCH_TOKEN: ${LEDGER_TOKEN:?Set a disposable local ledger token}
+      NSG_ORGANIZATION_ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+      CITIZEN_SCIENCE_ORGANIZATION_ID: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+      MAGNETIC_ARCH_ORGANIZATION_ID: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+      bridge-nsg: {condition: service_healthy}
+      bridge-citizen-science: {condition: service_healthy}
+      bridge-magnetic-arch: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import os,pika,sys; c=pika.BlockingConnection(pika.ConnectionParameters(host=os.environ['RABBITMQ_HOST'],credentials=pika.PlainCredentials(os.environ['RABBITMQ_USER'],os.environ['RABBITMQ_PASS']))); ch=c.channel(); ok=all(ch.queue_declare(queue=q,passive=True).method.consumer_count>0 for q in ('artifact.submit.queue','artifact.update.queue','workflow.submit.queue','workflow.update.queue')); c.close(); sys.exit(0 if ok else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  submission-listener:
+    build:
+      context: ${SUBMISSION_DIR:?Set SUBMISSION_DIR to the frozen Artifact Submission checkout}/submission_listener
+    environment:
+      ENVIRONMENT: local-real-ledger-e2e
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: '5672'
+      RABBITMQ_USER: osc_local
+      RABBITMQ_PASS: ${LOCAL_RABBIT_PASSWORD:?Set disposable local RabbitMQ password}
+      API_GATEWAY_BASE_URL: http://gateway:3000/api/v1
+      SUBMISSION_LISTENER_API_KEY: ${LOCAL_LISTENER_KEY:?Set disposable listener key}
+      SUBMISSION_LISTENER_SERVICE_ROLE: submitter_listener
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+      gateway: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import os,pika,sys; c=pika.BlockingConnection(pika.ConnectionParameters(host=os.environ['RABBITMQ_HOST'],credentials=pika.PlainCredentials(os.environ['RABBITMQ_USER'],os.environ['RABBITMQ_PASS']))); ch=c.channel(); ok=all(ch.queue_declare(queue=q,passive=True).method.consumer_count>0 for q in ('artifact.submitted.queue','artifact.updated.queue','workflow.submitted.queue','workflow.updated.queue')); c.close(); sys.exit(0 if ok else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  webapp:
+    build:
+      context: ${WEBAPP_DIR:?Set WEBAPP_DIR to the frozen WebApp checkout}
+    environment:
+      API_UPSTREAM: http://gateway:3000
+    ports: ['127.0.0.1:18088:80']
+    depends_on:
+      gateway: {condition: service_healthy}
+      submission-listener: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -qO-, 'http://127.0.0.1/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+
+networks:
+  fabric:
+    external: true
+    name: fabric_test

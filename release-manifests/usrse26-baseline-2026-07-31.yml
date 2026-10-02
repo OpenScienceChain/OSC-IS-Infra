@@ -1,0 +1,54 @@
+schema_version: 1
+name: usrse26-baseline-2026-07-31
+created_at: 2026-07-31
+purpose: >-
+  Known-good recovery point before the US-RSE 2026 reliability, multi-organization,
+  deployment automation, and portal UX work.
+
+repositories:
+  OSC-APIGateway:
+    remote: git@github.com:OpenScienceChain/OSC-APIGateway.git
+    branch: master
+    commit: 048a636fdf7a
+    implementation_scope: active
+  OSC-Artifact-Submission:
+    remote: git@github.com:OpenScienceChain/OSC-Artifact-Submission.git
+    branch: feature/integration
+    commit: feda0b30fb0b
+    implementation_scope: active
+  OSC-Chaincode:
+    remote: git@github.com:OpenScienceChain/OSC-Chaincode.git
+    branch: feature/integration
+    commit: 74bf8be87600
+    implementation_scope: active
+  OSC-IS-Infra:
+    remote: git@github.com:OpenScienceChain/OSC-IS-Infra.git
+    branch: master
+    commit: 6e60f22565ab
+    implementation_scope: active
+  OSC-Network:
+    remote: git@github.com:OpenScienceChain/OSC-Network.git
+    branch: feature/createArtifact
+    commit: 3ef0a24faf59
+    implementation_scope: test-harness-only
+  OSC-WebApp:
+    remote: git@github.com:OpenScienceChain/OSC-WebApp.git
+    branch: master
+    commit: 965dc27daa51
+    implementation_scope: active
+  OSC-API:
+    remote: git@github.com:OpenScienceChain/OSC-API.git
+    branch: feature/integration
+    commit: 9d44cdf1e150
+    implementation_scope: compatibility-only
+  OSC-Docker:
+    remote: git@github.com:OpenScienceChain/OSC-Docker.git
+    branch: hlf2-dev-2p1o2h-OSC-DEV
+    commit: 172855256dab
+    implementation_scope: compatibility-only
+
+recovery:
+  local_tag: usrse26-baseline-2026-07-31
+  restore_rule: >-
+    Restore all repositories to the listed commits as one release set. Do not mix
+    individual baseline commits with post-baseline contracts or infrastructure.

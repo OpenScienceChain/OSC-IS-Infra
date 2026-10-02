@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "method": "Playwright intercepted JSON POST from the portal after selecting synthetic text files; the API was mocked and no bytes reached a backend.",
+  "observations": [
+    {"selectedBytes": 1024, "requestBytes": 450, "fileBytesInRequest": false, "filenameInRequest": false},
+    {"selectedBytes": 1048576, "requestBytes": 453, "fileBytesInRequest": false, "filenameInRequest": false},
+    {"selectedBytes": 10485760, "requestBytes": 454, "fileBytesInRequest": false, "filenameInRequest": false},
+    {"selectedBytes": 41943040, "requestBytes": 454, "fileBytesInRequest": false, "filenameInRequest": false}
+  ]
+}

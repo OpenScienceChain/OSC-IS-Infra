@@ -1,0 +1,43 @@
+Cloning into bare repository '/mnt/c/Users/ofgar/Projects/GithubProjects/OSC-IS-worktrees/usrse26-correlation/OSC-IS-Infra/platform/.generated/gitops/image/site/osc-is-infra.git'...
+done.
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 254B 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+#2 DONE 1.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context:
+#3 transferring context: 2B 0.0s done
+#3 DONE 0.4s
+
+#4 [1/2] FROM docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+#4 resolve docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 40.94kB 0.6s done
+#5 DONE 0.6s
+
+#4 [1/2] FROM docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+#4 CACHED
+
+#6 [2/2] COPY --chown=65534:65534 site /srv
+#6 DONE 0.1s
+
+#7 exporting to image
+#7 exporting layers 0.1s done
+#7 exporting manifest sha256:f283a7945c82e108f4c93040742037fa36af8fa7f04193eed3b93419a42eba0b 0.0s done
+#7 exporting config sha256:2df744fe15e87579a7e594f77e134f52febb1737ef45eb533b9534ea712665fb 0.0s done
+#7 exporting attestation manifest sha256:ec13d677e333951e2c7c2103e9f6e62c5095b616d4584b2b85d2c586e1c8ed0e 0.0s done
+#7 exporting manifest list sha256:5fe3ac34098654eb8fff459cc2771d5532829d1e0fa42acd50ff4367e7dc88c5 0.0s done
+#7 naming to localhost:5017/osc-gitops-repository:20260902-correlation done
+#7 unpacking to localhost:5017/osc-gitops-repository:20260902-correlation 0.0s done
+#7 DONE 0.3s
+Argo CD and the immutable local Git source are deployed.
+Baseline revision: 495ff54e5b377043da02911cf21de0b621ea1c43
+Rollout revision:  76c34cd0f607805aec9e2d3c2f4475a44e118035
+Repository image:  localhost:5017/osc-gitops-repository@sha256:5fe3ac34098654eb8fff459cc2771d5532829d1e0fa42acd50ff4367e7dc88c5

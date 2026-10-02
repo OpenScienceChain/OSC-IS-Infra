@@ -1,0 +1,27 @@
+{
+  "runId": "20260902-correlation",
+  "startedAt": "2026-09-02T18:13:40Z",
+  "finishedAt": "2026-09-02T18:14:03Z",
+  "source": {
+    "repositoryImage": "localhost:5017/osc-gitops-repository@sha256:5fe3ac34098654eb8fff459cc2771d5532829d1e0fa42acd50ff4367e7dc88c5",
+    "baselineRevision": "495ff54e5b377043da02911cf21de0b621ea1c43",
+    "rolloutRevision": "76c34cd0f607805aec9e2d3c2f4475a44e118035"
+  },
+  "deployment": {
+    "applicationImage": "localhost:5017/osc-api-gateway:correlation-20260902@sha256:a24064caa9d530253b669b397b7a8cd804d0cffe0cfecc424de3948a984eb6b8",
+    "immutableImage": true
+  },
+  "drift": {
+    "detectedAndSelfHealed": true,
+    "seconds": 1
+  },
+  "rollout": {
+    "succeeded": true,
+    "seconds": 10
+  },
+  "rollback": {
+    "knownGoodRevisionRestored": true,
+    "seconds": 9
+  },
+  "credentialsRetained": false
+}

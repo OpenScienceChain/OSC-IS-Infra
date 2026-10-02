@@ -1,0 +1,12 @@
+AWS account: 269624229733
+AWS region: us-west-2
+EKS Kubernetes: 1.35
+Amazon MQ engine: RabbitMQ 4.2
+Terraform: 1.14.6
+kubectl client: 1.34.1
+AWS CLI: 2.36.1
+Docker Engine: 29.1.3
+Hyperledger Fabric: 2.5.16
+Fabric CA: 1.5.22
+Git: 2.43.0 (WSL)
+jq: 1.7 (WSL)

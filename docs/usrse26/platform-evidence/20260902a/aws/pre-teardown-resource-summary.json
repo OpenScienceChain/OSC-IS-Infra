@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260902a",
+  "capturedAt": "2026-09-01T21:28:26.253523-07:00",
+  "account": "269624229733",
+  "region": "us-west-2",
+  "addedResourceCounts": {
+    "eks_clusters": 1,
+    "mq_brokers": 1,
+    "nat_gateways": 1,
+    "elastic_ips": 1,
+    "ebs_volumes": 7,
+    "ec2_instances": 3,
+    "ecr_repositories": 6,
+    "secrets": 5,
+    "log_groups": 4,
+    "cloudformation_stacks": 1,
+    "osc_is_tagged_arns": 54
+  },
+  "loadBalancerServices": 0,
+  "publicApplicationEndpoint": false
+}

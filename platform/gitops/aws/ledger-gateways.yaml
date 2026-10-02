@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Service
+metadata: {name: ledger-gateway-nsg, namespace: osc-apps}
+spec:
+  selector: {app.kubernetes.io/name: ledger-gateway-nsg}
+  ports: [{name: http, port: 4000, targetPort: 4000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ledger-gateway-nsg, namespace: osc-apps}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ledger-gateway-nsg, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: ledger-gateway-nsg
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ledger-gateway
+          image: __LEDGER_GATEWAY_IMAGE__
+          env:
+            - {name: FABRIC_REAL_MODE, value: "true"}
+            - {name: FABRIC_CHANNEL, value: osc-channel}
+            - {name: FABRIC_CHAINCODE, value: osc-provenance}
+            - {name: ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: MSP_ID, value: NSGMSP}
+            - {name: PEER_ENDPOINT, value: org1-peer-gateway-svc.osc-fabric.svc.cluster.local:7051}
+            - {name: TLS_SERVER_NAME, value: org1-peer-gateway-svc}
+            - {name: TLS_CERT_PATH, value: /var/run/osc/fabric/tls-ca.pem}
+            - {name: CERTIFICATE_PATH, value: /var/run/osc/fabric/certificate.pem}
+            - {name: PRIVATE_KEY_PATH, value: /var/run/osc/fabric/private-key.pem}
+            - name: LEDGER_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: ledger-gateway-nsg-auth, key: token}}
+          ports: [{name: http, containerPort: 4000}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: identity, mountPath: /var/run/osc/fabric, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: identity
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: {secretProviderClass: ledger-gateway-nsg-secrets}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ledger-gateway-citizen-science, namespace: osc-apps}
+spec:
+  selector: {app.kubernetes.io/name: ledger-gateway-citizen-science}
+  ports: [{name: http, port: 4000, targetPort: 4000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ledger-gateway-citizen-science, namespace: osc-apps}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ledger-gateway-citizen-science, app.kubernetes.io/part-of: osc-is}
+    spec:
+      serviceAccountName: ledger-gateway-citizen-science
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ledger-gateway
+          image: __LEDGER_GATEWAY_IMAGE__
+          env:
+            - {name: FABRIC_REAL_MODE, value: "true"}
+            - {name: FABRIC_CHANNEL, value: osc-channel}
+            - {name: FABRIC_CHAINCODE, value: osc-provenance}
+            - {name: ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: MSP_ID, value: CitizenScienceMSP}
+            - {name: PEER_ENDPOINT, value: org2-peer-gateway-svc.osc-fabric.svc.cluster.local:7051}
+            - {name: TLS_SERVER_NAME, value: org2-peer-gateway-svc}
+            - {name: TLS_CERT_PATH, value: /var/run/osc/fabric/tls-ca.pem}
+            - {name: CERTIFICATE_PATH, value: /var/run/osc/fabric/certificate.pem}
+            - {name: PRIVATE_KEY_PATH, value: /var/run/osc/fabric/private-key.pem}
+            - name: LEDGER_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: ledger-gateway-citizen-science-auth, key: token}}
+          ports: [{name: http, containerPort: 4000}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: identity, mountPath: /var/run/osc/fabric, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: identity
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: {secretProviderClass: ledger-gateway-citizen-science-secrets}
+        - {name: tmp, emptyDir: {}}

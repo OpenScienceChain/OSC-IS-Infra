@@ -1,0 +1,20 @@
+Organizations:
+  - Name: MagneticArchMSP
+    ID: MagneticArchMSP
+    MSPDir: ${TEMP_DIR}/channel-msp/peerOrganizations/org3/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('MagneticArchMSP.admin', 'MagneticArchMSP.peer', 'MagneticArchMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('MagneticArchMSP.admin', 'MagneticArchMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('MagneticArchMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('MagneticArchMSP.peer')"
+    AnchorPeers:
+      - Host: org3-peer1.osc-fabric.svc.cluster.local
+        Port: 7051

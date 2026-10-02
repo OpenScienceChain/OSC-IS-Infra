@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: osc-apps
+spec:
+  selector:
+    app.kubernetes.io/name: api-gateway
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: osc-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-gateway
+        app.kubernetes.io/part-of: osc-is
+    spec:
+      serviceAccountName: api-gateway
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:17.11@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+          command: [sh, -ec]
+          args: ['until psql "host=postgres dbname=$DB_NAME user=$DB_USER sslmode=require" -c "SELECT 1" >/dev/null; do sleep 2; done']
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: username}
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: database}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: password}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+      containers:
+        - name: api-gateway
+          image: localhost:5017/osc-api-gateway:correlation-20260902@sha256:a24064caa9d530253b669b397b7a8cd804d0cffe0cfecc424de3948a984eb6b8
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: PORT, value: "3000"}
+            - {name: DB_HOST, value: postgres.osc-apps.svc.cluster.local}
+            - {name: DB_PORT, value: "5432"}
+            - {name: DB_SSL, value: "true"}
+            - {name: DB_SSL_REJECT_UNAUTHORIZED, value: "true"}
+            - {name: DB_SSL_SERVERNAME, value: postgres.osc-apps.svc.cluster.local}
+            - {name: PGSSL_CA_PATH, value: /var/run/osc/postgres/ca.crt}
+            - {name: DB_MIGRATIONS_RUN, value: "true"}
+            - {name: DB_SYNCHRONIZE, value: "false"}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: username}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: password}
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: database}
+            - {name: RABBITMQ_HOST, value: rabbitmq.osc-apps.svc.cluster.local}
+            - {name: RABBITMQ_PORT, value: "5671"}
+            - {name: RABBITMQ_PROTOCOL, value: amqps}
+            - {name: RABBITMQ_TLS_SERVERNAME, value: rabbitmq.osc-apps.svc.cluster.local}
+            - {name: RABBITMQ_TLS_CA_PATH, value: /var/run/osc/rabbitmq/ca.crt}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: username}
+            - name: RABBITMQ_PASS
+              valueFrom:
+                secretKeyRef: {name: rabbitmq-credentials, key: password}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: api-auth, key: jwt-secret}
+            - {name: JWT_EXPIRES_IN, value: 2h}
+            - {name: ADMIN1_USERNAME, value: bootstrap-admin}
+            - {name: ADMIN1_EMAIL, value: bootstrap-admin@example.invalid}
+            - {name: ADMIN1_ROLES, value: admin}
+            - name: ADMIN1_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: api-bootstrap-admin, key: password}
+            - name: SUBMISSION_LISTENER_API_KEY
+              valueFrom:
+                secretKeyRef: {name: listener-api-auth, key: api-key}
+            - {name: SUBMISSION_LISTENER_SERVICE_ROLE, value: submitter_listener}
+            - {name: DEMO_ALLOWED_ORIGIN, value: "https://demo.localho.st:18443"}
+            - {name: NSG_ORGANIZATION_ID, value: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}
+            - {name: CITIZEN_SCIENCE_ORGANIZATION_ID, value: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}
+            - {name: GHW_NSG_URL, value: http://history-worker-nsg:8002}
+            - {name: GHW_CITIZEN_SCIENCE_URL, value: http://history-worker-citizen-science:8002}
+            - name: DEMO_JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: jwt-secret}
+            - name: DEMO_ANALYTICS_HMAC_SECRET
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: analytics-hmac-secret}
+            - name: DEMO_CONTROL_API_KEY
+              valueFrom:
+                secretKeyRef: {name: demo-auth, key: control-api-key}
+          ports:
+            - {name: http, containerPort: 3000}
+          startupProbe:
+            httpGet: {path: /api/v1/health, port: http}
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: {path: /api/v1/health, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /api/v1/health, port: http}
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 768Mi}
+          volumeMounts:
+            - {name: postgres-ca, mountPath: /var/run/osc/postgres, readOnly: true}
+            - {name: rabbitmq-ca, mountPath: /var/run/osc/rabbitmq, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: postgres-tls
+            items: [{key: ca.crt, path: ca.crt}]
+        - name: rabbitmq-ca
+          secret:
+            secretName: rabbitmq-tls
+            items: [{key: ca.crt, path: ca.crt}]
+        - {name: tmp, emptyDir: {}}

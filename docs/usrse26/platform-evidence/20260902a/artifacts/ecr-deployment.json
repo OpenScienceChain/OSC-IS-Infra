@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260902a",
+  "pushedAt": "2026-09-02T03:03:55.9397836+00:00",
+  "buildsExecutedWithAwsCredentials": false,
+  "references": {
+    "api-gateway": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/api-gateway@sha256:637145b6848d3b2ba2023995c67012023529f3afeb3fdfda42aadb6125967f58",
+    "ledger-gateway": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/ledger-gateway@sha256:b9d40b24d49883d0ef53895de8a349ec22ed9db3a185debb3fc97c3d75758338",
+    "submission-worker": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/submission-worker@sha256:b2fb667c3d31f26f4b7cfd4cd1222cf675217cebd57c5fa7390fabea8cabae9a",
+    "submission-listener": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/submission-listener@sha256:ca6f4288399c649951b4b2794857dceb3ee324406b6115116ba4264ef865984f",
+    "chaincode": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/chaincode@sha256:f3bb2f324199cd43017c7feee4717c6c4ac7b8b49d5c2ffe2c283cc20bf4621c",
+    "gitops-repository": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-20260902a/gitops-repository@sha256:0433e831dbff8e230e38308ab2931de6e7f14d759ff5642ebc854f83506ec85d"
+  }
+}

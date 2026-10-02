@@ -1,0 +1,10 @@
+[
+  {
+    "queue": "artifact.submitted.queue",
+    "messages": 0
+  },
+  {
+    "queue": "artifact.submit.queue",
+    "messages": 0
+  }
+]

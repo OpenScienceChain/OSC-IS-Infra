@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse260930",
+  "method": "Read-only kubelet stats/summary snapshots during an additional 330-write two-org normal staged run. Per-sample pod values are summed into logical services, then arithmetic means are taken over 12 samples. CPU is instantaneous usageNanoCores; memory is working-set bytes. Transient load Job is excluded.",
+  "sampleCount": 12,
+  "firstSampleUtc": "2026-09-30T19:13:48.9895247Z",
+  "lastSampleUtc": "2026-09-30T19:14:47.2693392Z",
+  "byService": [
+    {
+      "service": "API gateway",
+      "meanCpuMilliCores": 235.2,
+      "meanWorkingSetMiB": 205.2
+    },
+    {
+      "service": "Chaincode",
+      "meanCpuMilliCores": 3.2,
+      "meanWorkingSetMiB": 29.2
+    },
+    {
+      "service": "Fabric orderers",
+      "meanCpuMilliCores": 5.5,
+      "meanWorkingSetMiB": 91.3
+    },
+    {
+      "service": "Fabric peers",
+      "meanCpuMilliCores": 166.9,
+      "meanWorkingSetMiB": 572.3
+    },
+    {
+      "service": "History workers",
+      "meanCpuMilliCores": 13.8,
+      "meanWorkingSetMiB": 308.9
+    },
+    {
+      "service": "Ledger gateways",
+      "meanCpuMilliCores": 21.8,
+      "meanWorkingSetMiB": 194.3
+    },
+    {
+      "service": "PostgreSQL",
+      "meanCpuMilliCores": 159,
+      "meanWorkingSetMiB": 73.2
+    },
+    {
+      "service": "Submission listeners",
+      "meanCpuMilliCores": 5.6,
+      "meanWorkingSetMiB": 51.3
+    },
+    {
+      "service": "Submission workers",
+      "meanCpuMilliCores": 4.3,
+      "meanWorkingSetMiB": 92.2
+    }
+  ]
+}

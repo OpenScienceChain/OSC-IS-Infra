@@ -1,0 +1,8 @@
+{
+  "name": "osc-is-infra-duplication-check",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "jscpd": "5.3.1"
+  }
+}

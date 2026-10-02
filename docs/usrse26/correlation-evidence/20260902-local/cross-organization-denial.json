@@ -1,0 +1,10 @@
+{
+  "citizenScienceApiRead": {
+    "status": 403,
+    "denied": true
+  },
+  "citizenScienceFabricRead": {
+    "status": 403,
+    "denied": true
+  }
+}
