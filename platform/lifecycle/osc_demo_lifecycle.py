@@ -218,6 +218,140 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
+UX_ROUTES = {
+    "/", "/feedback", "/interactive-demo", "/research-example", "/list-artifacts",
+    "/list-workflows", "/contribute", "/create-workflow", "/auth/sign-in",
+    "/auth/team-sign-in", "/artifacts/:id", "/artifacts/:id/history",
+    "/artifacts/:id/history/:txId", "/update-artifact/:id", "/workflows/:id",
+    "/workflows/:id/history", "/update-workflow/:id",
+}
+UX_ACTIONS = {
+    "CATALOG_SEARCH", "CATALOG_FILTER", "RECORD_VIEW", "HISTORY_VIEW",
+    "CONTRIBUTE_CLICK", "FORM_START", "VALIDATION_ERROR", "SUBMISSION_ATTEMPT",
+    "ARTIFACT_SUBMITTED", "WORKFLOW_SUBMITTED", "AUTH_ACTION",
+}
+UX_COUNTERS = {
+    "CONSENT_ACCEPTED", "CONSENT_REJECTED", "CONSENT_REVOKED",
+    "SURVEY_OPENED", "SURVEY_SUBMITTED",
+}
+
+
+def _ux_check(condition: bool) -> None:
+    if not condition:
+        raise RuntimeError("Protected UX export does not match the approved schema")
+
+
+def _ux_counts(value: Any, allowed: set[str]) -> None:
+    _ux_check(type(value) is dict and set(value) <= allowed)
+    for count in value.values():
+        _require_nonnegative_integer(count, "UX count")
+
+
+def _ux_context(phase: Any, run_id: Any) -> None:
+    _ux_check(type(phase) is str and phase in {"LIVE", "REHEARSAL"})
+    _ux_check(run_id is None or (type(run_id) is str and bool(RUN_ID_RE.fullmatch(run_id))))
+
+
+def _ux_group(key: Any, *, hourly: bool = False) -> None:
+    _ux_check(type(key) is str)
+    parts = key.split("|")
+    _ux_check(len(parts) == (3 if hourly else 2))
+    if hourly:
+        _ux_check(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:00Z", parts[0])))
+        _require_utc_timestamp(parts[0], "UX hour")
+    _ux_context(parts[-2], None if parts[-1] == "unassigned" else parts[-1])
+
+
+def validate_ux_metrics(exported: Any) -> None:
+    root = _require_exact_keys(exported, {
+        "observedAt", "scope", "truncated", "analyticsParticipation", "visits",
+        "pageviews", "routeViews", "entryPages", "exitPages", "journeys", "actionCounts",
+        "funnel", "explorationFunnel", "hourly", "hourlyAnonymousActions", "survey", "caveat",
+    }, "UX root")
+    _require_utc_timestamp(root["observedAt"], "UX observedAt")
+    _ux_check(root["scope"] == "Last 30 days; analytics represent consenting browsers, not people or all visitors.")
+    _ux_check(root["caveat"] == "Client-reported completion actions are not ledger confirmations; compare against protected operational metrics.")
+    _ux_check(type(root["truncated"]) is bool)
+    participation = _require_exact_keys(root["analyticsParticipation"], {
+        "consentingBrowsers", "activeConsentCookies", "consentAcceptActions",
+        "consentRejectActions", "consentRevokeActions", "caveat",
+    }, "UX participation")
+    _ux_check(participation["caveat"] == "Accept/reject counts are button actions, not unique visitors.")
+    for key in set(participation) - {"caveat"}:
+        _require_nonnegative_integer(participation[key], "UX participation count")
+    visits = _require_exact_keys(root["visits"], {"count", "singlePageExits", "engaged", "idleMinutes"}, "UX visits")
+    for count in visits.values():
+        _require_nonnegative_integer(count, "UX visits count")
+    _ux_check(visits["idleMinutes"] == 30)
+    _require_nonnegative_integer(root["pageviews"], "UX pageviews")
+    for name in ("routeViews", "entryPages", "exitPages"):
+        _ux_counts(root[name], UX_ROUTES)
+    _ux_counts(root["journeys"], {f"{start} -> {end}" for start in UX_ROUTES for end in UX_ROUTES})
+    _ux_counts(root["actionCounts"], UX_ACTIONS)
+    for name, stages in (
+        ("funnel", ["FORM_START", "SUBMISSION_ATTEMPT", "UI_REPORTED_SUBMISSION"]),
+        ("explorationFunnel", ["PAGE_VIEW", "RECORD_VIEW", "HISTORY_VIEW"]),
+    ):
+        rows = root[name]
+        _ux_check(type(rows) is list and len(rows) == len(stages))
+        denominator = participation["consentingBrowsers"]
+        for row, stage in zip(rows, stages):
+            row = _require_exact_keys(row, {"stage", "consentingBrowsers", "denominator", "dropOff", "conversionFromPrevious"}, "UX funnel")
+            _ux_check(row["stage"] == stage)
+            for key in ("consentingBrowsers", "denominator", "dropOff"):
+                _require_nonnegative_integer(row[key], "UX funnel count")
+            reached = row["consentingBrowsers"]
+            _ux_check(row["denominator"] == denominator and reached <= denominator)
+            _ux_check(row["dropOff"] == denominator - reached)
+            conversion = row["conversionFromPrevious"]
+            _ux_check(
+                (denominator == 0 and conversion is None)
+                or (denominator > 0 and type(conversion) in {int, float}
+                    and math.isfinite(conversion)
+                    and math.isclose(conversion, reached / denominator))
+            )
+            denominator = reached
+    _ux_check(type(root["hourly"]) is list)
+    hourly_counts = {"pageviews", "actions", "visits", "singlePageExits", "engagedVisits", "consentingBrowsers"}
+    for row in root["hourly"]:
+        row = _require_exact_keys(row, hourly_counts | {"hour", "phase", "runId", "deviceCategory"}, "UX hourly")
+        _require_utc_timestamp(row["hour"], "UX hour")
+        _ux_context(row["phase"], row["runId"])
+        _ux_check(type(row["deviceCategory"]) is str and row["deviceCategory"] in {"DESKTOP", "TABLET", "MOBILE", "SMALL_MOBILE"})
+        for key in hourly_counts:
+            _require_nonnegative_integer(row[key], "UX hourly count")
+    _ux_check(type(root["hourlyAnonymousActions"]) is list)
+    for row in root["hourlyAnonymousActions"]:
+        row = _require_exact_keys(row, {"key", "counts"}, "UX anonymous actions")
+        _ux_group(row["key"], hourly=True)
+        _ux_counts(row["counts"], UX_COUNTERS)
+    survey = _require_exact_keys(root["survey"], {"opens", "submissions", "byPhase"}, "UX survey")
+    for key in ("opens", "submissions"):
+        _require_nonnegative_integer(survey[key], "UX survey count")
+    _ux_check(type(survey["byPhase"]) is dict)
+    for key, row in survey["byPhase"].items():
+        _ux_group(key)
+        row = _require_exact_keys(row, {"submitted", "visualRatings", "automationInterest"}, "UX survey group")
+        submitted = _require_nonnegative_integer(row["submitted"], "UX submitted")
+        _ux_counts(row["visualRatings"], {"1", "2", "3", "4", "5"})
+        _ux_counts(row["automationInterest"], {"YES", "MAYBE", "NO", "UNSURE"})
+        _ux_check(sum(row["visualRatings"].values()) <= submitted)
+        _ux_check(sum(row["automationInterest"].values()) <= submitted)
+
+
+def validate_ux_comments(exported: Any) -> None:
+    root = _require_exact_keys(exported, {"exportedAt", "comments"}, "UX comments root")
+    _require_utc_timestamp(root["exportedAt"], "UX comments exportedAt")
+    _ux_check(type(root["comments"]) is list)
+    for row in root["comments"]:
+        row = _require_exact_keys(row, {"phase", "runId", "submittedAt", "overallComment"}, "UX comment")
+        _ux_context(row["phase"], row["runId"])
+        _require_utc_timestamp(row["submittedAt"], "UX comment submittedAt")
+        # Anonymous free text can still contain PII or secrets; never publish it.
+        comment = row["overallComment"]
+        _ux_check(type(comment) is str and 0 < len(comment) <= 300)
+
+
 class Lifecycle:
     def __init__(self) -> None:
         self.run_id = required("RUN_ID")
@@ -321,6 +455,9 @@ class Lifecycle:
 
     def put_json(self, key: str, value: Any, bucket: str | None = None) -> None:
         target = self.work / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+        self.work.chmod(0o700)
+        target.touch(mode=0o600, exist_ok=True)
+        target.chmod(0o600)
         target.write_bytes((json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8"))
         aws(
             "s3api", "put-object", "--bucket", bucket or required("STATE_BUCKET"),
@@ -634,13 +771,16 @@ class Lifecycle:
 const [method,path,body]=process.argv.slice(1);
 const options={method,headers:{'Accept':'application/json','X-Demo-Control-Key':process.env.DEMO_CONTROL_API_KEY}};
 if(body){options.headers['Content-Type']='application/json';options.body=body;}
-fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.text();if(!r.ok)throw new Error(`${r.status} ${text.slice(0,500)}`);process.stdout.write(text||'null');}).catch(e=>{console.error(e.message);process.exit(1)});
+fetch('http://127.0.0.1:3000'+path,{...options,redirect:'error'}).then(async r=>{if(!r.ok)throw new Error('request failed');process.stdout.write(await r.text()||'null');}).catch(()=>{console.error('Private control request failed');process.exit(1)});
 """.strip()
-        output = self.kubectl(
-            "-n", "osc-apps", "exec", "deployment/api-gateway", "--", "node", "-e", script,
-            method, path, json.dumps(body, separators=(",", ":")) if body is not None else "",
-        )
-        return json.loads(output or "null")
+        try:
+            output = self.kubectl(
+                "-n", "osc-apps", "exec", "deployment/api-gateway", "--", "node", "-e", script,
+                method, path, json.dumps(body, separators=(",", ":")) if body is not None else "",
+            )
+            return json.loads(output or "null")
+        except Exception:
+            raise RuntimeError("Private control request failed") from None
 
     def set_api_state(self, state: str, reason: str) -> None:
         manifest = self.load_manifest(allow_expired=True)
@@ -963,16 +1103,43 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
 
     def export(self) -> None:
         self.load_manifest(allow_expired=True)
-        exported = self.private_control_json("/api/v1/demo/internal/export")
-        validate_sanitized_export(exported)
-        # Match the exact canonical bytes written by put_json, including newline.
-        serialized = json.dumps(exported, separators=(",", ":"), sort_keys=True) + "\n"
-        key = f"evidence/{self.run_id}/sanitized-export.json"
-        self.put_json(key, exported)
-        self.put_json(
-            f"evidence/{self.run_id}/sanitized-export.checksum.json",
-            {"algorithm": "sha256", "sha256": hashlib.sha256(serialized.encode()).hexdigest(), "objectKey": key},
-        )
+        try:
+            bucket = required("STATE_BUCKET")
+            if bucket != f"osc-usrse26-{self.run_id}-control-{ACCOUNT}" or bucket == required("STATUS_BUCKET"):
+                raise RuntimeError("Evidence destination is not the private run control bucket")
+            protection = aws_json("s3api", "get-public-access-block", "--bucket", bucket)
+            flags = protection.get("PublicAccessBlockConfiguration", {})
+            if any(flags.get(key) is not True for key in (
+                "BlockPublicAcls", "IgnorePublicAcls", "BlockPublicPolicy", "RestrictPublicBuckets",
+            )):
+                raise RuntimeError("Private evidence bucket public access protection is incomplete")
+            exports = [
+                ("sanitized-export", "/api/v1/demo/internal/export", validate_sanitized_export),
+                ("restricted/ux-metrics", "/api/v1/demo/internal/ux-metrics", validate_ux_metrics),
+                ("restricted/ux-feedback-comments", "/api/v1/demo/internal/ux-feedback/comments", validate_ux_comments),
+            ]
+            values = []
+            for name, endpoint, validate in exports:
+                value = self.private_control_json(endpoint)
+                validate(value)
+                values.append((name, value))
+            checksums = []
+            # Validate every response before writing any evidence. Completion is written last.
+            for name, value in values:
+                serialized = json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n"
+                key = f"evidence/{self.run_id}/{name}.json"
+                checksum = {"algorithm": "sha256", "sha256": hashlib.sha256(serialized.encode()).hexdigest(), "objectKey": key}
+                self.put_json(key, value, bucket)
+                self.put_json(f"evidence/{self.run_id}/{name}.checksum.json", checksum, bucket)
+                checksums.append(checksum)
+            self.put_json(f"evidence/{self.run_id}/export-complete.json", {
+                "schemaVersion": 1, "runId": self.run_id, "completedAt": iso_now(),
+                "status": "COMPLETE", "classification": "RESTRICTED_OPERATOR_EVIDENCE",
+                "publicReleaseApproved": False, "objects": checksums,
+            }, bucket)
+        except Exception:
+            # CLI, transport, and validation exceptions must not echo response or file content.
+            raise RuntimeError("Protected evidence export failed; evidence is incomplete") from None
 
     def detach_origin(self) -> None:
         distribution_id = required("CLOUDFRONT_DISTRIBUTION")

@@ -61,6 +61,70 @@ Each `platform-evidence/<run-id>/` directory must contain:
 - `checksums.sha256`: integrity manifest for retained evidence.
 - `claim-matrix.md`: final status of every claim.
 
+## Protected UX export gate
+
+Lifecycle `EXPORT` must collect all three protected API responses over the
+existing in-pod loopback transport using the pod's `DEMO_CONTROL_API_KEY`:
+
+| Endpoint | Control-bucket object under `evidence/<run-id>/` | Classification |
+|---|---|---|
+| `/api/v1/demo/internal/export` | `sanitized-export.json` | Legacy counters and survey only |
+| `/api/v1/demo/internal/ux-metrics` | `restricted/ux-metrics.json` | Restricted UX aggregates |
+| `/api/v1/demo/internal/ux-feedback/comments` | `restricted/ux-feedback-comments.json` | Restricted anonymous free text from `demo_ux_feedback` |
+
+The legacy survey is not the new UX survey. Missing endpoints, authentication
+failure, malformed JSON, unexpected fields, invalid types or buckets, missing
+public-access protection, or failed uploads make the export fail closed. All
+responses are validated before any upload. Errors contain no response body,
+comment, control key, or underlying CLI exception. Redirects are rejected; no
+protected request uses the public URL or a guest session.
+
+The destination must be the exact run's
+`osc-usrse26-<run-id>-control-269624229733` bucket, distinct from `STATUS_BUCKET`,
+with all four S3 public-access-block settings true at collection time. The
+runner has only exact-control-bucket permission to read these settings. Objects
+use the existing AES256 encrypted upload path. The control bucket is not a
+CloudFront origin; never copy these objects into the edge/status bucket, a
+public repository, slide deck, public run directory, build log, or attachment.
+The runner's temporary workspace is private (directory mode 0700); treat it as
+restricted too. Do not enable command tracing or log captured stdout.
+
+Each response has a companion `.checksum.json` covering the exact canonical
+UTF-8 JSON bytes, including the final newline. `export-complete.json` is written
+last and lists the three object keys and SHA-256 digests. Acceptance requires
+verifying **all three retained objects against that manifest**, not just the
+presence of a completion object or a legacy checksum. A failed retry may leave
+old objects or an old completion manifest; a mixed set must fail digest
+verification. A failure after some uploads leaves incomplete restricted
+evidence, not permission to publish it. Teardown still proceeds through the
+existing export-failure notification path; export failure does not justify
+keeping a runtime alive.
+
+UX metrics cover the API's last 30 days, potentially multiple runs and phases;
+the path's run ID identifies the collection run, not a filter on the report.
+Retain phase/run groupings, `truncated`, scope, and caveats. Optional rating and
+automation-interest answers can have fewer responses than submissions. Consent
+actions are not people or total visitors; client-reported completion is not
+ledger confirmation. Compare ledger outcomes to protected operational metrics.
+
+Anonymous comments are **not sanitized**: participants can include identifiers,
+PII, or secrets in the 300-character free text. Schema validation rejects extra
+identity fields but cannot make the text safe. Only authorized operators may
+inspect the protected comment object. A release owner must approve a separately
+redacted, small-cell-reviewed derivative before publication; the completion
+manifest explicitly sets `publicReleaseApproved` to false. Do not include raw
+comments or exact comment timestamps in that derivative.
+
+The API retains UX data for 30 days. The existing control-bucket evidence rule
+expires current objects 30 days after upload and noncurrent versions after
+7 days; S3 expiry is asynchronous, not a guarantee of deletion precisely on
+the API's source expiry date. Re-exporting restarts the object-age clock.
+Operators must review source age and arrange earlier deletion of all versions
+when required by the research retention policy; do not repeatedly export to
+extend retention. Control-plane teardown force-deletes the bucket. No retention,
+live endpoint, bucket protection, or AWS execution has been demonstrated by
+local mocked unit tests alone.
+
 ## Stop conditions
 
 Stop before AWS apply when any of these is true:

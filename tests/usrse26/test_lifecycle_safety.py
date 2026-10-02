@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,57 @@ SPEC.loader.exec_module(LIFECYCLE_MODULE)
 Lifecycle = LIFECYCLE_MODULE.Lifecycle
 validate_sanitized_export = LIFECYCLE_MODULE.validate_sanitized_export
 tag_index_entry_is_active = LIFECYCLE_MODULE.tag_index_entry_is_active
+
+PRIVATE_EXPORT_ENV = {
+    "STATE_BUCKET": "osc-usrse26-usrse26r1-control-269624229733",
+    "STATUS_BUCKET": "osc-usrse26-usrse26r1-edge-269624229733",
+}
+PUBLIC_ACCESS_BLOCK = {"PublicAccessBlockConfiguration": {
+    key: True for key in ("BlockPublicAcls", "IgnorePublicAcls", "BlockPublicPolicy", "RestrictPublicBuckets")
+}}
+
+
+def valid_ux_metrics() -> dict:
+    def funnel(stages):
+        return [{"stage": stage, "consentingBrowsers": 0, "denominator": 0,
+                 "dropOff": 0, "conversionFromPrevious": None} for stage in stages]
+
+    return {
+        "observedAt": "2026-10-02T12:00:00.000Z",
+        "scope": "Last 30 days; analytics represent consenting browsers, not people or all visitors.",
+        "truncated": False,
+        "analyticsParticipation": {
+            "consentingBrowsers": 0, "activeConsentCookies": 0,
+            "consentAcceptActions": 0, "consentRejectActions": 1, "consentRevokeActions": 0,
+            "caveat": "Accept/reject counts are button actions, not unique visitors.",
+        },
+        "visits": {"count": 0, "singlePageExits": 0, "engaged": 0, "idleMinutes": 30},
+        "pageviews": 0, "routeViews": {}, "entryPages": {}, "exitPages": {},
+        "journeys": {}, "actionCounts": {},
+        "funnel": funnel(["FORM_START", "SUBMISSION_ATTEMPT", "UI_REPORTED_SUBMISSION"]),
+        "explorationFunnel": funnel(["PAGE_VIEW", "RECORD_VIEW", "HISTORY_VIEW"]),
+        "hourly": [{"hour": "2026-10-02T12:00Z", "phase": "LIVE", "runId": "usrse26r1",
+                    "deviceCategory": "MOBILE", "pageviews": 0, "actions": 0,
+                    "visits": 0, "singlePageExits": 0, "engagedVisits": 0, "consentingBrowsers": 0}],
+        "hourlyAnonymousActions": [{"key": "2026-10-02T12:00Z|LIVE|usrse26r1",
+                                    "counts": {"CONSENT_REJECTED": 1}}],
+        "survey": {"opens": 1, "submissions": 1, "byPhase": {
+            "LIVE|usrse26r1": {"submitted": 1, "visualRatings": {"5": 1},
+                                "automationInterest": {"MAYBE": 1}},
+        }},
+        "caveat": "Client-reported completion actions are not ledger confirmations; compare against protected operational metrics.",
+    }
+
+
+def valid_ux_comments() -> dict:
+    return {"exportedAt": "2026-10-02T12:00:00.000Z", "comments": [{
+        "phase": "LIVE", "runId": "usrse26r1", "submittedAt": "2026-10-02T11:59:00.000Z",
+        "overallComment": "PRIVATE_COMMENT_SENTINEL",
+    }]}
+
+
+def export_responses() -> list:
+    return [valid_sanitized_export(), valid_ux_metrics(), valid_ux_comments()]
 
 
 def valid_sanitized_export() -> dict:
@@ -167,18 +219,34 @@ class SanitizedExportAllowlistTests(unittest.TestCase):
             instance.work = Path(temp)
             instance.run_id = "usrse26r1"
             instance.load_manifest = Mock(return_value={})
-            instance.private_control_json = Mock(return_value=valid_sanitized_export())
+            instance.private_control_json = Mock(side_effect=export_responses())
             uploaded = {}
 
             def capture_upload(*args):
-                uploaded[args[args.index("--key") + 1]] = Path(args[args.index("--body") + 1]).read_bytes()
+                target = Path(args[args.index("--body") + 1])
+                self.assertEqual(args[args.index("--bucket") + 1], PRIVATE_EXPORT_ENV["STATE_BUCKET"])
+                self.assertEqual(args[args.index("--server-side-encryption") + 1], "AES256")
+                if os.name == "posix":
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                    self.assertEqual(target.parent.stat().st_mode & 0o777, 0o700)
+                uploaded[args[args.index("--key") + 1]] = target.read_bytes()
 
-            with patch.object(LIFECYCLE_MODULE, "aws", side_effect=capture_upload), patch.dict(os.environ, {"STATE_BUCKET": "test-bucket"}):
+            with (patch.object(LIFECYCLE_MODULE, "aws", side_effect=capture_upload),
+                  patch.object(LIFECYCLE_MODULE, "aws_json", return_value=PUBLIC_ACCESS_BLOCK),
+                  patch.dict(os.environ, PRIVATE_EXPORT_ENV)):
                 instance.export()
             export_key = "evidence/usrse26r1/sanitized-export.json"
             checksum = json.loads(uploaded["evidence/usrse26r1/sanitized-export.checksum.json"])
             self.assertEqual(checksum["objectKey"], export_key)
             self.assertEqual(checksum["sha256"], hashlib.sha256(uploaded[export_key]).hexdigest())
+            completion = json.loads(uploaded["evidence/usrse26r1/export-complete.json"])
+            self.assertEqual(len(completion["objects"]), 3)
+            self.assertFalse(completion["publicReleaseApproved"])
+            for entry in completion["objects"]:
+                self.assertEqual(entry["sha256"], hashlib.sha256(uploaded[entry["objectKey"]]).hexdigest())
+            self.assertEqual(list(uploaded)[-1], "evidence/usrse26r1/export-complete.json")
+            self.assertNotIn(b"PRIVATE_COMMENT_SENTINEL", uploaded[export_key])
+            self.assertNotIn(b"PRIVATE_COMMENT_SENTINEL", uploaded["evidence/usrse26r1/restricted/ux-metrics.json"])
 
     def test_accepts_the_exact_aggregate_schema(self) -> None:
         validate_sanitized_export(valid_sanitized_export())
@@ -230,12 +298,159 @@ class SanitizedExportAllowlistTests(unittest.TestCase):
         for name, payload in mutations.items():
             with self.subTest(name=name):
                 instance = object.__new__(Lifecycle)
+                instance.run_id = "usrse26r1"
                 instance.load_manifest = Mock(return_value={})
                 instance.private_control_json = Mock(return_value=copy.deepcopy(payload))
                 instance.put_json = Mock()
-                with self.assertRaisesRegex(RuntimeError, "unapproved fields"):
+                with (patch.object(LIFECYCLE_MODULE, "aws_json", return_value=PUBLIC_ACCESS_BLOCK),
+                      patch.dict(os.environ, PRIVATE_EXPORT_ENV),
+                      self.assertRaisesRegex(RuntimeError, "evidence is incomplete")):
                     instance.export()
                 instance.put_json.assert_not_called()
+
+
+class ProtectedUxExportTests(unittest.TestCase):
+    def instance(self, responses=None):
+        instance = object.__new__(Lifecycle)
+        instance.run_id = "usrse26r1"
+        instance.load_manifest = Mock(return_value={})
+        instance.private_control_json = Mock(side_effect=responses or export_responses())
+        instance.put_json = Mock()
+        return instance
+
+    def test_all_endpoints_use_private_transport_and_exact_private_bucket(self):
+        instance = self.instance()
+        with patch.dict(os.environ, PRIVATE_EXPORT_ENV), patch.object(LIFECYCLE_MODULE, "aws_json", return_value=PUBLIC_ACCESS_BLOCK) as verify:
+            instance.export()
+        verify.assert_called_once_with("s3api", "get-public-access-block", "--bucket", PRIVATE_EXPORT_ENV["STATE_BUCKET"])
+        self.assertEqual([call.args[0] for call in instance.private_control_json.call_args_list], [
+            "/api/v1/demo/internal/export", "/api/v1/demo/internal/ux-metrics",
+            "/api/v1/demo/internal/ux-feedback/comments",
+        ])
+        self.assertEqual(instance.put_json.call_count, 7)
+        for call in instance.put_json.call_args_list:
+            self.assertEqual(call.args[2], PRIVATE_EXPORT_ENV["STATE_BUCKET"])
+            self.assertTrue(call.args[0].startswith("evidence/usrse26r1/"))
+
+    def test_wrong_public_or_unverifiable_destination_blocks_fetch_and_write(self):
+        for env, protection in (
+            ({**PRIVATE_EXPORT_ENV, "STATE_BUCKET": PRIVATE_EXPORT_ENV["STATUS_BUCKET"]}, PUBLIC_ACCESS_BLOCK),
+            ({**PRIVATE_EXPORT_ENV, "STATUS_BUCKET": PRIVATE_EXPORT_ENV["STATE_BUCKET"]}, PUBLIC_ACCESS_BLOCK),
+            ({**PRIVATE_EXPORT_ENV, "STATE_BUCKET": "unrelated-private-bucket"}, PUBLIC_ACCESS_BLOCK),
+            (PRIVATE_EXPORT_ENV, {}),
+            (PRIVATE_EXPORT_ENV, {"PublicAccessBlockConfiguration": {"BlockPublicAcls": True}}),
+        ):
+            instance = self.instance()
+            with patch.dict(os.environ, env), patch.object(LIFECYCLE_MODULE, "aws_json", return_value=protection), self.assertRaises(RuntimeError):
+                instance.export()
+            instance.private_control_json.assert_not_called()
+            instance.put_json.assert_not_called()
+        for flag in PUBLIC_ACCESS_BLOCK["PublicAccessBlockConfiguration"]:
+            protection = copy.deepcopy(PUBLIC_ACCESS_BLOCK)
+            protection["PublicAccessBlockConfiguration"][flag] = False
+            instance = self.instance()
+            with patch.dict(os.environ, PRIVATE_EXPORT_ENV), patch.object(LIFECYCLE_MODULE, "aws_json", return_value=protection), self.assertRaises(RuntimeError):
+                instance.export()
+            instance.private_control_json.assert_not_called()
+
+    def test_malformed_ux_responses_block_all_uploads_without_echoing_content(self):
+        mutations = [
+            (1, ["secret"], "SECRET_SENTINEL"),
+            (1, ["routeViews", "/artifacts/SECRET_SENTINEL"], 1),
+            (1, ["hourly", 0, "browserHash"], "SECRET_SENTINEL"),
+            (1, ["hourlyAnonymousActions", 0, "key"], "2026-10-02T12:00Z|LIVE|SECRET_SENTINEL"),
+            (1, ["survey", "byPhase", "LIVE|usrse26r1", "automationInterest", "SECRET_SENTINEL"], 1),
+            (1, ["pageviews"], True),
+            (1, ["funnel", 0, "conversionFromPrevious"], float("nan")),
+            (1, ["truncated"], "false"),
+            (2, ["comments", 0, "sessionHash"], "SECRET_SENTINEL"),
+            (2, ["comments", 0, "overallComment"], "x" * 301),
+            (2, ["comments", 0, "runId"], "SECRET_SENTINEL"),
+        ]
+        for index, path, value in mutations:
+            with self.subTest(path=path):
+                responses = export_responses()
+                target = responses[index]
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+                instance = self.instance(responses)
+                with patch.dict(os.environ, PRIVATE_EXPORT_ENV), patch.object(LIFECYCLE_MODULE, "aws_json", return_value=PUBLIC_ACCESS_BLOCK), self.assertRaises(RuntimeError) as error:
+                    instance.export()
+                instance.put_json.assert_not_called()
+                self.assertNotIn("SECRET_SENTINEL", str(error.exception))
+                self.assertTrue(error.exception.__suppress_context__)
+
+    def test_transport_and_upload_failures_never_mark_complete_or_echo_content(self):
+        for stage in ("protection", "metrics", "comments", "upload"):
+            instance = self.instance()
+            verify = Mock(return_value=PUBLIC_ACCESS_BLOCK)
+            failure = RuntimeError("SECRET_SENTINEL PRIVATE_COMMENT_SENTINEL")
+            if stage == "protection":
+                verify.side_effect = failure
+            elif stage in {"metrics", "comments"}:
+                responses = export_responses()
+                responses[1 if stage == "metrics" else 2] = failure
+                instance.private_control_json.side_effect = responses
+            else:
+                instance.put_json.side_effect = failure
+            with patch.dict(os.environ, PRIVATE_EXPORT_ENV), patch.object(LIFECYCLE_MODULE, "aws_json", verify), self.assertRaisesRegex(RuntimeError, "evidence is incomplete") as error:
+                instance.export()
+            self.assertNotIn("SENTINEL", str(error.exception))
+            self.assertFalse(any(call.args[0].endswith("export-complete.json") for call in instance.put_json.call_args_list))
+
+    def test_private_transport_suppresses_cli_and_parse_details(self):
+        for result in (RuntimeError("SECRET_SENTINEL"), "SECRET_SENTINEL"):
+            instance = object.__new__(Lifecycle)
+            instance.configure_kubectl = Mock()
+            instance.kubectl = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
+            with self.assertRaisesRegex(RuntimeError, "Private control request failed") as error:
+                instance.private_control_json("/api/v1/demo/internal/ux-feedback/comments")
+            self.assertNotIn("SECRET_SENTINEL", str(error.exception))
+            script = instance.kubectl.call_args.args[7]
+            self.assertIn("redirect:'error'", script)
+            self.assertNotIn("console.error(e.message)", script)
+            self.assertNotIn("text.slice", script)
+
+    def test_schema_accepts_optional_answers_and_truncation_without_changing_scope(self):
+        metrics = valid_ux_metrics()
+        metrics["truncated"] = True
+        metrics["survey"]["byPhase"]["LIVE|usrse26r1"]["visualRatings"] = {}
+        metrics["survey"]["byPhase"]["REHEARSAL|unassigned"] = {
+            "submitted": 1, "visualRatings": {}, "automationInterest": {},
+        }
+        LIFECYCLE_MODULE.validate_ux_metrics(metrics)
+        comments = valid_ux_comments()
+        comments["comments"][0]["overallComment"] = "Unreviewed text may contain SECRET_SENTINEL"
+        LIFECYCLE_MODULE.validate_ux_comments(comments)
+        comments["comments"][0]["overallComment"] = "\U0001f600" * 300
+        LIFECYCLE_MODULE.validate_ux_comments(comments)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for the private transport harness")
+    def test_node_transport_errors_do_not_read_or_print_response_bodies(self):
+        instance = object.__new__(Lifecycle)
+        instance.configure_kubectl = Mock()
+        instance.kubectl = Mock(return_value="{}")
+        instance.private_control_json("/api/v1/demo/internal/ux-feedback/comments")
+        script = instance.kubectl.call_args.args[7]
+        for failure in (
+            "return {ok:false,status:403,text:async()=>{throw new Error('SECRET_SENTINEL')}};",
+            "throw new Error('SECRET_SENTINEL');",
+        ):
+            stub = "global.fetch=async(url,options)=>{" + failure + "};"
+            process = subprocess.run(
+                ["node", "-e", stub + script, "GET", "/api/v1/demo/internal/ux-feedback/comments", ""],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(process.returncode, 1)
+            self.assertEqual(process.stdout, "")
+            self.assertEqual(process.stderr.strip(), "Private control request failed")
+
+    def test_bucket_verification_permission_is_scoped_to_control_bucket(self):
+        source = (ROOT / "terraform/usrse26-control/lifecycle.tf").read_text(encoding="utf-8")
+        statement = source.split('Sid      = "VerifyPrivateEvidenceBucket"', 1)[1].split("},", 1)[0]
+        self.assertIn('Action   = ["s3:GetBucketPublicAccessBlock"]', statement)
+        self.assertIn('Resource = "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}"', statement)
 
 class InfrastructureSafetyContractTests(unittest.TestCase):
     def test_monitor_starts_teardown_at_persisted_runtime_deadline_without_billing_call(self) -> None:
@@ -335,6 +550,8 @@ class InfrastructureSafetyContractTests(unittest.TestCase):
                 self.assertIn("pass role outside run prefix", denied)
                 self.assertIn("pass role to unapproved service", denied)
                 self.assertIn("unrelated S3 object", denied)
+                self.assertIn("deny edge bucket protection read", denied)
+                self.assertIn("deny unrelated bucket protection read", denied)
                 self.assertIn("unrelated Secrets Manager secret", denied)
                 self.assertIn("unrelated secret creation", denied)
                 self.assertIn("broad inline policy intersected for unrelated data", denied)

@@ -217,6 +217,12 @@ locals {
   ]
   runtime_service_statements = [
     {
+      Sid      = "VerifyPrivateEvidenceBucket"
+      Effect   = "Allow"
+      Action   = ["s3:GetBucketPublicAccessBlock"]
+      Resource = "arn:aws:s3:::${local.name_prefix}-control-${var.authorized_account_id}"
+    },
+    {
       Sid    = "ReadOnlyRuntimeDiscovery"
       Effect = "Allow"
       Action = [
@@ -467,6 +473,7 @@ locals {
     for statement in local.runtime_boundary_statement_inputs : statement.Sid => statement
   }
   runtime_boundary_merged_sids = [
+    "VerifyPrivateEvidenceBucket",
     "ExactRunS3Objects",
     "DeleteTaggedCloudFrontRuntimeOrigin",
     "UpdateTaggedControlDistribution",
@@ -488,6 +495,7 @@ locals {
       local.runtime_boundary_statement_by_sid["ReadOnlyExactRunRoles"].Action,
     )
     ExactRunS3Buckets = concat(
+      local.runtime_boundary_statement_by_sid["VerifyPrivateEvidenceBucket"].Action,
       local.runtime_boundary_statement_by_sid["ExactRunS3Buckets"].Action,
       local.runtime_boundary_statement_by_sid["ExactRunS3Objects"].Action,
     )
@@ -538,8 +546,8 @@ locals {
           Action = try(local.runtime_boundary_action_overrides[statement.Sid], statement.Action)
           Resource = try(
             local.runtime_boundary_resource_overrides[statement.Sid],
-            tolist(statement.Resource),
-            [statement.Resource],
+            # IAM accepts scalar ARNs; avoid redundant arrays under the policy quota.
+            statement.Resource,
           )
         },
       ) if !contains(local.runtime_boundary_merged_sids, statement.Sid)
