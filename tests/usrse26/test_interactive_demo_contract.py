@@ -250,7 +250,7 @@ class LifecycleContractTests(unittest.TestCase):
         ):
             self.assertIn(commit, dockerfile)
         self.assertIn(
-            "AL2023_REPOSITORY_GUID=59479e247947fb5165d81aa2364f556030fe518713c50b111a30f75cb118dc0f",
+            "AL2023_REPOSITORY_GUID=27384c19eab24101875840d56fc763871cf62d016a2119ac2982b575b54bf295",
             dockerfile,
         )
         self.assertIn("USER 10001:10001", dockerfile)
@@ -279,6 +279,7 @@ class RenderingAndPolicyTests(unittest.TestCase):
         images = {}
         for name in (
             "api-gateway",
+            "webapp",
             "ledger-gateway",
             "submission-worker",
             "submission-listener",
