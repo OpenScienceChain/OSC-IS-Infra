@@ -31,11 +31,11 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 locals {
-  one_time_schedules = {
+  one_time_schedules = startswith(var.run_id, "auto") ? {
     start       = { expression = "at(${var.start_at})", machine = aws_sfn_state_machine.start.arn, reason = "scheduled-start" }
     stop        = { expression = "at(${var.stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "scheduled-stop" }
     backup-stop = { expression = "at(${var.backup_stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "backup-stop" }
-  }
+  } : {}
 }
 
 resource "aws_scheduler_schedule" "one_time" {
@@ -60,6 +60,7 @@ resource "aws_scheduler_schedule" "one_time" {
 
 resource "aws_scheduler_schedule" "monitor" {
   #checkov:skip=CKV_AWS_297: AWS-owned encryption is used so the run leaves no customer-managed KMS key pending deletion.
+  count               = startswith(var.run_id, "auto") ? 1 : 0
   name                = "${local.name_prefix}-monitor"
   schedule_expression = "rate(5 minutes)"
   start_date          = "2026-10-20T15:00:00Z"

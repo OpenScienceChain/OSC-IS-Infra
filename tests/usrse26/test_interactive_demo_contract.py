@@ -297,14 +297,22 @@ class LifecycleContractTests(unittest.TestCase):
 
             manual = ["manualrun1" if part == "autousrse26r1" else part for part in base]
             result = subprocess.run([*manual, "--output", str(output)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('run_id = "manualrun1"', output.read_text(encoding="utf-8"))
+
+            legacy = ["usrse26r1" if part == "autousrse26r1" else part for part in base]
+            result = subprocess.run([*legacy, "--output", str(output)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("auto-prefixed", result.stderr)
+            self.assertIn("auto- or manual-prefixed", result.stderr)
 
     def test_new_run_id_namespaces_do_not_overlap(self) -> None:
         manual = read("platform/aws/prepare-run.ps1")
         automatic = read("platform/aws/prepare-demo-control.ps1")
         self.assertIn("^manual[a-z0-9]{2,14}$", manual)
-        self.assertIn("^auto[a-z0-9]{4,16}$", automatic)
+        self.assertIn("auto[a-z0-9]{4,16}|manual[a-z0-9]{2,14}", automatic)
+        schedules = read("terraform/usrse26-control/schedules.tf")
+        self.assertIn('one_time_schedules = startswith(var.run_id, "auto") ?', schedules)
+        self.assertIn('count               = startswith(var.run_id, "auto") ? 1 : 0', schedules)
 
     def test_state_machines_have_retry_canary_drain_backup_and_sweep(self) -> None:
         machines = read("terraform/usrse26-control/state-machines.tf")

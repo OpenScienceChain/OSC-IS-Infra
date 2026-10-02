@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidatePattern('^auto[a-z0-9]{4,16}$')][string]$RunId,
+    [Parameter(Mandatory = $true)][ValidatePattern('^(?:auto[a-z0-9]{4,16}|manual[a-z0-9]{2,14})$')][string]$RunId,
     [Parameter(Mandatory = $true)][ValidatePattern('^Z[A-Z0-9]+$')][string]$HostedZoneId,
     [Parameter(Mandatory = $true)][ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}/32$')][string]$AdminCidr,
     [Parameter(Mandatory = $true)][ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')][string]$LifecycleRunnerImage,

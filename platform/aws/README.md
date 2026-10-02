@@ -26,9 +26,11 @@ copy and local state under `platform/.generated/aws/<run-id>/`. They never
 migrate that state to S3. The unattended lifecycle runner uses the separate
 run-scoped S3 backend and DynamoDB lock table. New manual runs must use a
 `manual`-prefixed RunId (8-20 lower-case letters or digits); new unattended
-runs use an `auto`-prefixed RunId. Their startup paths reject the opposite
-namespace before provisioning. This prevents the two state owners from
-claiming the same new run. Existing unprefixed manual runs remain available
+runs use an `auto`-prefixed RunId. The control-plane shell accepts either
+namespace to create the exact run-scoped roles, but schedules unattended
+start/stop/monitor only for `auto` runs. Runtime startup paths reject the
+opposite namespace before provisioning. This prevents the two state owners
+from claiming the same new run. Existing unprefixed manual runs remain available
 to the exact-run inspection and teardown scripts; do not re-prepare or start
 them through the new-run paths.
 

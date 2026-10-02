@@ -40,8 +40,8 @@ def main() -> int:
     parser.add_argument("--notification-email")
     args = parser.parse_args()
 
-    if not re.fullmatch(r"auto[a-z0-9]{4,16}", args.run_id):
-        parser.error("new unattended runs require an auto-prefixed run ID")
+    if not re.fullmatch(r"(?:auto[a-z0-9]{4,16}|manual[a-z0-9]{2,14})", args.run_id):
+        parser.error("new control runs require an auto- or manual-prefixed run ID")
 
     notification_email = (args.notification_email or "").strip() or None
     values: list[tuple[str, str | Decimal | None]] = [
