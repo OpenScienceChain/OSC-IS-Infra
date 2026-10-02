@@ -66,17 +66,6 @@ variable "maximum_runtime_hours" {
   }
 }
 
-variable "provisioning_ceiling_usd" {
-  description = "Absolute campaign provisioning ceiling enforced before apply."
-  type        = number
-  default     = 200
-
-  validation {
-    condition     = var.provisioning_ceiling_usd == 200
-    error_message = "The approved absolute provisioning ceiling is USD 200."
-  }
-}
-
 variable "admin_cidr" {
   description = "Single trusted public IPv4 address allowed to reach the EKS API."
   type        = string
@@ -104,6 +93,11 @@ variable "kubernetes_version" {
 variable "node_instance_types" {
   type    = list(string)
   default = ["m7i.large"]
+
+  validation {
+    condition     = length(var.node_instance_types) == 1 && var.node_instance_types[0] == "m7i.large"
+    error_message = "The reviewed experimental topology uses only m7i.large nodes."
+  }
 }
 
 variable "node_count" {
@@ -131,17 +125,37 @@ variable "alb_controller_image" {
   }
 }
 
-variable "permissions_boundary_arn" {
-  description = "Exact control-owned permissions boundary required on every disposable runtime IAM role."
-  type        = string
+variable "runtime_role_arns" {
+  description = "Exact control-owned role ARNs; runtime Terraform may associate or pass them but cannot create or mutate IAM roles."
+  type = object({
+    eks_cluster                    = string
+    eks_nodes                      = string
+    alb_controller                 = string
+    api_gateway                    = string
+    postgres                       = string
+    submission_worker              = string
+    submission_listener            = string
+    ledger_gateway_nsg             = string
+    ledger_gateway_citizen_science = string
+    ledger_gateway_magnetic_arch   = string
+    ebs_csi                        = string
+  })
 
   validation {
-    condition     = can(regex("^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$", var.permissions_boundary_arn))
-    error_message = "permissions_boundary_arn must be the exact run-scoped boundary in account 269624229733."
+    condition = alltrue([
+      for key, arn in var.runtime_role_arns :
+      arn == "arn:aws:iam::269624229733:role/osc-usrse26-${var.run_id}-${replace(key, "_", "-")}"
+    ])
+    error_message = "Every runtime role must be the exact run-scoped role for its fixed workload key in account 269624229733."
   }
 }
 
 variable "rabbitmq_instance_type" {
   type    = string
   default = "mq.m7g.medium"
+
+  validation {
+    condition     = var.rabbitmq_instance_type == "mq.m7g.medium"
+    error_message = "The reviewed experimental topology uses mq.m7g.medium RabbitMQ brokers."
+  }
 }

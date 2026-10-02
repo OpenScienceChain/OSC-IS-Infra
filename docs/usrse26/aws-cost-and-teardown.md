@@ -10,7 +10,7 @@ creates no RDS instance, public application load balancer, or standalone VM.
 The static CloudFront/S3/WAF control shell is retained separately for at most
 30 days.
 
-## Cost ceiling
+## Pre-deployment planning estimate
 
 | Component | Estimated USD/hour |
 | --- | ---: |
@@ -22,12 +22,18 @@ The static CloudFront/S3/WAF control shell is retained separately for at most
 | EBS, logs, ECR, edge, lifecycle, and transfer allowance | 0.0800 |
 | **Estimated total** | **0.9425** |
 
-Seventy-two hours cost approximately **$67.86**. A 25 percent contingency plus
-a $20 rehearsal/control allowance produces **$104.83**, within the approved
-$90-$120 planning range. Notify at $75, warn and prepare read-only at $125,
-force read-only and teardown at $150, and reject all provisioning at $200.
-These are planning estimates based on the reviewed 2026-09-01 rates; actual
-Cost Explorer data can lag and must be finalized 48 hours after stop.
+Seventy-two hours is estimated at **$67.86**. A 25 percent contingency plus a
+$20 rehearsal/control allowance produces a **$104.83 planned estimate**, below
+the USD 200 pre-deployment planning-estimate ceiling. This is neither observed
+spend nor actual billed cost.
+
+The supported/default mode is `TIME_BOUNDED`. Runtime automation creates no AWS
+Budget and calls no Cost Explorer, EstimatedCharges, billing-portal, or Billing
+API. Exposure is bounded by the 72-hour maximum, fixed capacity, quotas,
+one-time primary and independent backup stops, outside-VPC cleanup, and an
+exact-tag zero-inventory gate. Actual billed cost remains `NOT_RECONCILED`
+unless a human later records a CloudBank or account billing result after
+teardown.
 
 ## Teardown invariant
 

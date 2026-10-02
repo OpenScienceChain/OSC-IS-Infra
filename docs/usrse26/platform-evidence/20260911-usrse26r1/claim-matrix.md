@@ -1,0 +1,14 @@
+# Claim-to-Evidence Matrix
+
+| Claim | Level | Evidence and limitation |
+|---|---|---|
+| The public conference interface reaches the existing OSC-IS stack | AWS demonstrated | A real browser loaded conference mode, and the public canary traversed WebApp, API Gateway, RabbitMQ, workers, Ledger Gateway, and Fabric. The test used synthetic data in one rehearsal. |
+| Artifact and workflow provenance is visible without requiring users to operate Fabric | AWS demonstrated | The browser overview exposed research context, contributor organization, transaction identifiers, verification state, and history. This is interface evidence, not a usability study. |
+| Organization boundaries are enforced across the API and ledger | AWS demonstrated | Caller tenancy rejection, cross-organization read/write denial, role denial, active organization claims, and direct Fabric organization denial passed. Individual ledger operations use trusted service identities, so individual attribution depends on the Gateway audit context. |
+| Accepted work survives the controlled dependency interruptions tested here | AWS demonstrated | Ledger Gateway, RabbitMQ plus worker restart, and peer interruption scenarios completed with one ledger revision and no observed duplicate. This is bounded recovery evidence, not an HA or SLO claim. |
+| GitOps can restore declared application state and a known-good revision | AWS demonstrated | Deliberate drift self-healed in 156 seconds; rollout completed in 21 seconds and rollback in 20 seconds using immutable revisions. This does not cover every cluster component. |
+| The reviewed deployment can be recreated from declared infrastructure and immutable artifacts | AWS demonstrated | Terraform, GitOps, fixed source revisions, digest-addressed images, and focused validation produced the successful rehearsal. A near-event release republish is still required before the October schedule can start it. |
+| The AWS rehearsal was bounded and disposable | AWS demonstrated | Capacity and duration were fixed, writes were closed before teardown, and the retained teardown proof reports no disposable run remnants. Cost values are planning estimates, not reconciled billing. |
+| Six sessions and three submissions show community acceptance | Not tested | Prohibited claim. The aggregate counters include rehearsal traffic, do not identify unique people, and the survey had zero responses. |
+| OSC-IS is production-ready, highly available, or proven at scale | Not tested | Prohibited claim. No sustained load, SLO, disaster recovery, production operations, or statistically meaningful availability experiment was performed. |
+| The October conference launch is ready to run unattended today | Not yet demonstrated | Schedules and the control plane remain, but the rehearsal manifest expires before the event and disposable OCI repositories are deleted at teardown. A reviewed near-event republish and final dry run are required. |

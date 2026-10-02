@@ -13,7 +13,7 @@ def render(source: Path, destination: Path, replacements: dict[str, str]) -> Non
         text = text.replace(token, value)
     if "__" in text:
         raise SystemExit(f"Unresolved bootstrap token in {source}")
-    destination.write_text(text, encoding="utf-8", newline="\n")
+    destination.write_bytes(text.encode("utf-8"))
 
 
 def main() -> None:

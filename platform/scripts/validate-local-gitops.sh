@@ -81,11 +81,17 @@ if [[ "${BASELINE_IMAGE}" != *@sha256:* ]]; then
   echo "API Gateway is not deployed by immutable digest." >&2
   exit 1
 fi
+BASELINE_REPLICAS="$(kubectl get deployment -n osc-apps api-gateway -o jsonpath='{.spec.replicas}')"
+if [[ ! "${BASELINE_REPLICAS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Could not determine the positive API Gateway baseline replica count." >&2
+  exit 1
+fi
+DRIFT_REPLICAS=$((BASELINE_REPLICAS + 1))
 
 DRIFT_STARTED="$(date +%s)"
-kubectl scale deployment -n osc-apps api-gateway --replicas=2 >/dev/null
+kubectl scale deployment -n osc-apps api-gateway --replicas="${DRIFT_REPLICAS}" >/dev/null
 refresh_application
-while [[ "$(kubectl get deployment -n osc-apps api-gateway -o jsonpath='{.spec.replicas}' 2>/dev/null || true)" != "1" ]]; do
+while [[ "$(kubectl get deployment -n osc-apps api-gateway -o jsonpath='{.spec.replicas}' 2>/dev/null || true)" != "${BASELINE_REPLICAS}" ]]; do
   if (( $(date +%s) - DRIFT_STARTED > 180 )); then
     echo "Argo CD did not self-heal the injected drift." >&2
     exit 1

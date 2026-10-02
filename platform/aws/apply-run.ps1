@@ -14,13 +14,17 @@ $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $metadataPath = Join-Path $runRoot 'run-metadata.json'
 
-foreach ($required in @($planPath, $planJsonPath, $metadataPath, (Join-Path $terraformRoot 'versions.tf'))) {
+foreach ($required in @($planPath, $planJsonPath, $metadataPath, $statePath, (Join-Path $terraformRoot 'versions.tf'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing reviewed run artifact: $required" }
 }
 
 $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
-if ($metadata.account -ne '269624229733' -or $metadata.region -ne 'us-west-2') {
+if ($metadata.runId -ne $RunId -or $metadata.backendOwner -ne 'local' -or
+    $metadata.account -ne '269624229733' -or $metadata.region -ne 'us-west-2') {
     throw 'Run metadata violates the authorized AWS boundary.'
+}
+if (-not (Get-Content -LiteralPath (Join-Path $terraformRoot 'versions.tf') -Raw).Contains('backend "local" {}')) {
+    throw 'Reviewed Terraform copy is not configured for local state.'
 }
 if ([DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($metadata.expiresAt)) {
     throw 'The reviewed plan has expired. Prepare a new run instead of applying it.'

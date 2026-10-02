@@ -35,7 +35,7 @@ def main() -> None:
     prefix = f"osc-usrse26-{args.run_id}"
     run_remnants = {
         category: [value for value in values if prefix in value]
-        for category, values in final.get("resources", {}).items()
+        for category, values in added.items()
         if any(prefix in value for value in values)
     }
 

@@ -17,30 +17,35 @@ $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
 $manifestPath = Join-Path $runRoot 'artifacts\artifacts.json'
 $deploymentPath = Join-Path $runRoot 'artifacts\ecr-deployment.json'
-$metadataPath = Join-Path $runRoot 'run-metadata.json'
 $registry = '269624229733.dkr.ecr.us-west-2.amazonaws.com'
 $releasePrefix = "releases/$RunId"
 $manifestKey = "$releasePrefix/artifacts.json"
 $repositoryPolicyPath = Join-Path $runRoot 'artifacts\ecr-lifecycle-policy.json'
+$repositoryTagsPath = Join-Path $runRoot 'artifacts\ecr-repository-tags.json'
 
 if ($ExpiresAt -le [DateTimeOffset]::UtcNow -or $ExpiresAt -gt [DateTimeOffset]::UtcNow.AddHours(72)) {
     throw 'ExpiresAt must be in the future and no more than 72 hours from now.'
 }
 
-if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Credential-free artifact manifest is absent.' }
-if (-not (Test-Path -LiteralPath $metadataPath)) { throw 'Reviewed run metadata is absent.' }
+if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Isolated-build artifact manifest is absent.' }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$runMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
-if ($manifest.runId -ne $RunId -or -not $manifest.credentialFreeBuild) { throw 'Artifact manifest provenance check failed.' }
-if ($runMetadata.runId -ne $RunId -or $runMetadata.account -ne '269624229733' -or $runMetadata.region -ne 'us-west-2') {
-    throw 'Reviewed run metadata does not match the release target.'
+if ($manifest.runId -ne $RunId -or
+    $manifest.buildCredentialIsolation.status -ne 'ENFORCED_COMMON_AWS_SOURCES_ABSENT' -or
+    -not $manifest.buildCredentialIsolation.commonAwsCredentialSourcesAbsent) {
+    throw 'Artifact manifest build-isolation provenance check failed.'
 }
-if ([DateTimeOffset]::Parse($manifest.expiresAt).ToString('o') -ne $ExpiresAt.ToString('o')) {
-    throw 'ExpiresAt does not match the credential-free artifact manifest.'
+$credentialEvidencePath = [string]$manifest.buildCredentialIsolation.evidenceFile
+if (-not (Test-Path -LiteralPath $credentialEvidencePath)) { throw 'Build credential-isolation evidence is absent.' }
+$credentialEvidenceSha = (Get-FileHash -LiteralPath $credentialEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($credentialEvidenceSha -ne $manifest.buildCredentialIsolation.evidenceSha256) {
+    throw 'Build credential-isolation evidence checksum mismatch.'
+}
+$manifestExpiresAtUtc = ([DateTimeOffset]$manifest.expiresAt).ToUniversalTime()
+if ($manifestExpiresAtUtc.Ticks -ne $ExpiresAt.ToUniversalTime().Ticks) {
+    throw 'ExpiresAt does not match the isolated-build artifact manifest.'
 }
 
 foreach ($image in $manifest.images.PSObject.Properties) {
-    if ($image.Name -eq 'lifecycle-runner') { continue }
     $actualSha = (Get-FileHash -LiteralPath $image.Value.archive -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha -ne $image.Value.archiveSha256) { throw "Archive checksum mismatch for $($image.Name)." }
     docker load --input $image.Value.archive | Out-Null
@@ -61,16 +66,6 @@ try {
         throw 'The release bucket must exist in the authorized account with versioning enabled.'
     }
 
-    $repositoryPolicy = @{
-        rules = @(@{
-            rulePriority = 1
-            description = 'Retain only the five most recent experiment images'
-            selection = @{tagStatus = 'any'; countType = 'imageCountMoreThan'; countNumber = 5}
-            action = @{type = 'expire'}
-        })
-    } | ConvertTo-Json -Depth 6 -Compress
-    [IO.File]::WriteAllText($repositoryPolicyPath, $repositoryPolicy + [Environment]::NewLine)
-
     aws ecr get-login-password --profile default --region us-west-2 --no-cli-pager | docker login --username AWS --password-stdin $registry | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Short-lived ECR login failed.' }
 
@@ -78,9 +73,22 @@ try {
     $releasedImages = [ordered]@{}
     foreach ($image in $manifest.images.PSObject.Properties) {
         $name = $image.Name
-        if ($name -eq 'lifecycle-runner') { continue }
         $repository = "osc-usrse26-$RunId/$name"
-        $repositoryExpiresAt = $runMetadata.expiresAt
+        $repositoryExpiresAt = $ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        $repositoryPolicyDescription = if ($name -eq 'lifecycle-runner') {
+            'Retain only the five most recent control images'
+        } else {
+            'Retain only the five most recent experiment images'
+        }
+        $repositoryPolicy = @{
+            rules = @(@{
+                rulePriority = 1
+                description = $repositoryPolicyDescription
+                selection = @{tagStatus = 'any'; countType = 'imageCountMoreThan'; countNumber = 5}
+                action = @{type = 'expire'}
+            })
+        } | ConvertTo-Json -Depth 6 -Compress
+        [IO.File]::WriteAllText($repositoryPolicyPath, $repositoryPolicy + [Environment]::NewLine)
         $existing = aws ecr describe-repositories `
             --repository-names $repository `
             --query 'repositories[0]' `
@@ -90,19 +98,22 @@ try {
             --no-cli-pager 2>$null
         if ($LASTEXITCODE -ne 0) {
             python platform/aws/aws_guard.py | Out-Null
+            $repositoryTags = @(
+                @{Key='Project'; Value='OSC-IS'}
+                @{Key='Purpose'; Value='USRSE26-Interactive-Demo'}
+                @{Key='Environment'; Value='ephemeral'}
+                @{Key='ManagedBy'; Value='Terraform'}
+                @{Key='Owner'; Value='ofgarzon'}
+                @{Key='RunId'; Value=$RunId}
+                @{Key='ExpiresAt'; Value=$repositoryExpiresAt}
+            ) | ConvertTo-Json -Compress
+            [IO.File]::WriteAllText($repositoryTagsPath, $repositoryTags + [Environment]::NewLine)
             $existing = aws ecr create-repository `
                 --repository-name $repository `
                 --image-tag-mutability IMMUTABLE `
                 --image-scanning-configuration scanOnPush=true `
                 --encryption-configuration encryptionType=AES256 `
-                --tags `
-                    Key=Project,Value=OSC-IS `
-                    Key=Purpose,Value=USRSE26-Interactive-Demo `
-                    Key=Environment,Value=ephemeral `
-                    Key=ManagedBy,Value=Terraform `
-                    Key=Owner,Value=ofgarzon `
-                    Key=RunId,Value=$RunId `
-                    Key=ExpiresAt,Value=$repositoryExpiresAt `
+                --tags "file://$repositoryTagsPath" `
                 --query repository `
                 --output json `
                 --profile default `
@@ -114,18 +125,35 @@ try {
         if ($repositoryData.imageTagMutability -ne 'IMMUTABLE' -or -not $repositoryData.imageScanningConfiguration.scanOnPush -or $repositoryData.encryptionConfiguration.encryptionType -ne 'AES256') {
             throw "Pre-existing repository $repository does not match the immutable release contract."
         }
-        $tags = aws ecr list-tags-for-resource `
-            --resource-arn $repositoryData.repositoryArn `
-            --query 'tags' `
-            --output json `
-            --profile default `
-            --region us-west-2 `
-            --no-cli-pager | ConvertFrom-Json
-        $tagMap = @{}
-        foreach ($tag in @($tags)) { $tagMap[$tag.Key] = $tag.Value }
         $expectedTags = @{Project='OSC-IS'; Purpose='USRSE26-Interactive-Demo'; Environment='ephemeral'; ManagedBy='Terraform'; Owner='ofgarzon'; RunId=$RunId; ExpiresAt=$repositoryExpiresAt}
-        foreach ($entry in $expectedTags.GetEnumerator()) {
-            if ($tagMap[$entry.Key] -ne $entry.Value) { throw "Repository $repository is missing exact tag $($entry.Key)." }
+        $tagMismatches = @('tag reconciliation has not run')
+        for ($tagReadAttempt = 1; $tagReadAttempt -le 6; $tagReadAttempt++) {
+            $tagsJson = aws ecr list-tags-for-resource `
+                --resource-arn $repositoryData.repositoryArn `
+                --query 'tags' `
+                --output json `
+                --profile default `
+                --region us-west-2 `
+                --no-cli-pager
+            if ($LASTEXITCODE -eq 0) {
+                $tagMap = @{}
+                foreach ($tag in @(($tagsJson | ConvertFrom-Json))) { $tagMap[$tag.Key] = $tag.Value }
+                $tagMismatches = @($expectedTags.GetEnumerator() | Where-Object {
+                    if ($_.Key -eq 'ExpiresAt') {
+                        if ($null -eq $tagMap[$_.Key]) { return $true }
+                        return ([DateTimeOffset]$tagMap[$_.Key]).ToUniversalTime().Ticks -ne ([DateTimeOffset][string]$_.Value).ToUniversalTime().Ticks
+                    }
+                    return [string]$tagMap[$_.Key] -cne [string]$_.Value
+                })
+                if ($tagMismatches.Count -eq 0) { break }
+            } else {
+                $tagMismatches = @('AWS tag read failed')
+            }
+            if ($tagReadAttempt -lt 6) { Start-Sleep -Seconds ([Math]::Min(2 * $tagReadAttempt, 10)) }
+        }
+        if ($tagMismatches.Count -ne 0) {
+            $missingKeys = @($tagMismatches | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Key } }) -join ', '
+            throw "Repository $repository is missing exact tags after bounded reconciliation: $missingKeys."
         }
         aws ecr put-lifecycle-policy `
             --repository-name $repository `
@@ -136,17 +164,18 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Could not apply the bounded lifecycle policy to $repository." }
 
         $tagged = "$registry/$repository`:$RunId"
-        $existingDigest = aws ecr describe-images `
+        $existingDigest = (aws ecr describe-images `
             --repository-name $repository `
             --image-ids "imageTag=$RunId" `
             --query 'imageDetails[0].imageDigest' `
             --output text `
             --profile default `
             --region us-west-2 `
-            --no-cli-pager 2>$null
+            --no-cli-pager 2>$null)
         if ($LASTEXITCODE -eq 0) {
-            if ($existingDigest.Trim() -ne $image.Value.localDigest) {
-                throw "Immutable ECR tag for $name has an unexpected digest."
+            $existingDigest = $existingDigest.Trim()
+            if ($existingDigest -ne $image.Value.localDigest) {
+                throw "Immutable ECR tag mismatch for ${name}: expected $($image.Value.localDigest), got $existingDigest"
             }
         } else {
             docker tag $image.Value.localReference $tagged
@@ -196,12 +225,37 @@ try {
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($webPut.VersionId)) {
         throw 'Versioned WebApp bundle upload failed.'
     }
+    $credentialEvidenceKey = "$releasePrefix/build-credential-isolation.json"
+    python platform/aws/aws_guard.py | Out-Null
+    $credentialEvidencePut = aws s3api put-object `
+        --bucket $ReleaseBucket `
+        --key $credentialEvidenceKey `
+        --body $credentialEvidencePath `
+        --content-type application/json `
+        --server-side-encryption AES256 `
+        --checksum-algorithm SHA256 `
+        --output json `
+        --profile default `
+        --region us-west-2 `
+        --no-cli-pager | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($credentialEvidencePut.VersionId)) {
+        throw 'Versioned build credential-isolation evidence upload failed.'
+    }
     $releaseManifest = [ordered]@{
         schemaVersion = $manifest.schemaVersion
         runId = $manifest.runId
-        expiresAt = $manifest.expiresAt
-        createdAt = $manifest.createdAt
-        credentialFreeBuild = $manifest.credentialFreeBuild
+        expiresAt = ([DateTimeOffset]$manifest.expiresAt).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        createdAt = ([DateTimeOffset]$manifest.createdAt).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        buildCredentialIsolation = [ordered]@{
+            status = $manifest.buildCredentialIsolation.status
+            commonAwsCredentialSourcesAbsent = $manifest.buildCredentialIsolation.commonAwsCredentialSourcesAbsent
+            evidence = [ordered]@{
+                s3Uri = "s3://$ReleaseBucket/$credentialEvidenceKey"
+                versionId = $credentialEvidencePut.VersionId
+                sha256 = $credentialEvidenceSha
+            }
+            limitation = $manifest.buildCredentialIsolation.limitation
+        }
         webApp = [ordered]@{
             sourceRevision = $manifest.webApp.sourceRevision
             s3Uri = "s3://$ReleaseBucket/$($manifest.webApp.objectKey)"
@@ -252,7 +306,7 @@ try {
         }
     }
     [IO.File]::WriteAllText($deploymentPath, ($report | ConvertTo-Json -Depth 5) + [Environment]::NewLine)
-    Write-Host 'All ECR digests and versioned S3 release artifacts match the credential-free build manifest.'
+    Write-Host 'All ECR digests and versioned S3 release artifacts match the isolated-build manifest.'
 }
 finally {
     docker logout $registry | Out-Null

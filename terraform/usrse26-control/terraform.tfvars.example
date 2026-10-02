@@ -5,4 +5,5 @@ lifecycle_runner_image  = "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrs
 artifact_manifest_s3_uri = "s3://REPLACE/releases/usrse26demo/manifest.json"
 artifact_manifest_sha256 = "REPLACE_WITH_64_LOWER_CASE_HEX_CHARACTERS"
 notification_email       = null
-planning_cost_usd        = 120
+cost_control_mode        = "TIME_BOUNDED"
+planning_estimate_usd    = 120

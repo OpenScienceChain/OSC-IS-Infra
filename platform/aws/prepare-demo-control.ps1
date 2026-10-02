@@ -1,12 +1,11 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9]{8,20}$')][string]$RunId,
+    [Parameter(Mandatory = $true)][ValidatePattern('^auto[a-z0-9]{4,16}$')][string]$RunId,
     [Parameter(Mandatory = $true)][ValidatePattern('^Z[A-Z0-9]+$')][string]$HostedZoneId,
     [Parameter(Mandatory = $true)][ValidatePattern('^(?:\d{1,3}\.){3}\d{1,3}/32$')][string]$AdminCidr,
     [Parameter(Mandatory = $true)][ValidatePattern('^[^\s]+@sha256:[0-9a-f]{64}$')][string]$LifecycleRunnerImage,
     [Parameter(Mandatory = $true)][ValidatePattern('^s3://[a-z0-9.-]+/.+/.+\.json$')][string]$ArtifactManifestS3Uri,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ArtifactManifestSha256,
-    [ValidateRange(0, 200)][decimal]$PlanningCostUsd = 120,
     [AllowNull()][string]$NotificationEmail = $null
 )
 
@@ -28,23 +27,32 @@ New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 Push-Location $repoRoot
 try {
     python platform/aws/aws_guard.py | Out-Null
-    python platform/aws/estimate_cost.py --hours 72 --output (Join-Path $runRoot 'cost-estimate.json') | Out-Null
-    $values = [ordered]@{
-        run_id = $RunId
-        hosted_zone_id = $HostedZoneId
-        admin_cidr = $AdminCidr
-        lifecycle_runner_image = $LifecycleRunnerImage
-        artifact_manifest_s3_uri = $ArtifactManifestS3Uri
-        artifact_manifest_sha256 = $ArtifactManifestSha256
-        planning_cost_usd = $PlanningCostUsd
-        notification_email = $NotificationEmail
+    $costEstimatePath = Join-Path $runRoot 'cost-estimate.json'
+    python platform/aws/estimate_cost.py --hours 72 --output $costEstimatePath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Pre-deployment planning-estimate gate failed.' }
+    $costEstimate = Get-Content -LiteralPath $costEstimatePath -Raw | ConvertFrom-Json
+    if ($costEstimate.costControlMode -ne 'TIME_BOUNDED' -or
+        -not $costEstimate.approvedForPlanning -or
+        [decimal]$costEstimate.plannedEstimateWith25PercentContingency -gt 200) {
+        throw 'Planning estimate is missing, inconsistent, or above USD 200.'
     }
-    $lines = foreach ($entry in $values.GetEnumerator()) {
-        if ($null -eq $entry.Value) { "$($entry.Key) = null" }
-        elseif ($entry.Value -is [decimal]) { "$($entry.Key) = $($entry.Value)" }
-        else { "$($entry.Key) = `"$($entry.Value)`"" }
+    $planningEstimateUsd = [decimal]$costEstimate.plannedEstimateWith25PercentContingency
+    $tfvarsArguments = @(
+        'platform/aws/write_control_tfvars.py',
+        '--output', $tfvarsPath,
+        '--run-id', $RunId,
+        '--hosted-zone-id', $HostedZoneId,
+        '--admin-cidr', $AdminCidr,
+        '--lifecycle-runner-image', $LifecycleRunnerImage,
+        '--artifact-manifest-s3-uri', $ArtifactManifestS3Uri,
+        '--artifact-manifest-sha256', $ArtifactManifestSha256,
+        '--planning-estimate-usd', $planningEstimateUsd.ToString([Globalization.CultureInfo]::InvariantCulture)
+    )
+    if (-not [string]::IsNullOrWhiteSpace($NotificationEmail)) {
+        $tfvarsArguments += @('--notification-email', $NotificationEmail.Trim())
     }
-    [IO.File]::WriteAllLines($tfvarsPath, $lines, [Text.UTF8Encoding]::new($false))
+    python @tfvarsArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Control-plane variable generation failed.' }
 
     Push-Location $terraformRoot
     try {

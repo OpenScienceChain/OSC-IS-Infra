@@ -20,6 +20,8 @@ impact.
 
 ## Documents
 
+- [Public demo showtime notes (2026-09-30)](public-demo-showtime-notes-20260930.md)
+- [Public demo cutover and rollback](public-demo-cutover-20260930.md)
 - [Current state](current-state.md)
 - [Risk register](risk-register.md)
 - [Acceptance and evidence contract](acceptance-and-evidence.md)
@@ -34,8 +36,10 @@ impact.
 
 ## Evidence
 
+- [2026-09-11 interactive-demo AWS rehearsal](platform-evidence/20260911-usrse26r1/README.md)
+
 Evidence belongs under `platform-evidence/<run-id>/`. Each run must include its
-environment, exact source revisions, test results, timings, cost estimate, and
-teardown proof. Raw credentials, certificates, private keys, tokens, sensitive
+environment, exact source revisions, test results, timings, planning estimate,
+and teardown proof. Raw credentials, certificates, private keys, tokens, sensitive
 Terraform state, and unsanitized AWS identity output are prohibited.
 

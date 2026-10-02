@@ -88,6 +88,7 @@ resource "aws_sfn_state_machine" "start" {
       VerifyAccount = {
         Type       = "Task"
         Resource   = "arn:aws:states:::aws-sdk:sts:getCallerIdentity"
+        Parameters = {}
         ResultPath = "$.identity"
         Next       = "AuthorizedAccount"
       }
@@ -111,13 +112,15 @@ resource "aws_sfn_state_machine" "start" {
       }
       AlreadyStarted = { Type = "Succeed" }
       ReserveRun = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::dynamodb:putItem"
+        Type       = "Task"
+        Resource   = "arn:aws:states:::dynamodb:putItem"
+        ResultPath = null
         Parameters = {
           TableName = aws_dynamodb_table.lifecycle.name
           Item = {
             runId          = { "S.$" = "$.runId" }
             status         = { S = "PREPARING" }
+            hardCloseAt    = { S = local.lifecycle_environment.HARD_CLOSE_AT }
             expiresAtEpoch = { N = "1795359600" }
           }
           ConditionExpression = "attribute_not_exists(runId)"
@@ -238,13 +241,25 @@ resource "aws_sfn_state_machine" "stop" {
     Comment = "Read-only, drain, export, destroy, sweep, and verify"
     StartAt = "VerifyAccount"
     States = {
-      VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", ResultPath = "$.identity", Next = "AuthorizedAccount" }
+      VerifyAccount = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", Parameters = {}, ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = {
         Type    = "Choice"
-        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "ReadRun" }]
+        Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "BackupActivation" }]
         Default = "Unauthorized"
       }
       Unauthorized = { Type = "Fail", Error = "UnauthorizedAccount", Cause = "Expected AWS account 269624229733" }
+      BackupActivation = {
+        Type    = "Choice"
+        Choices = [{ Variable = "$.reason", StringEquals = "backup-stop", Next = "NotifyBackupActivation" }]
+        Default = "ReadRun"
+      }
+      NotifyBackupActivation = {
+        Type       = "Task"
+        Resource   = "arn:aws:states:::sns:publish"
+        Parameters = { TopicArn = aws_sns_topic.lifecycle.arn, Subject = "OSC-IS demo backup stop activated", Message = "The independent backup stop is checking teardown after the primary stop window." }
+        Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.notificationFailure", Next = "ReadRun" }]
+        Next       = "ReadRun"
+      }
       ReadRun = {
         Type       = "Task"
         Resource   = "arn:aws:states:::dynamodb:getItem"
@@ -267,6 +282,7 @@ resource "aws_sfn_state_machine" "stop" {
       ReadOnly = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "READ_ONLY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.readOnlyResult"
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.readOnlyFailure", Next = "NotifyReadOnlyFailure" }]
         Next       = "Drain"
       }
@@ -281,6 +297,7 @@ resource "aws_sfn_state_machine" "stop" {
       Export = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "EXPORT", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.exportResult"
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.exportFailure", Next = "NotifyExportFailure" }]
         Next       = "Destroy"
       }
@@ -294,6 +311,7 @@ resource "aws_sfn_state_machine" "stop" {
       Destroy = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.lifecycle.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.workloadDestroyResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.workloadDestroyFailure", Next = "DestroyRuntime" }]
         Next       = "WaitForRunnerNetworkRelease"
@@ -302,6 +320,7 @@ resource "aws_sfn_state_machine" "stop" {
       DestroyRuntime = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.cleanup.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "DESTROY_RUNTIME", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.runtimeDestroyResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 120, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.runtimeDestroyFailure", Next = "Sweep" }]
         Next       = "Sweep"
@@ -309,6 +328,7 @@ resource "aws_sfn_state_machine" "stop" {
       Sweep = {
         Type       = "Task", Resource = "arn:aws:states:::codebuild:startBuild.sync"
         Parameters = { ProjectName = aws_codebuild_project.cleanup.name, EnvironmentVariablesOverride = [{ Name = "ACTION", Value = "SWEEP", Type = "PLAINTEXT" }, { Name = "RUN_ID", "Value.$" = "$.runId", Type = "PLAINTEXT" }] }
+        ResultPath = "$.sweepResult"
         Retry      = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 60, BackoffRate = 2, MaxAttempts = 3 }]
         Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.sweepFailure", Next = "NotifyIncompleteSweep" }]
         Next       = "MarkClosed"
@@ -353,7 +373,7 @@ resource "aws_sfn_state_machine" "monitor" {
   definition = jsonencode({
     StartAt = "VerifyAccount"
     States = {
-      VerifyAccount     = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", ResultPath = "$.identity", Next = "AuthorizedAccount" }
+      VerifyAccount     = { Type = "Task", Resource = "arn:aws:states:::aws-sdk:sts:getCallerIdentity", Parameters = {}, ResultPath = "$.identity", Next = "AuthorizedAccount" }
       AuthorizedAccount = { Type = "Choice", Choices = [{ Variable = "$.identity.Account", StringEquals = var.authorized_account_id, Next = "Monitor" }], Default = "Unauthorized" }
       Unauthorized      = { Type = "Fail", Error = "UnauthorizedAccount" }
       Monitor = {

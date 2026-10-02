@@ -7,17 +7,30 @@ and outputs under ignored `platform/.generated/aws/<run-id>/` storage.
 The required order is:
 
 ```powershell
-./platform/aws/prepare-run.ps1 -RunId usrse26demo -AdminCidr 203.0.113.10/32 -Hours 72 -AlbControllerImage 'IMAGE@sha256:REVIEWED'
-./platform/aws/apply-run.ps1 -RunId usrse26demo
+terraform -chdir=terraform/usrse26-control output -json runtime_role_arns > platform/.generated/runtime-role-arns.json
+./platform/aws/prepare-run.ps1 -RunId manualdemo1 -AdminCidr 203.0.113.10/32 -Hours 72 -AlbControllerImage 'IMAGE@sha256:REVIEWED' -RuntimeRoleArnsPath platform/.generated/runtime-role-arns.json
+./platform/aws/apply-run.ps1 -RunId manualdemo1
 # Deploy and validate only prebuilt, scanned artifacts.
-./platform/aws/destroy-run.ps1 -RunId usrse26demo
+./platform/aws/destroy-run.ps1 -RunId manualdemo1
 ```
 
-`prepare-run.ps1` captures the baseline, applies the $200 ceiling, creates a
-saved Terraform plan, and rejects destructive, public, mutable, untagged, or
-out-of-scope resources. `apply-run.ps1` only applies that reviewed plan before
-its configured expiry. `destroy-run.ps1` destroys runtime and fails unless the
-final inventory has exact baseline parity.
+`prepare-demo-control.ps1` first records the `TIME_BOUNDED` planning estimate
+and rejects it above the USD 200 planning ceiling. `prepare-run.ps1` then
+captures the baseline, validates the exact control-owned role ARNs, creates a
+saved Terraform plan, and rejects
+destructive, public, mutable, untagged, or out-of-scope resources.
+`apply-run.ps1` only applies that reviewed plan before its configured expiry.
+`destroy-run.ps1` destroys runtime and fails unless the final inventory has
+exact baseline parity. These manual wrappers use a run-scoped local Terraform
+copy and local state under `platform/.generated/aws/<run-id>/`. They never
+migrate that state to S3. The unattended lifecycle runner uses the separate
+run-scoped S3 backend and DynamoDB lock table. New manual runs must use a
+`manual`-prefixed RunId (8-20 lower-case letters or digits); new unattended
+runs use an `auto`-prefixed RunId. Their startup paths reject the opposite
+namespace before provisioning. This prevents the two state owners from
+claiming the same new run. Existing unprefixed manual runs remain available
+to the exact-run inspection and teardown scripts; do not re-prepare or start
+them through the new-run paths.
 
 The persistent status edge and automated lifecycle use the separate guarded
 `prepare-demo-control.ps1`, `apply-demo-control.ps1`, and

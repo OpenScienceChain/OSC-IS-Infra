@@ -125,7 +125,7 @@ def main() -> None:
         regex_replace_required(
             prereqs,
             r"  \$\{CONTAINER_CLI\} version > /dev/null.*?  echo \"Fabric image versions: Peer \(\$FABRIC_IMAGE_VERSION\), CA \(\$FABRIC_CA_IMAGE_VERSION\)\"\n  if \[ -z \"\$FABRIC_IMAGE_VERSION\" \] \|\| \[ -z \"\$FABRIC_CA_IMAGE_VERSION\" \]; then\n    echo \"It seems some of the specified Fabric images are not available\.\"\n    exit 1\n  fi\n",
-            """  # The credential-free preparation phase already verifies immutable EKS image digests.
+            """  # The isolated preparation phase already verifies immutable EKS image digests.
   # The lifecycle runner intentionally has no Docker daemon and performs no source builds.
   FABRIC_IMAGE_VERSION=${FABRIC_VERSION}
   FABRIC_CA_IMAGE_VERSION=${FABRIC_CA_VERSION}
@@ -268,6 +268,20 @@ spec:
       echo \"Unable to resolve immutable chaincode image digest\"
       exit 1
     fi
+""",
+        1,
+    )
+    replace_required(
+        chaincode,
+        "  cc_sha256=$(shasum -a 256 ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)\n",
+        """  if command -v sha256sum >/dev/null 2>&1; then
+    cc_sha256=$(sha256sum ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)
+  elif command -v shasum >/dev/null 2>&1; then
+    cc_sha256=$(shasum -a 256 ${cc_package} | tr -s ' ' | cut -d ' ' -f 1)
+  else
+    echo "No SHA-256 utility is available to calculate the chaincode package ID"
+    exit 1
+  fi
 """,
         1,
     )

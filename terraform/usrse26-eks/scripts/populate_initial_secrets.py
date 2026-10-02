@@ -77,18 +77,36 @@ if identity.get("Account") != AUTHORIZED_ACCOUNT:
     raise SystemExit("AWS account guard failed; no secrets were written")
 
 put_secret(
-    required("APP_SECRET_ARN"),
+    required("API_AUTH_SECRET_ARN"),
     {
         "jwtSecret": secrets.token_hex(32),
         "bootstrapAdminPassword": password(),
+    },
+)
+put_secret(
+    required("LISTENER_AUTH_SECRET_ARN"),
+    {"listenerApiKey": secrets.token_hex(32)},
+)
+put_secret(
+    required("DEMO_AUTH_SECRET_ARN"),
+    {
         "demoJwtSecret": secrets.token_hex(32),
         "demoAnalyticsHmacSecret": secrets.token_hex(32),
         "demoControlApiKey": secrets.token_hex(32),
     },
 )
-put_secret(required("LISTENER_SECRET_ARN"), {"apiKey": secrets.token_hex(32)})
-put_secret(required("NSG_TOKEN_SECRET_ARN"), {"token": secrets.token_hex(32)})
-put_secret(required("CITIZEN_TOKEN_SECRET_ARN"), {"token": secrets.token_hex(32)})
+put_secret(
+    required("LEDGER_NSG_AUTH_SECRET_ARN"),
+    {"nsgLedgerToken": secrets.token_hex(32)},
+)
+put_secret(
+    required("LEDGER_CITIZEN_AUTH_SECRET_ARN"),
+    {"citizenScienceLedgerToken": secrets.token_hex(32)},
+)
+put_secret(
+    required("LEDGER_MAGNETIC_ARCH_AUTH_SECRET_ARN"),
+    {"magneticArchLedgerToken": secrets.token_hex(32)},
+)
 put_secret(
     required("POSTGRES_SECRET_ARN"),
     {"username": "osc_app", "database": "osc_is", "password": password()},
@@ -98,4 +116,4 @@ put_secret(
     {"username": "osc_usrse26", "password": password()},
 )
 
-print("Populated six consumer-scoped Secrets Manager values; values were not logged.")
+print("Populated eight workload-scoped Secrets Manager values; values were not logged.")

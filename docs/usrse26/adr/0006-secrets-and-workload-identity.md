@@ -5,13 +5,13 @@
 
 ## Decision
 
-AWS Secrets Manager stores database credentials, Amazon MQ credentials, and the
-two organization Fabric client credential bundles. Separate secrets and IAM
-policies prevent one workload from reading another organization's Fabric key.
-API authentication/demo-control values, the API-to-listener key, and each
-organization's ledger bearer token are also separate secrets. Secrets Store
-field selection is not treated as an authorization boundary: each Pod Identity
-role can call `GetSecretValue` only on the exact secret ARNs its service uses.
+AWS Secrets Manager stores separate API authentication, listener callback,
+internal demo-control, NSG, Citizen Science, and Magnetic Arch Ledger Gateway,
+database, Amazon MQ, and three organization Fabric identity values. No shared
+`application` secret exists. Separate secrets and exact IAM policies prevent a
+workload from reading unrelated service credentials or another organization's
+Fabric key. Secrets Store field selection is not an authorization boundary:
+each Pod Identity role can call `GetSecretValue` only on its exact secret ARNs.
 
 EKS Pod Identity or IRSA provides short-lived AWS authorization to dedicated
 Kubernetes service accounts. Automatic service-account token mounting is
@@ -25,17 +25,24 @@ checksums and expiration, and removes them with the cluster.
 
 ## Policy boundaries
 
-- Gateway: database, broker, listener key, and its own token-signing/control
-  material; no ledger bearer token or Fabric key.
-- Outbox/worker: broker credential and both organization Ledger Gateway bearer
-  tokens, because it routes organization-bound work; no
-  direct Fabric key unless it is the Ledger Gateway process.
-- Listener: broker credential and listener key only.
-- NSG Ledger Gateway: NSG bearer token and NSG Fabric client secret only.
-- Citizen Science Ledger Gateway: Citizen Science bearer token and Citizen
-  Science Fabric client secret only.
+- Gateway: API authentication, listener callback, internal demo-control,
+  database, and broker values; no Ledger Gateway token or Fabric key.
+- Submission worker: broker credential and all three organization-scoped Ledger
+  Gateway tokens; no Fabric key.
+- Submission listener: broker credential and listener callback value only.
+- NSG Ledger Gateway: NSG Ledger token and NSG Fabric identity only.
+- Citizen Science Ledger Gateway: Citizen Science Ledger token and Fabric
+  identity only.
+- Magnetic Arch Ledger Gateway: Magnetic Arch Ledger token and Fabric identity
+  only.
 - Deployment automation: permission to update verified image digests and
-  declarative revisions; no application secret read.
+  declarative revisions; no workload secret read outside exact run-scoped
+  creation, population, and teardown operations.
+
+The control plane owns all IAM roles and trust policies. Runtime Terraform is
+given exact control-owned role ARNs and cannot create or mutate roles. Pod
+Identity replaces the prior ALB-controller web-identity trust policy, removing
+the runtime OIDC-provider and trust-policy mutation path.
 
 ## Rotation and evidence
 

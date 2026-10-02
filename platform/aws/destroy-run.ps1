@@ -19,6 +19,14 @@ $metadataPath = Join-Path $runRoot 'run-metadata.json'
 foreach ($required in @($statePath, $tfvarsPath, $baselinePath, $metadataPath, (Join-Path $terraformRoot 'versions.tf'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing teardown artifact: $required" }
 }
+$metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+if ($metadata.runId -ne $RunId -or $metadata.backendOwner -ne 'local' -or
+    $metadata.account -ne '269624229733' -or $metadata.region -ne 'us-west-2') {
+    throw 'Run metadata does not authorize local-state teardown.'
+}
+if (-not (Get-Content -LiteralPath (Join-Path $terraformRoot 'versions.tf') -Raw).Contains('backend "local" {}')) {
+    throw 'Reviewed Terraform copy is not configured for local state.'
+}
 
 if ($RunId -eq 'usrse260930') {
     $edge = aws cloudfront get-distribution-config --id E26XTII1H57RTX --output json | ConvertFrom-Json

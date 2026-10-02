@@ -26,12 +26,35 @@ resource "aws_security_group" "cloudfront_origin" {
   description = "Only CloudFront VPC origins may reach the internal demo ALB"
   vpc_id      = aws_vpc.experiment.id
 
+  tags = { Name = "${local.name_prefix}-cloudfront-origin" }
+
   egress {
     description = "ALB traffic to Kubernetes pod targets"
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
     cidr_blocks = [aws_vpc.experiment.cidr_block]
+  }
+}
+
+resource "aws_security_group" "alb_backend" {
+  #checkov:skip=CKV2_AWS_5: The controller discovers this group through its fixed cluster tags and attaches it to the internal ALB.
+  name        = "${local.name_prefix}-alb-backend"
+  description = "Shared backend group for the internal OSC-IS application load balancer"
+  vpc_id      = aws_vpc.experiment.id
+
+  egress {
+    description = "ALB access to the API Gateway pod targets"
+    protocol    = "tcp"
+    from_port   = 3000
+    to_port     = 3000
+    cidr_blocks = [aws_vpc.experiment.cidr_block]
+  }
+
+  tags = {
+    Name                     = "${local.name_prefix}-alb-backend"
+    "elbv2.k8s.aws/cluster"  = local.cluster_name
+    "elbv2.k8s.aws/resource" = "backend-sg"
   }
 }
 

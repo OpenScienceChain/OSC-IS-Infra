@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import http.cookiejar
 import json
+import math
 import os
 import re
 import shutil
@@ -24,6 +25,9 @@ from typing import Any
 
 ACCOUNT = "269624229733"
 REGION = "us-west-2"
+COST_CONTROL_MODE = "TIME_BOUNDED"
+PLANNING_ESTIMATE_CEILING_USD = 200.0
+MAX_RUNTIME_HOURS = 72
 REQUIRED_IMAGES = {
     "api-gateway",
     "ledger-gateway",
@@ -51,6 +55,24 @@ VALID_ACTIONS = {
 ROOT = Path(os.environ.get("OSC_RUNNER_ROOT", "/opt/osc/infra"))
 RUN_ID_RE = re.compile(r"^[a-z0-9]{8,20}$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+SANITIZED_EXPORT_CAVEAT = (
+    "Self-selected convenience sample from a conference demonstration; "
+    "not a measure of community acceptance."
+)
+
+
+def tag_index_entry_is_active(arn: str, active_ec2_ids: dict[str, set[str]]) -> bool:
+    """Ignore eventually consistent EC2 tag-index entries after deletion."""
+    match = re.fullmatch(
+        rf"arn:aws:ec2:{re.escape(REGION)}:{ACCOUNT}:([^/]+)/(.+)", arn
+    )
+    if not match:
+        return True
+    resource_type, resource_id = match.groups()
+    authoritative_ids = active_ec2_ids.get(resource_type)
+    if authoritative_ids is None:
+        return True
+    return resource_id in authoritative_ids
 
 
 def required(name: str) -> str:
@@ -105,6 +127,90 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _require_exact_keys(value: Any, expected: set[str], path: str) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise RuntimeError(f"Sanitized export {path} must be an object")
+    actual = set(value)
+    if actual != expected:
+        raise RuntimeError(f"Sanitized export {path} has unapproved fields")
+    return value
+
+
+def _require_nonnegative_integer(value: Any, path: str) -> int:
+    if type(value) is not int or value < 0:
+        raise RuntimeError(f"Sanitized export {path} must be a non-negative integer")
+    return value
+
+
+def _require_utc_timestamp(value: Any, path: str) -> None:
+    if type(value) is not str or not value.endswith("Z"):
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp") from error
+    if parsed.utcoffset() != timedelta(0):
+        raise RuntimeError(f"Sanitized export {path} must be a UTC timestamp")
+
+
+def validate_sanitized_export(exported: Any) -> None:
+    root = _require_exact_keys(
+        exported,
+        {"schemaVersion", "exportedAt", "status", "counters", "survey", "caveat"},
+        "root",
+    )
+    if root["schemaVersion"] != 1 or type(root["schemaVersion"]) is not int:
+        raise RuntimeError("Sanitized export schemaVersion must be exactly 1")
+    _require_utc_timestamp(root["exportedAt"], "exportedAt")
+    if root["caveat"] != SANITIZED_EXPORT_CAVEAT:
+        raise RuntimeError("Sanitized export caveat is not approved")
+
+    status = _require_exact_keys(root["status"], {"state", "opensAt", "closesAt"}, "status")
+    if type(status["state"]) is not str or status["state"] not in {
+        "SCHEDULED",
+        "PREPARING",
+        "OPEN",
+        "READ_ONLY",
+        "CLOSED",
+    }:
+        raise RuntimeError("Sanitized export status.state is invalid")
+    _require_utc_timestamp(status["opensAt"], "status.opensAt")
+    _require_utc_timestamp(status["closesAt"], "status.closesAt")
+
+    counter_keys = {
+        "anonymousBrowserSessions",
+        "acceptedArtifacts",
+        "confirmedArtifacts",
+        "acceptedWorkflows",
+        "confirmedWorkflows",
+        "provenanceHistoryViews",
+    }
+    counters = _require_exact_keys(root["counters"], counter_keys, "counters")
+    for key in counter_keys:
+        _require_nonnegative_integer(counters[key], f"counters.{key}")
+
+    survey = _require_exact_keys(root["survey"], {"sampleSize", "ratings"}, "survey")
+    sample_size = _require_nonnegative_integer(survey["sampleSize"], "survey.sampleSize")
+    ratings = _require_exact_keys(
+        survey["ratings"], {"ease", "provenance", "usefulness"}, "survey.ratings"
+    )
+    rating_keys = {"1", "2", "3", "4", "5"}
+    for dimension in ("ease", "provenance", "usefulness"):
+        distribution = _require_exact_keys(
+            ratings[dimension], rating_keys, f"survey.ratings.{dimension}"
+        )
+        counts = [
+            _require_nonnegative_integer(
+                distribution[key], f"survey.ratings.{dimension}.{key}"
+            )
+            for key in rating_keys
+        ]
+        if sum(counts) != sample_size:
+            raise RuntimeError(
+                f"Sanitized export survey.ratings.{dimension} does not match sampleSize"
+            )
+
+
 def parse_s3_uri(uri: str) -> tuple[str, str]:
     match = re.fullmatch(r"s3://([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])/(.+)", uri)
     if not match or ".." in Path(match.group(2)).parts:
@@ -122,7 +228,9 @@ class Lifecycle:
         self.manifest: dict[str, Any] | None = None
         self.kubeconfig = self.work / "kubeconfig"
 
-    def guard(self) -> None:
+    def guard(self, action: str) -> None:
+        if action == "START" and not re.fullmatch(r"auto[a-z0-9]{4,16}", self.run_id):
+            raise RuntimeError("New unattended runs require an auto-prefixed RunId")
         expected_account = required("EXPECTED_ACCOUNT_ID")
         expected_region = required("EXPECTED_REGION")
         if expected_account != ACCOUNT or expected_region != REGION:
@@ -132,49 +240,88 @@ class Lifecycle:
             raise RuntimeError(f"Refusing AWS account {identity.get('Account')}")
         if os.environ.get("AWS_DEFAULT_REGION", REGION) != REGION:
             raise RuntimeError("AWS_DEFAULT_REGION is outside us-west-2")
-        if float(required("PLANNING_COST_USD")) > float(required("COST_CEILING_USD")):
-            raise RuntimeError("Reviewed planning cost exceeds the absolute ceiling")
+        if required("COST_CONTROL_MODE") != COST_CONTROL_MODE:
+            raise RuntimeError("Only TIME_BOUNDED cost control is authorized")
+        if int(required("MAX_RUNTIME_HOURS")) != MAX_RUNTIME_HOURS:
+            raise RuntimeError("Maximum runtime must remain exactly 72 hours")
+        ceiling = float(required("PLANNING_ESTIMATE_CEILING_USD"))
+        estimate = float(required("PLANNING_ESTIMATE_USD"))
+        if (
+            not math.isfinite(estimate)
+            or not math.isfinite(ceiling)
+            or estimate < 0
+            or ceiling != PLANNING_ESTIMATE_CEILING_USD
+            or estimate > ceiling
+        ):
+            raise RuntimeError("Pre-deployment planning estimate exceeds the USD 200 ceiling")
+        hard_close = datetime.fromisoformat(required("HARD_CLOSE_AT").replace("Z", "+00:00"))
+        if hard_close.tzinfo is None or hard_close.utcoffset() != timedelta(0):
+            raise RuntimeError("HARD_CLOSE_AT must be an explicit UTC timestamp")
+        cleanup_actions = {"READ_ONLY", "EXPORT", "DESTROY", "DESTROY_RUNTIME", "SWEEP", "FAILED_START_CLEANUP"}
+        if datetime.now(timezone.utc) >= hard_close and action not in cleanup_actions:
+            raise RuntimeError("The hard-close deadline has passed")
+        expected_stop = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:osc-usrse26-{self.run_id}-stop"
+        if required("STOP_STATE_MACHINE_ARN") != expected_stop:
+            raise RuntimeError("Teardown authorization does not match the exact run")
 
-    def load_manifest(self) -> dict[str, Any]:
-        if self.manifest is not None:
-            return self.manifest
-        bucket, key = parse_s3_uri(required("ARTIFACT_MANIFEST_S3_URI"))
-        path = self.work / "artifacts.json"
-        aws("s3api", "get-object", "--bucket", bucket, "--key", key, str(path))
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        expected = required("ARTIFACT_MANIFEST_SHA256")
-        if not SHA_RE.fullmatch(expected) or actual != expected:
-            raise RuntimeError("Artifact manifest SHA-256 mismatch")
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        if manifest.get("runId") != self.run_id or manifest.get("credentialFreeBuild") is not True:
-            raise RuntimeError("Artifact manifest provenance does not match the run")
-        images = manifest.get("images", {})
-        if set(images) != REQUIRED_IMAGES:
-            raise RuntimeError(f"Artifact manifest image set differs: {sorted(set(images) ^ REQUIRED_IMAGES)}")
-        prefix = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/osc-usrse26-{self.run_id}/"
-        for name, evidence in images.items():
-            reference = evidence.get("ecrReference", "")
-            if not reference.startswith(f"{prefix}{name}@sha256:") or not SHA_RE.fullmatch(reference.rsplit("sha256:", 1)[-1]):
-                raise RuntimeError(f"Mutable or cross-run image reference for {name}")
-        web = manifest.get("webApp", {})
-        if not re.fullmatch(r"[0-9a-f]{40}", web.get("sourceRevision", "")):
-            raise RuntimeError("WebApp source revision is not immutable")
-        if not SHA_RE.fullmatch(web.get("sha256", "")) or not web.get("s3Uri"):
-            raise RuntimeError("WebApp versioned object interface is incomplete")
+    def load_manifest(self, *, allow_expired: bool = False) -> dict[str, Any]:
+        if self.manifest is None:
+            bucket, key = parse_s3_uri(required("ARTIFACT_MANIFEST_S3_URI"))
+            path = self.work / "artifacts.json"
+            aws("s3api", "get-object", "--bucket", bucket, "--key", key, str(path))
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            expected = required("ARTIFACT_MANIFEST_SHA256")
+            if not SHA_RE.fullmatch(expected) or actual != expected:
+                raise RuntimeError("Artifact manifest SHA-256 mismatch")
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            isolation = manifest.get("buildCredentialIsolation", {})
+            if (
+                manifest.get("runId") != self.run_id
+                or isolation.get("status") != "ENFORCED_COMMON_AWS_SOURCES_ABSENT"
+                or isolation.get("commonAwsCredentialSourcesAbsent") is not True
+                or not SHA_RE.fullmatch(isolation.get("evidence", {}).get("sha256", ""))
+            ):
+                raise RuntimeError("Artifact manifest provenance does not match the run")
+            images = manifest.get("images", {})
+            if set(images) != REQUIRED_IMAGES:
+                raise RuntimeError(f"Artifact manifest image set differs: {sorted(set(images) ^ REQUIRED_IMAGES)}")
+            prefix = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/osc-usrse26-{self.run_id}/"
+            for name, evidence in images.items():
+                reference = evidence.get("ecrReference", "")
+                if not reference.startswith(f"{prefix}{name}@sha256:") or not SHA_RE.fullmatch(reference.rsplit("sha256:", 1)[-1]):
+                    raise RuntimeError(f"Mutable or cross-run image reference for {name}")
+            web = manifest.get("webApp", {})
+            if not re.fullmatch(r"[0-9a-f]{40}", web.get("sourceRevision", "")):
+                raise RuntimeError("WebApp source revision is not immutable")
+            if not SHA_RE.fullmatch(web.get("sha256", "")) or not web.get("s3Uri"):
+                raise RuntimeError("WebApp versioned object interface is incomplete")
+            self.manifest = manifest
+        manifest = self.manifest
+        created = datetime.fromisoformat(manifest["createdAt"].replace("Z", "+00:00"))
         expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        if expires <= now or expires > now + timedelta(hours=int(required("MAX_RUNTIME_HOURS")), minutes=5):
+        hard_close = datetime.fromisoformat(required("HARD_CLOSE_AT").replace("Z", "+00:00"))
+        if (
+            created.tzinfo is None
+            or created.utcoffset() != timedelta(0)
+            or expires.tzinfo is None
+            or expires.utcoffset() != timedelta(0)
+            or expires <= created
+            or expires > created + timedelta(hours=MAX_RUNTIME_HOURS, minutes=5)
+            or expires > hard_close
+        ):
+            raise RuntimeError("Manifest timestamps are inconsistent with the 72-hour and hard-close deadlines")
+        if not allow_expired and (expires <= now or expires > now + timedelta(hours=MAX_RUNTIME_HOURS, minutes=5)):
             raise RuntimeError("Manifest expiry is outside the approved runtime window")
-        self.manifest = manifest
         return manifest
 
     @property
     def expires_at(self) -> str:
-        return self.load_manifest()["expiresAt"]
+        return self.load_manifest(allow_expired=True)["expiresAt"]
 
     def put_json(self, key: str, value: Any, bucket: str | None = None) -> None:
         target = self.work / (hashlib.sha256(key.encode()).hexdigest() + ".json")
-        target.write_text(json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n", encoding="utf-8")
+        target.write_bytes((json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8"))
         aws(
             "s3api", "put-object", "--bucket", bucket or required("STATE_BUCKET"),
             "--key", key, "--body", str(target), "--content-type", "application/json",
@@ -187,12 +334,20 @@ class Lifecycle:
         self.put_json(
             "status.json",
             {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "state": state,
                 "message": message,
                 "applicationUrl": required("PUBLIC_URL") if state == "OPEN" else None,
                 "runId": self.run_id,
                 "updatedAt": iso_now(),
+                "costControl": {
+                    "mode": COST_CONTROL_MODE,
+                    "plannedEstimateUsd": float(required("PLANNING_ESTIMATE_USD")),
+                    "planningEstimateCeilingUsd": PLANNING_ESTIMATE_CEILING_USD,
+                    "maximumRuntimeHours": MAX_RUNTIME_HOURS,
+                    "hardCloseAt": required("HARD_CLOSE_AT"),
+                    "actualBilledCost": {"status": "NOT_RECONCILED", "amountUsd": None},
+                },
             },
             required("STATUS_BUCKET"),
         )
@@ -235,30 +390,6 @@ class Lifecycle:
         )
         return int(response.get("Attributes", {}).get("monitorFailureCount", {}).get("N", "0"))
 
-    def notify_cost_once(self, field: str, subject: str, message: str) -> bool:
-        current = aws_json(
-            "dynamodb", "get-item", "--table-name", required("LIFECYCLE_TABLE"),
-            "--key", json.dumps({"runId": {"S": self.run_id}}), "--consistent-read",
-        ).get("Item", {})
-        if field in current:
-            return False
-        marker = iso_now()
-        result = run([
-            "aws", "dynamodb", "update-item", "--table-name", required("LIFECYCLE_TABLE"),
-            "--key", json.dumps({"runId": {"S": self.run_id}}),
-            "--update-expression", f"SET {field} = :v",
-            "--condition-expression", f"attribute_not_exists({field})",
-            "--expression-attribute-values", json.dumps({":v": {"S": marker}}),
-            "--region", REGION, "--no-cli-pager",
-        ], check=False)
-        if result.returncode:
-            return False
-        aws_json(
-            "sns", "publish", "--topic-arn", required("NOTIFICATION_TOPIC_ARN"),
-            "--subject", subject, "--message", message,
-        )
-        return True
-
     def sync_webapp(self) -> None:
         manifest = self.load_manifest()
         web = manifest["webApp"]
@@ -280,6 +411,21 @@ class Lifecycle:
                 if member.issym() or member.islnk() or not destination.is_relative_to(site.resolve()):
                     raise RuntimeError("Unsafe WebApp bundle member")
             bundle.extractall(site)
+        runtime_config = {
+            "schemaVersion": 1,
+            "sourceRevision": web["sourceRevision"],
+            "DEMO_MODE": True,
+            "API_BASE_URL": "/api/v1",
+        }
+        runtime_path = site / "assets/runtime-config.json"
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_text(
+            json.dumps(runtime_config, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        for extracted in site.rglob("*"):
+            if extracted.is_file():
+                os.utime(extracted, None)
         aws(
             "s3", "sync", str(site), f"s3://{required('STATUS_BUCKET')}/", "--delete",
             "--exclude", "status.json", "--sse", "AES256",
@@ -316,7 +462,7 @@ class Lifecycle:
                 "admin_cidr": required("ADMIN_CIDR"),
                 "runner_public_cidr": f"{public_ip}/32",
                 "alb_controller_image": manifest["externalImages"]["aws-load-balancer-controller"],
-                "permissions_boundary_arn": required("RUNTIME_PERMISSIONS_BOUNDARY_ARN"),
+                "runtime_role_arns": json.loads(required("RUNTIME_ROLE_ARNS_JSON")),
             }
             variables.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
             aws(
@@ -497,8 +643,9 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         return json.loads(output or "null")
 
     def set_api_state(self, state: str, reason: str) -> None:
-        expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
-        opens = expires - timedelta(hours=int(required("MAX_RUNTIME_HOURS")))
+        manifest = self.load_manifest(allow_expired=True)
+        opens = datetime.fromisoformat(manifest["createdAt"].replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
         self.private_control_json(
             "/api/v1/demo/internal/status",
             method="PUT",
@@ -525,9 +672,28 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             time.sleep(10)
         raise RuntimeError("The tagged internal ALB did not become active")
 
+    def assert_distribution_not_external_api(self) -> dict[str, Any]:
+        current = aws_json(
+            "cloudfront", "get-distribution-config", "--id", required("CLOUDFRONT_DISTRIBUTION")
+        )
+        origins = current["DistributionConfig"].get("Origins", {}).get("Items", [])
+        if any(origin.get("Id") == "private-demo-api-usrse260930" for origin in origins):
+            raise RuntimeError(
+                "The usrse260930 API origin is Terraform-managed by the persistent edge; "
+                "detach it there before running the usrse26r1 lifecycle."
+            )
+        return current
+
     def attach_origin(self, load_balancer: dict[str, Any]) -> None:
+        if required("CLOUDFRONT_DISTRIBUTION") == "E26XTII1H57RTX":
+            raise RuntimeError(
+                "This distribution's API origin is owned by Terraform; "
+                "the legacy lifecycle must not attach an origin."
+            )
+        self.assert_distribution_not_external_api()
+        origin_name = f"osc-usrse26-{self.run_id}-api"
         endpoint = {
-            "Name": f"osc-usrse26-{self.run_id}-api",
+            "Name": origin_name,
             "Arn": load_balancer["LoadBalancerArn"],
             "HTTPPort": 80,
             "HTTPSPort": 443,
@@ -542,8 +708,25 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             {"Key": "RunId", "Value": self.run_id},
             {"Key": "ExpiresAt", "Value": self.expires_at},
         ]}
-        created = aws_json("cloudfront", "create-vpc-origin", "--vpc-origin-endpoint-config", json.dumps(endpoint), "--tags", json.dumps(tags))
-        origin_id = created["VpcOrigin"]["Id"]
+        listed = aws_json("cloudfront", "list-vpc-origins")
+        matching_origins = [
+            item for item in listed.get("VpcOriginList", {}).get("Items", [])
+            if item.get("Name") == origin_name
+        ]
+        if len(matching_origins) > 1:
+            raise RuntimeError(f"Multiple CloudFront VPC origins match {origin_name}")
+        if matching_origins:
+            existing_origin = matching_origins[0]
+            if existing_origin.get("OriginEndpointArn") != load_balancer["LoadBalancerArn"]:
+                raise RuntimeError(f"CloudFront VPC origin {origin_name} targets an unexpected load balancer")
+            origin_id = existing_origin["Id"]
+        else:
+            created = aws_json(
+                "cloudfront", "create-vpc-origin",
+                "--vpc-origin-endpoint-config", json.dumps(endpoint),
+                "--tags", json.dumps(tags),
+            )
+            origin_id = created["VpcOrigin"]["Id"]
         deadline = time.monotonic() + 900
         while time.monotonic() < deadline:
             current = aws_json("cloudfront", "get-vpc-origin", "--id", origin_id)
@@ -555,17 +738,40 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         distribution_id = required("CLOUDFRONT_DISTRIBUTION")
         current = aws_json("cloudfront", "get-distribution-config", "--id", distribution_id)
         config = current["DistributionConfig"]
+        custom_errors = config.get("CustomErrorResponses", {"Quantity": 0})
+        changed = custom_errors.get("Quantity", 0) != 0
+        config["CustomErrorResponses"] = {"Quantity": 0}
         origins = config.setdefault("Origins", {"Quantity": 0, "Items": []})
-        origins.setdefault("Items", []).append({
+        desired_origin = {
             "Id": "runtime-api",
             "DomainName": load_balancer["DNSName"],
-            "VpcOriginConfig": {"VpcOriginId": origin_id, "OriginReadTimeout": 30, "OriginKeepaliveTimeout": 5},
+            "OriginPath": "",
+            "CustomHeaders": {"Quantity": 0},
+            "VpcOriginConfig": {"VpcOriginId": origin_id, "OriginReadTimeout": 90, "OriginKeepaliveTimeout": 5},
             "ConnectionAttempts": 3,
             "ConnectionTimeout": 10,
-        })
-        origins["Quantity"] = len(origins["Items"])
+            "OriginShield": {"Enabled": False},
+        }
+        origin_items = origins.setdefault("Items", [])
+        matching_distribution_origins = [item for item in origin_items if item.get("Id") == "runtime-api"]
+        if len(matching_distribution_origins) > 1:
+            raise RuntimeError("CloudFront distribution has duplicate runtime-api origins")
+        if matching_distribution_origins:
+            existing = matching_distribution_origins[0]
+            if (
+                existing.get("DomainName") != load_balancer["DNSName"]
+                or existing.get("VpcOriginConfig", {}).get("VpcOriginId") != origin_id
+            ):
+                raise RuntimeError("CloudFront runtime-api origin targets an unexpected endpoint")
+            if existing != desired_origin:
+                origin_items[origin_items.index(existing)] = desired_origin
+                changed = True
+        else:
+            origin_items.append(desired_origin)
+            changed = True
+        origins["Quantity"] = len(origin_items)
         behaviors = config.setdefault("CacheBehaviors", {"Quantity": 0, "Items": []})
-        behaviors.setdefault("Items", []).append({
+        desired_behavior = {
             "PathPattern": "/api/*",
             "TargetOriginId": "runtime-api",
             "TrustedSigners": {"Enabled": False, "Quantity": 0},
@@ -580,17 +786,34 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             "Compress": True,
             "LambdaFunctionAssociations": {"Quantity": 0},
             "FunctionAssociations": {"Quantity": 0},
+            "FieldLevelEncryptionId": "",
             "CachePolicyId": required("API_CACHE_POLICY_ID"),
             "OriginRequestPolicyId": required("API_ORIGIN_POLICY_ID"),
-        })
-        behaviors["Quantity"] = len(behaviors["Items"])
-        payload = self.work / "distribution.json"
-        payload.write_text(json.dumps(config), encoding="utf-8")
-        aws(
-            "cloudfront", "update-distribution", "--id", distribution_id,
-            "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
-        )
-        aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
+            "GrpcConfig": {"Enabled": False},
+        }
+        behavior_items = behaviors.setdefault("Items", [])
+        matching_behaviors = [item for item in behavior_items if item.get("PathPattern") == "/api/*"]
+        if len(matching_behaviors) > 1:
+            raise RuntimeError("CloudFront distribution has duplicate /api/* behaviors")
+        if matching_behaviors:
+            existing = matching_behaviors[0]
+            if existing.get("TargetOriginId") != "runtime-api":
+                raise RuntimeError("CloudFront /api/* behavior targets an unexpected origin")
+            if existing != desired_behavior:
+                behavior_items[behavior_items.index(existing)] = desired_behavior
+                changed = True
+        else:
+            behavior_items.append(desired_behavior)
+            changed = True
+        behaviors["Quantity"] = len(behavior_items)
+        if changed:
+            payload = self.work / "distribution.json"
+            payload.write_text(json.dumps(config), encoding="utf-8")
+            aws(
+                "cloudfront", "update-distribution", "--id", distribution_id,
+                "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
+            )
+            aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
         self.put_json(
             f"runtime-state/{self.run_id}/vpc-origin.json",
             {"id": origin_id, "loadBalancerArn": load_balancer["LoadBalancerArn"], "attachedAt": iso_now()},
@@ -605,9 +828,14 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         aws("codebuild", "update-project", "--name", required("CODEBUILD_PROJECT"), "--vpc-config", json.dumps(config))
 
     def start(self) -> None:
-        self.load_manifest()
+        manifest = self.load_manifest()
         self.write_status("PREPARING", "The temporary demonstration environment is being prepared and verified.")
-        self.update_lifecycle_record("PREPARING")
+        self.update_lifecycle_record(
+            "PREPARING",
+            expiresAt=manifest["expiresAt"],
+            hardCloseAt=required("HARD_CLOSE_AT"),
+            costControlMode=COST_CONTROL_MODE,
+        )
         self.sync_webapp()
         root, outputs = self.provision()
         self.deploy_runtime(outputs)
@@ -670,7 +898,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
                 guests.append((opener, session))
             opener, guest = guests[0]
             fingerprint = hashlib.sha256(f"{self.run_id}:public-canary".encode()).hexdigest()
-            request_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osc-is:{self.run_id}:artifact"))
+            request_id = str(uuid.uuid4())
             mutation_headers = {"Origin": origin, "X-Demo-CSRF": guest["csrfToken"], "X-Correlation-Id": request_id}
             artifact = self.http_json(
                 opener, "/api/v1/demo/artifacts", method="POST",
@@ -692,7 +920,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             if history.get("total") != 1:
                 raise RuntimeError("Artifact canary did not produce exactly one ledger revision")
             self.http_json(guests[1][0], f"/api/v1/demo/artifacts/{artifact['id']}", expected=403)
-            workflow_request = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osc-is:{self.run_id}:workflow"))
+            workflow_request = str(uuid.uuid4())
             workflow = self.http_json(
                 opener, "/api/v1/demo/workflows", method="POST",
                 body={"requestId": workflow_request, "artifactIds": [artifact["id"]], "researchContext": "REPRODUCIBLE_ANALYSIS"},
@@ -727,47 +955,53 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             raise
 
     def read_only(self) -> None:
-        self.load_manifest()
+        self.load_manifest(allow_expired=True)
         self.configure_kubectl()
         self.write_status("READ_ONLY", "New contributions are closed; confirmed provenance history remains available during export.")
         self.set_api_state("READ_ONLY", "Scheduled close or safety threshold")
         self.update_lifecycle_record("READ_ONLY")
 
     def export(self) -> None:
-        self.load_manifest()
+        self.load_manifest(allow_expired=True)
         exported = self.private_control_json("/api/v1/demo/internal/export")
-        forbidden = ("email", "filename", "privateComment", "token", "secret", "sessionId")
-        serialized = json.dumps(exported)
-        if any(term.lower() in serialized.lower() for term in forbidden):
-            raise RuntimeError("Sanitized export contains a forbidden field")
+        validate_sanitized_export(exported)
+        # Match the exact canonical bytes written by put_json, including newline.
+        serialized = json.dumps(exported, separators=(",", ":"), sort_keys=True) + "\n"
         key = f"evidence/{self.run_id}/sanitized-export.json"
         self.put_json(key, exported)
         self.put_json(
             f"evidence/{self.run_id}/sanitized-export.checksum.json",
-            {"algorithm": "sha256", "sha256": hashlib.sha256((serialized + "\n").encode()).hexdigest(), "objectKey": key},
+            {"algorithm": "sha256", "sha256": hashlib.sha256(serialized.encode()).hexdigest(), "objectKey": key},
         )
 
     def detach_origin(self) -> None:
         distribution_id = required("CLOUDFRONT_DISTRIBUTION")
-        current = aws_json("cloudfront", "get-distribution-config", "--id", distribution_id)
+        current = self.assert_distribution_not_external_api()
         config = current["DistributionConfig"]
         origins = config.get("Origins", {"Quantity": 0})
+        has_legacy_origin = any(item.get("Id") == "runtime-api" for item in origins.get("Items", []))
+        behaviors = config.get("CacheBehaviors", {"Quantity": 0})
+        api_behaviors = [item for item in behaviors.get("Items", []) if item.get("PathPattern") == "/api/*"]
+        if api_behaviors and any(item.get("TargetOriginId") != "runtime-api" for item in api_behaviors):
+            raise RuntimeError("Refusing to alter an API behavior not owned by this lifecycle")
+        if bool(api_behaviors) != has_legacy_origin:
+            raise RuntimeError("Legacy runtime origin and API behavior disagree")
         origins["Items"] = [item for item in origins.get("Items", []) if item.get("Id") != "runtime-api"]
         origins["Quantity"] = len(origins["Items"])
         if not origins["Items"]:
             origins.pop("Items", None)
-        behaviors = config.get("CacheBehaviors", {"Quantity": 0})
         behaviors["Items"] = [item for item in behaviors.get("Items", []) if item.get("PathPattern") != "/api/*"]
         behaviors["Quantity"] = len(behaviors["Items"])
         if not behaviors["Items"]:
             behaviors.pop("Items", None)
-        payload = self.work / "distribution-detached.json"
-        payload.write_text(json.dumps(config), encoding="utf-8")
-        aws(
-            "cloudfront", "update-distribution", "--id", distribution_id,
-            "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
-        )
-        aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
+        if has_legacy_origin:
+            payload = self.work / "distribution-detached.json"
+            payload.write_text(json.dumps(config), encoding="utf-8")
+            aws(
+                "cloudfront", "update-distribution", "--id", distribution_id,
+                "--if-match", current["ETag"], "--distribution-config", f"file://{payload}",
+            )
+            aws("cloudfront", "wait", "distribution-deployed", "--id", distribution_id)
         metadata = self.work / "vpc-origin.json"
         result = run([
             "aws", "s3api", "get-object", "--bucket", required("STATE_BUCKET"),
@@ -808,9 +1042,16 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             self.write_status("READ_ONLY", "The contribution window is closed while sanitized evidence is exported and the runtime is removed.")
 
     def reset_codebuild_network(self) -> None:
+        current = aws_json(
+            "codebuild", "batch-get-projects", "--names", required("CODEBUILD_PROJECT"),
+        ).get("projects", [])
+        if len(current) != 1:
+            raise RuntimeError("Lifecycle CodeBuild project lookup was not exact")
+        if not current[0].get("vpcConfig"):
+            return
         aws(
             "codebuild", "update-project", "--name", required("CODEBUILD_PROJECT"),
-            "--vpc-config", json.dumps({"vpcId": "", "subnets": [], "securityGroupIds": []}),
+            "--vpc-config", json.dumps({}),
         )
 
     def delete_workloads(self) -> None:
@@ -819,6 +1060,43 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             return
         self.configure_kubectl()
         self.kubectl("-n", "argocd", "delete", "application", "osc-is-aws", "--ignore-not-found=true", "--wait=true", "--timeout=5m", check=False)
+        self.kubectl(
+            "-n", "osc-apps", "delete", "ingress", "osc-demo-api",
+            "--ignore-not-found=true", "--wait=false", check=False,
+        )
+        tag_arguments = [
+            f"Key={key},Values={value}"
+            for key, value in {
+                "Project": "OSC-IS",
+                "Purpose": "USRSE26-Interactive-Demo",
+                "Environment": "ephemeral",
+                "RunId": self.run_id,
+                "ExpiresAt": self.expires_at,
+            }.items()
+        ]
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline:
+            load_balancer_resources = aws_json(
+                "resourcegroupstaggingapi", "get-resources",
+                "--resource-type-filters",
+                "elasticloadbalancing:loadbalancer",
+                "elasticloadbalancing:targetgroup",
+                "--tag-filters", *tag_arguments,
+            ).get("ResourceTagMappingList", [])
+            if not load_balancer_resources:
+                ingress = self.kubectl(
+                    "-n", "osc-apps", "get", "ingress", "osc-demo-api",
+                    "-o", "name", check=False,
+                ).strip()
+                if ingress:
+                    self.kubectl(
+                        "-n", "osc-apps", "patch", "ingress", "osc-demo-api",
+                        "--type=merge", "-p", '{"metadata":{"finalizers":[]}}',
+                    )
+                break
+            time.sleep(10)
+        else:
+            raise RuntimeError("Tagged load balancer resources did not delete")
         for namespace in ("osc-apps", "osc-fabric", "argocd", "ingress-nginx", "cert-manager"):
             self.kubectl("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=10m")
         deadline = time.monotonic() + 600
@@ -828,6 +1106,11 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
                 f"Name=tag:RunId,Values={self.run_id}", "Name=tag:Project,Values=OSC-IS",
                 "Name=tag:Purpose,Values=USRSE26-Interactive-Demo", "Name=tag:Environment,Values=ephemeral",
             ).get("Volumes", [])
+            volumes = [
+                volume for volume in volumes
+                if not volume.get("Attachments")
+                or any(not attachment.get("DeleteOnTermination", False) for attachment in volume["Attachments"])
+            ]
             if not volumes:
                 return
             if all(volume["State"] == "available" for volume in volumes):
@@ -840,7 +1123,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
     def destroy(self) -> None:
         failures: list[str] = []
         try:
-            self.load_manifest()
+            self.load_manifest(allow_expired=True)
             for operation in (self.detach_origin, self.restore_fallback, self.delete_workloads):
                 try:
                     operation()
@@ -864,6 +1147,14 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             raise RuntimeError("; ".join(failures))
 
     def destroy_runtime(self) -> None:
+        broker_name = f"osc-usrse26-{self.run_id}-rabbitmq"
+        broker_matches = [
+            item for item in aws_json("mq", "list-brokers").get("BrokerSummaries", [])
+            if item.get("BrokerName") == broker_name
+        ]
+        if len(broker_matches) > 1:
+            raise RuntimeError(f"Multiple Amazon MQ brokers match {broker_name}")
+        broker_id = broker_matches[0]["BrokerId"] if broker_matches else None
         state_object = run([
             "aws", "s3api", "head-object", "--bucket", required("STATE_BUCKET"),
             "--key", f"runtime-state/{self.run_id}/runtime.auto.tfvars.json",
@@ -874,6 +1165,8 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             root, _ = self.tf_root(create_variables=False)
             run(["terraform", "destroy", "-input=false", "-auto-approve"], cwd=root, capture=False)
         self.delete_residual_runtime_repositories()
+        if broker_id:
+            self.delete_amazon_mq_log_groups(broker_id)
         self.put_json(
             f"evidence/{self.run_id}/destroy.json",
             {
@@ -904,6 +1197,19 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             if any(tag_map.get(key) != value for key, value in expected.items()):
                 raise RuntimeError(f"Refusing to delete partially tagged ECR repository {repository}")
             aws("ecr", "delete-repository", "--repository-name", repository, "--force")
+
+    def delete_amazon_mq_log_groups(self, broker_id: str) -> None:
+        if not re.fullmatch(r"b-[0-9a-f-]+", broker_id):
+            raise RuntimeError("Amazon MQ broker ID has an unexpected format")
+        prefix = f"/aws/amazonmq/broker/{broker_id}/"
+        groups = aws_json(
+            "logs", "describe-log-groups", "--log-group-name-prefix", prefix,
+        ).get("logGroups", [])
+        for group in groups:
+            name = group.get("logGroupName", "")
+            if not name.startswith(prefix):
+                raise RuntimeError(f"Refusing to delete unexpected log group {name}")
+            aws("logs", "delete-log-group", "--log-group-name", name)
 
     def failed_start_cleanup(self) -> None:
         failures: list[str] = []
@@ -1031,26 +1337,70 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         }
 
     def waf_metrics(self) -> dict[str, Any]:
+        web_acl = required("WEB_ACL_NAME")
         dimensions = [
-            {"Name": "WebACL", "Value": required("WEB_ACL_NAME")},
+            {"Name": "WebACL", "Value": web_acl},
             {"Name": "Rule", "Value": "ALL"},
             {"Name": "Region", "Value": "Global"},
         ]
-        return {
+        metrics = {
             metric: self.cloudwatch_window("AWS/WAFV2", metric, dimensions, region="us-east-1")
             for metric in ("AllowedRequests", "BlockedRequests")
         }
+        metrics["DemoHistoryRateBlockedRequests"] = self.cloudwatch_window(
+            "AWS/WAFV2",
+            "BlockedRequests",
+            [
+                {"Name": "WebACL", "Value": web_acl},
+                {"Name": "Rule", "Value": "DemoHistoryRate"},
+                {"Name": "Region", "Value": "Global"},
+            ],
+            region="us-east-1",
+        )
+        return metrics
 
     def start_safety_teardown(self, reason: str) -> None:
-        self.write_status("READ_ONLY", "An automated safety threshold was reached; teardown has started.")
-        aws_json(
-            "states", "start-execution", "--state-machine-arn", required("STOP_STATE_MACHINE_ARN"),
+        self.write_status("READ_ONLY", "An automated safety condition was reached; teardown has started.")
+        execution_name = f"{self.run_id}-{reason}"
+        process = run([
+            "aws", "states", "start-execution",
+            "--state-machine-arn", required("STOP_STATE_MACHINE_ARN"),
+            "--name", execution_name,
             "--input", json.dumps({"runId": self.run_id, "reason": reason}),
-        )
+            "--region", REGION, "--no-cli-pager", "--output", "json",
+        ], check=False)
+        if process.returncode and "ExecutionAlreadyExists" not in (process.stderr or ""):
+            raise RuntimeError(f"Could not start teardown: {(process.stderr or process.stdout)[-2000:]}")
 
     def monitor(self) -> None:
-        self.load_manifest()
-        evidence: dict[str, Any] = {"schemaVersion": 1, "runId": self.run_id, "observedAt": iso_now()}
+        manifest = self.load_manifest(allow_expired=True)
+        evidence: dict[str, Any] = {
+            "schemaVersion": 2,
+            "runId": self.run_id,
+            "observedAt": iso_now(),
+            "costControl": {
+                "mode": COST_CONTROL_MODE,
+                "plannedEstimateUsd": float(required("PLANNING_ESTIMATE_USD")),
+                "planningEstimateCeilingUsd": PLANNING_ESTIMATE_CEILING_USD,
+                "boundedExposure": {
+                    "maximumRuntimeHours": MAX_RUNTIME_HOURS,
+                    "expiresAt": manifest["expiresAt"],
+                    "hardCloseAt": required("HARD_CLOSE_AT"),
+                },
+                "actualBilledCost": {
+                    "status": "NOT_RECONCILED",
+                    "amountUsd": None,
+                    "source": "human CloudBank or account billing reconciliation after teardown",
+                },
+            },
+        }
+        expires = datetime.fromisoformat(manifest["expiresAt"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) >= expires:
+            evidence["runtimeDeadlineReached"] = True
+            self.start_safety_teardown("runtime-deadline")
+            evidence["teardownStarted"] = True
+            self.put_json(f"evidence/{self.run_id}/monitor-{int(time.time())}.json", evidence)
+            return
         failures: list[str] = []
 
         def collect(name: str, operation: Any) -> Any:
@@ -1076,10 +1426,6 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         targets = collect("albTargets", self.alb_health)
         collect("rabbitMq", self.broker_metrics)
         collect("waf", self.waf_metrics)
-        budget = aws_json("budgets", "describe-budget", "--account-id", ACCOUNT, "--budget-name", required("BUDGET_NAME"))
-        actual = float(budget["Budget"]["CalculatedSpend"]["ActualSpend"]["Amount"])
-        evidence["actualCostUsd"] = actual
-
         if not browser or browser.get("status", {}).get("state") != "OPEN":
             failures.append("browserState")
         if not health or health.get("status") != "ok":
@@ -1103,33 +1449,49 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
         evidence["safetyFailures"] = failures
         evidence["consecutiveSafetyFailures"] = consecutive_failures
 
-        if actual >= float(required("COST_INFO_USD")):
-            evidence["costInformationSent"] = self.notify_cost_once(
-                "costInformationNotifiedAt", "OSC-IS demo cost information",
-                f"Run {self.run_id} reached USD {actual:.2f}.",
-            )
-        if actual >= float(required("COST_WARNING_USD")):
-            evidence["costWarningSent"] = self.notify_cost_once(
-                "costWarningNotifiedAt", "OSC-IS demo cost warning",
-                f"Run {self.run_id} reached USD {actual:.2f}.",
-            )
-        if actual >= float(required("COST_TEARDOWN_USD")):
-            self.start_safety_teardown("cost-threshold")
-            evidence["teardownStarted"] = True
-        elif consecutive_failures >= 2:
+        if consecutive_failures >= 2:
             self.start_safety_teardown("persistent-safety-failure")
             evidence["teardownStarted"] = True
         self.put_json(f"evidence/{self.run_id}/monitor-{int(time.time())}.json", evidence)
 
+    def runtime_repository_inventory(self) -> list[dict[str, Any]]:
+        repositories = []
+        for image in sorted(RUNTIME_ECR_IMAGES):
+            name = f"osc-usrse26-{self.run_id}/{image}"
+            process = run([
+                "aws", "ecr", "describe-repositories", "--repository-names", name,
+                "--region", REGION, "--no-cli-pager", "--output", "json",
+            ], check=False)
+            if process.returncode:
+                if "RepositoryNotFoundException" in (process.stderr or ""):
+                    continue
+                raise RuntimeError(f"Could not verify runtime repository {name}: {(process.stderr or '')[-1000:]}")
+            found = json.loads(process.stdout).get("repositories", [])
+            if len(found) != 1 or found[0].get("repositoryName") != name:
+                raise RuntimeError(f"Unexpected repository lookup result for {name}")
+            repositories.extend(found)
+        return repositories
+
     def sweep(self) -> None:
-        manifest = self.load_manifest()
+        manifest = self.load_manifest(allow_expired=True)
         expected_prefix = f"osc-usrse26-{self.run_id}"
+        runtime_variables = self.work / "runtime.auto.tfvars.json"
+        aws(
+            "s3api", "get-object", "--bucket", required("STATE_BUCKET"),
+            "--key", f"runtime-state/{self.run_id}/runtime.auto.tfvars.json",
+            str(runtime_variables),
+        )
+        runtime_expires_at = json.loads(
+            runtime_variables.read_text(encoding="utf-8")
+        ).get("expires_at")
+        if not runtime_expires_at:
+            raise RuntimeError("Runtime Terraform variables do not contain expires_at")
         runtime_tags = {
             "Project": "OSC-IS",
             "Purpose": "USRSE26-Interactive-Demo",
             "Environment": "ephemeral",
             "RunId": self.run_id,
-            "ExpiresAt": manifest["expiresAt"],
+            "ExpiresAt": runtime_expires_at,
         }
 
         def inventory() -> dict[str, list[str]]:
@@ -1139,13 +1501,68 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             tagged = aws_json(
                 "resourcegroupstaggingapi", "get-resources", "--tag-filters", *tag_arguments,
             ).get("ResourceTagMappingList", [])
+            instance_payload = aws_json(
+                "ec2", "describe-instances", "--filters",
+                f"Name=tag:RunId,Values={self.run_id}",
+            )
+            active_ec2_ids = {
+                "instance": {
+                    instance["InstanceId"]
+                    for reservation in instance_payload.get("Reservations", [])
+                    for instance in reservation.get("Instances", [])
+                    if instance.get("State", {}).get("Name") != "terminated"
+                },
+                "volume": {
+                    item["VolumeId"] for item in aws_json(
+                        "ec2", "describe-volumes", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Volumes", [])
+                },
+                "natgateway": {
+                    item["NatGatewayId"] for item in aws_json(
+                        "ec2", "describe-nat-gateways", "--filter",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("NatGateways", []) if item.get("State") != "deleted"
+                },
+                "subnet": {
+                    item["SubnetId"] for item in aws_json(
+                        "ec2", "describe-subnets", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Subnets", [])
+                },
+                "security-group": {
+                    item["GroupId"] for item in aws_json(
+                        "ec2", "describe-security-groups", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("SecurityGroups", [])
+                },
+                "security-group-rule": {
+                    item["SecurityGroupRuleId"] for item in aws_json(
+                        "ec2", "describe-security-group-rules", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("SecurityGroupRules", [])
+                },
+                "elastic-ip": {
+                    item["AllocationId"] for item in aws_json(
+                        "ec2", "describe-addresses", "--filters",
+                        f"Name=tag:RunId,Values={self.run_id}",
+                    ).get("Addresses", [])
+                },
+            }
+            tagged = [
+                item for item in tagged
+                if tag_index_entry_is_active(item["ResourceARN"], active_ec2_ids)
+            ]
             clusters = aws_json("eks", "list-clusters").get("clusters", [])
             brokers = aws_json("mq", "list-brokers").get("BrokerSummaries", [])
-            ecr = aws_json("ecr", "describe-repositories").get("repositories", [])
+            ecr = self.runtime_repository_inventory()
             volumes = aws_json(
                 "ec2", "describe-volumes", "--filters",
                 f"Name=tag:RunId,Values={self.run_id}",
-                "Name=tag:ExpiresAt,Values=" + manifest["expiresAt"],
+                "Name=tag:Project,Values=OSC-IS",
+                "Name=tag:Purpose,Values=USRSE26-Interactive-Demo",
+                "Name=tag:Environment,Values=ephemeral",
+                "Name=tag:ExpiresAt,Values=" + runtime_expires_at,
             ).get("Volumes", [])
             distribution = aws_json(
                 "cloudfront", "get-distribution-config", "--id", required("CLOUDFRONT_DISTRIBUTION"),
@@ -1198,7 +1615,7 @@ fetch('http://127.0.0.1:3000'+path,options).then(async r=>{const text=await r.te
             "staticFallbackHealthy": True, "controlPlaneResourcesPreserved": True,
         }
         self.put_json(f"evidence/{self.run_id}/runtime-teardown-proof.json", proof)
-        self.write_status("CLOSED", "The temporary demonstration is closed and its runtime resources have been removed.")
+        self.write_status("READ_ONLY", "The temporary demonstration is closed and its runtime resources have been removed.")
         self.update_lifecycle_record("CLOSED", teardownVerifiedAt=proof["checkedAt"])
 
     @staticmethod
@@ -1237,7 +1654,7 @@ def main() -> None:
         Lifecycle.self_test()
         return
     lifecycle = Lifecycle()
-    lifecycle.guard()
+    lifecycle.guard(action)
     dispatch = {
         "START": lifecycle.start,
         "CANARY": lifecycle.canary,
@@ -1260,7 +1677,7 @@ if __name__ == "__main__":
             print("START failed; attempting same-build tagged cleanup before exiting", file=sys.stderr)
             try:
                 cleanup = Lifecycle()
-                cleanup.guard()
+                cleanup.guard("FAILED_START_CLEANUP")
                 cleanup.failed_start_cleanup()
             except Exception as cleanup_error:
                 print(f"same-build cleanup also failed: {cleanup_error}", file=sys.stderr)

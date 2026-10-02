@@ -5,22 +5,15 @@ param(
     [string]$RunId
 )
 
-function ConvertTo-WslPath {
-    param([Parameter(Mandatory = $true)][string]$WindowsPath)
-
-    $fullPath = [IO.Path]::GetFullPath($WindowsPath)
-    if ($fullPath -notmatch '^[A-Za-z]:\\') { throw "Unsupported WSL path: $fullPath" }
-    $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
-    $remainder = $fullPath.Substring(2).Replace('\', '/')
-    return "/mnt/$drive$remainder"
-}
-
 $ErrorActionPreference = 'Stop'
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runRoot = Join-Path $infraRoot "platform\.generated\aws\$RunId"
-$statePath = Join-Path $runRoot 'terraform.tfstate'
+. (Join-Path $PSScriptRoot 'wsl-path.ps1')
 $artifactManifestPath = Join-Path $runRoot 'artifacts\artifacts.json'
 $deploymentPath = Join-Path $runRoot 'artifacts\ecr-deployment.json'
+$metadataPath = Join-Path $runRoot 'run-metadata.json'
+$statePath = Join-Path $runRoot 'terraform.tfstate'
+$backendSourcePath = Join-Path $runRoot 'terraform-local\versions.tf'
 $gitSource = Join-Path $runRoot 'gitops-source'
 $bootstrapOutput = Join-Path $runRoot 'gitops-bootstrap'
 $network = Join-Path $infraRoot 'platform\.generated\fabric-network-eks'
@@ -32,8 +25,14 @@ $windowsKubeConfig = Join-Path $env:USERPROFILE '.kube\config'
 $wslTools = Join-Path $runRoot 'wsl-bin'
 $wslAwsWrapper = Join-Path $wslTools 'aws'
 
-foreach ($required in @($statePath, $artifactManifestPath, $deploymentPath, $wsl, (Join-Path $network 'network'))) {
+foreach ($required in @($artifactManifestPath, $deploymentPath, $metadataPath, $statePath, $backendSourcePath, $wsl, (Join-Path $network 'network'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing deployment input: $required" }
+}
+$metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+if ($metadata.runId -ne $RunId -or $metadata.backendOwner -ne 'local' -or
+    $metadata.account -ne '269624229733' -or $metadata.region -ne 'us-west-2' -or
+    -not (Get-Content -LiteralPath $backendSourcePath -Raw).Contains('backend "local" {}')) {
+    throw 'Deployment requires reviewed local-state ownership for this exact run.'
 }
 
 $artifacts = Get-Content -LiteralPath $artifactManifestPath -Raw | ConvertFrom-Json

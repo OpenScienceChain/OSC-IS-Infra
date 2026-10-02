@@ -46,8 +46,8 @@ class WebAppBundleTests(unittest.TestCase):
                 names = archive.getnames()
                 self.assertEqual(names, sorted(names))
                 config = json.load(archive.extractfile("assets/runtime-config.json"))
-                self.assertTrue(config["demoMode"])
-                self.assertEqual(config["apiBaseUrl"], "/api/v1")
+                self.assertTrue(config["DEMO_MODE"])
+                self.assertEqual(config["API_BASE_URL"], "/api/v1")
                 self.assertEqual(config["sourceRevision"], revision)
                 self.assertTrue(all(member.mtime == 0 for member in archive.getmembers()))
 

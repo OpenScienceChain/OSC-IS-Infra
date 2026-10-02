@@ -5,15 +5,7 @@ param(
     [string]$RunId
 )
 
-function ConvertTo-WslPath {
-    param([Parameter(Mandatory = $true)][string]$WindowsPath)
-
-    $fullPath = [IO.Path]::GetFullPath($WindowsPath)
-    if ($fullPath -notmatch '^[A-Za-z]:\\') { throw "Unsupported WSL path: $fullPath" }
-    $drive = $fullPath.Substring(0, 1).ToLowerInvariant()
-    $remainder = $fullPath.Substring(2).Replace('\', '/')
-    return "/mnt/$drive$remainder"
-}
+. (Join-Path $PSScriptRoot 'wsl-path.ps1')
 
 $ErrorActionPreference = 'Stop'
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -61,6 +53,7 @@ try {
 
     & $wsl -d $wslDistribution --cd $infraRoot -- env `
         "KUBECONFIG=$wslKubeConfig" "PATH=$wslPath" `
+        "OSC_RUNTIME_SECRET_DIR=/tmp/osc-is-$RunId-runtime-secrets" `
         "API_IMAGE=$($artifacts.images.'api-gateway'.localReference)" `
         bash platform/scripts/seed-local-data.sh
     if ($LASTEXITCODE -ne 0) { throw 'Deterministic EKS test-data seeding failed.' }

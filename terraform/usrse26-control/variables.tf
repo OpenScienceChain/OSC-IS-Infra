@@ -38,6 +38,23 @@ variable "public_hostname" {
   }
 }
 
+variable "external_demo_api_alb_arn" {
+  description = "Opt-in private ALB for the separate usrse260930 EKS evidence run. Null keeps the public demo static."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.external_demo_api_alb_arn == null || var.external_demo_api_alb_arn == "arn:aws:elasticloadbalancing:us-west-2:269624229733:loadbalancer/app/k8s-oscapps-oscdemoa-5938afeb16/f59ddecd5a4a24ef"
+    error_message = "Only the reviewed usrse260930 internal ALB may be attached to this demo distribution."
+  }
+}
+
+variable "external_demo_api_attached" {
+  description = "Whether the staged private demo API origin is attached to the public distribution."
+  type        = bool
+  default     = false
+}
+
 variable "hosted_zone_id" {
   description = "Existing Route 53 hosted zone ID. The zone is never created or deleted here."
   type        = string
@@ -119,11 +136,20 @@ variable "backup_stop_at" {
   }
 }
 
-variable "planning_cost_usd" {
+variable "cost_control_mode" {
+  type    = string
+  default = "TIME_BOUNDED"
+  validation {
+    condition     = var.cost_control_mode == "TIME_BOUNDED"
+    error_message = "The approved cost-control mode is fixed to TIME_BOUNDED."
+  }
+}
+
+variable "planning_estimate_usd" {
   type    = number
   default = 120
   validation {
-    condition     = var.planning_cost_usd >= 0 && var.planning_cost_usd <= 200
-    error_message = "The planning estimate may not exceed the USD 200 provisioning ceiling."
+    condition     = var.planning_estimate_usd >= 0 && var.planning_estimate_usd <= 200
+    error_message = "The pre-deployment planning estimate may not exceed USD 200."
   }
 }

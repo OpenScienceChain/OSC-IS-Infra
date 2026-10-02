@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[a-z0-9]{8,20}$')]
+    [ValidatePattern('^manual[a-z0-9]{2,14}$')]
     [string]$RunId,
 
     [Parameter(Mandatory = $true)]
@@ -16,8 +16,8 @@ param(
     [string]$AlbControllerImage,
 
     [Parameter(Mandatory = $true)]
-    [ValidatePattern('^arn:aws:iam::269624229733:policy/osc-usrse26-[a-z0-9]{8,20}-runtime-boundary$')]
-    [string]$PermissionsBoundaryArn
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
+    [string]$RuntimeRoleArnsPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,6 +36,12 @@ $metadataPath = Join-Path $runRoot 'run-metadata.json'
 if ($AdminCidr -eq '0.0.0.0/32' -or $AdminCidr -eq '0.0.0.0/0') {
     throw 'AdminCidr must identify one trusted public IPv4 address.'
 }
+if (Test-Path -LiteralPath $metadataPath) {
+    $existingMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+    if ($existingMetadata.runId -ne $RunId -or $existingMetadata.backendOwner -ne 'local') {
+        throw 'Existing run metadata is not owned by the manual local-state workflow.'
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 $sourceVersion = Get-Content -LiteralPath (Join-Path $terraformSource 'versions.tf') -Raw
@@ -53,6 +59,21 @@ Copy-Item -LiteralPath (Join-Path $terraformSource 'templates/rabbitmq.json') -D
 [IO.File]::WriteAllText((Join-Path $terraformRoot 'versions.tf'), $sourceVersion.Replace('backend "s3" {}', 'backend "local" {}'))
 $startedAt = [DateTimeOffset]::UtcNow
 $expiresAt = $startedAt.AddHours($Hours)
+$runtimeRoleArnsJson = Get-Content -LiteralPath $RuntimeRoleArnsPath -Raw
+$runtimeRoleArns = $runtimeRoleArnsJson | ConvertFrom-Json
+$requiredRuntimeRoles = @(
+    'eks_cluster', 'eks_nodes', 'alb_controller', 'api_gateway', 'postgres',
+    'submission_worker', 'submission_listener', 'ledger_gateway_nsg',
+    'ledger_gateway_citizen_science', 'ledger_gateway_magnetic_arch', 'ebs_csi'
+)
+foreach ($roleKey in $requiredRuntimeRoles) {
+    $roleArn = [string]$runtimeRoleArns.$roleKey
+    $expectedSuffix = $roleKey.Replace('_', '-')
+    if ($roleArn -notmatch "^arn:aws:iam::269624229733:role/osc-usrse26-$RunId-$expectedSuffix$") {
+        throw "RuntimeRoleArnsPath contains an invalid or cross-run role for $roleKey."
+    }
+}
+$runtimeRoleArnsJson = $runtimeRoleArns | ConvertTo-Json -Compress
 
 Push-Location $repoRoot
 try {
@@ -67,7 +88,7 @@ try {
         "runner_public_cidr = `"$AdminCidr`""
         "maximum_runtime_hours = $Hours"
         "alb_controller_image = `"$AlbControllerImage`""
-        "permissions_boundary_arn = `"$PermissionsBoundaryArn`""
+        "runtime_role_arns = $runtimeRoleArnsJson"
     ) -join [Environment]::NewLine
     [IO.File]::WriteAllText($tfvarsPath, $tfvars + [Environment]::NewLine)
 
@@ -80,6 +101,7 @@ try {
         account = '269624229733'
         profile = 'default'
         region = 'us-west-2'
+        backendOwner = 'local'
         status = 'PLANNED'
     }
     [IO.File]::WriteAllText($metadataPath, ($metadata | ConvertTo-Json) + [Environment]::NewLine)
@@ -87,8 +109,29 @@ try {
     Push-Location $terraformRoot
     try {
         terraform init -reconfigure -input=false "-backend-config=path=$statePath"
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform backend initialization failed.' }
         terraform validate
+        if ($LASTEXITCODE -ne 0) { throw 'Terraform validation failed.' }
         python (Join-Path $repoRoot 'platform/aws/aws_guard.py')
+        $runtimeRepositories = @(
+            'api-gateway',
+            'chaincode',
+            'gitops-repository',
+            'history-worker',
+            'ledger-gateway',
+            'submission-listener',
+            'submission-worker',
+            'webapp'
+        )
+        $stateEntries = @(terraform state list 2>$null)
+        foreach ($name in $runtimeRepositories) {
+            $address = 'aws_ecr_repository.experiment["{0}"]' -f $name
+            if ($stateEntries -notcontains $address) {
+                terraform import -input=false "-var-file=$tfvarsPath" `
+                    $address "osc-usrse26-$RunId/$name"
+                if ($LASTEXITCODE -ne 0) { throw "Could not import the exact runtime repository for $name." }
+            }
+        }
         $planArgs = @(
             'plan'
             '-input=false'
@@ -107,6 +150,7 @@ try {
     }
 
     python platform/aws/check_terraform_plan.py $planJsonPath
+    if ($LASTEXITCODE -ne 0) { throw 'Terraform plan policy check failed.' }
     Write-Host "AWS evidence plan is ready for review: $planPath"
     Write-Host "It expires at $($expiresAt.ToString('o')); do not apply it after that time."
 }

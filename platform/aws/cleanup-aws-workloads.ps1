@@ -30,11 +30,17 @@ try {
             --no-cli-pager | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the guarded teardown context.' }
 
-        kubectl --context $context -n argocd delete application osc-is-aws `
+        $applicationCrd = kubectl --context $context get crd applications.argoproj.io `
             --ignore-not-found=true `
-            --wait=true `
-            --timeout=5m | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Could not remove the Argo CD application cleanly.' }
+            -o name
+        if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the Argo CD application definition.' }
+        if (-not [string]::IsNullOrWhiteSpace([string]$applicationCrd)) {
+            kubectl --context $context -n argocd delete application osc-is-aws `
+                --ignore-not-found=true `
+                --wait=true `
+                --timeout=5m | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Could not remove the Argo CD application cleanly.' }
+        }
 
         foreach ($namespace in $namespaces) {
             kubectl --context $context delete namespace $namespace `

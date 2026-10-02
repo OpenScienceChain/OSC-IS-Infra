@@ -14,10 +14,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The release manifest may claim a credential-free build only after every AWS
-# credential provider available to the build process has been disabled or
-# shown absent. Run this script with an isolated USERPROFILE and metadata
-# disabled; never run it from a deployment shell that has an AWS profile.
+# The release manifest records checked common credential sources, not proof
+# that an unknown provider cannot exist. Use an isolated build account.
 $forbiddenCredentialEnvironment = @(
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
@@ -41,17 +39,17 @@ $presentCredentialEnvironment = @(
     }
 )
 if ($presentCredentialEnvironment.Count -ne 0) {
-    throw "Credential-free artifact preparation rejected AWS credential environment sources: $($presentCredentialEnvironment -join ', ')"
+    throw "Isolated artifact preparation rejected AWS credential environment sources: $($presentCredentialEnvironment -join ', ')"
 }
 if ([Environment]::GetEnvironmentVariable('AWS_EC2_METADATA_DISABLED', 'Process') -ne 'true') {
-    throw 'Credential-free artifact preparation requires AWS_EC2_METADATA_DISABLED=true.'
+    throw 'Isolated artifact preparation requires AWS_EC2_METADATA_DISABLED=true.'
 }
 $credentialRoots = @(
     [Environment]::GetEnvironmentVariable('USERPROFILE', 'Process'),
     [Environment]::GetEnvironmentVariable('HOME', 'Process')
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
 if ($credentialRoots.Count -eq 0) {
-    throw 'Credential-free artifact preparation requires an explicit isolated USERPROFILE.'
+    throw 'Isolated artifact preparation requires an explicit USERPROFILE.'
 }
 $credentialFiles = @(
     foreach ($root in $credentialRoots) {
@@ -61,14 +59,7 @@ $credentialFiles = @(
 )
 $presentCredentialFiles = @($credentialFiles | Where-Object { Test-Path -LiteralPath $_ })
 if ($presentCredentialFiles.Count -ne 0) {
-    throw "Credential-free artifact preparation rejected AWS profile files: $($presentCredentialFiles -join ', ')"
-}
-$credentialIsolationEvidence = [ordered]@{
-    enforced = $true
-    awsCredentialEnvironmentAbsent = $true
-    awsProfileFilesAbsent = $true
-    instanceMetadataDisabled = $true
-    effectiveProfileRootCount = $credentialRoots.Count
+    throw "Isolated artifact preparation rejected AWS profile files: $($presentCredentialFiles -join ', ')"
 }
 $infraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $worktreeRoot = (Resolve-Path (Join-Path $infraRoot '..')).Path
@@ -82,6 +73,7 @@ $webBundleArchive = Join-Path $archiveRoot 'webapp-static.tar.gz'
 $gitRoot = Join-Path $runRoot 'gitops-source'
 $gitImageRoot = Join-Path $runRoot 'gitops-image'
 $manifestPath = Join-Path $artifactRoot 'artifacts.json'
+$credentialIsolationPath = Join-Path $artifactRoot 'build-credential-isolation.json'
 $lifecycleContext = Join-Path $infraRoot 'platform\.generated\lifecycle-context'
 $registryName = 'osc-usrse26-aws-artifacts'
 $registry = 'localhost:5018'
@@ -120,7 +112,7 @@ foreach ($repository in $sourceRepositories) {
     $changes = @(git -C $repository status --porcelain=v1 --untracked-files=all)
     if ($LASTEXITCODE -ne 0) { throw "Could not inspect source repository $repository." }
     if ($changes.Count -ne 0) {
-        throw "Credential-free artifact builds require a clean committed source tree: $repository"
+        throw "Isolated artifact builds require a clean committed source tree: $repository"
     }
 }
 
@@ -136,6 +128,18 @@ foreach ($generatedPath in @($artifactRoot, $gitRoot, $gitImageRoot)) {
 
 foreach ($path in @($artifactRoot, $sbomRoot, $scanRoot, $archiveRoot)) {
     New-Item -ItemType Directory -Force -Path $path | Out-Null
+}
+
+# This dependency-free preflight must run before any project-owned build or
+# preparation code. It reports source names and paths, never credential values.
+$env:AWS_EC2_METADATA_DISABLED = 'true'
+python (Join-Path $infraRoot 'platform/aws/assert_credential_free_build.py') `
+    --output $credentialIsolationPath
+if ($LASTEXITCODE -ne 0) { throw 'Artifact build credential isolation preflight failed.' }
+$credentialIsolation = Get-Content -LiteralPath $credentialIsolationPath -Raw | ConvertFrom-Json
+if ($credentialIsolation.status -ne 'ENFORCED_COMMON_AWS_SOURCES_ABSENT' -or
+    -not $credentialIsolation.commonAwsCredentialSourcesAbsent) {
+    throw 'Artifact build credential isolation evidence is not acceptable.'
 }
 
 python (Join-Path $infraRoot 'platform/scripts/patch_fabric_network.py') `
@@ -270,10 +274,15 @@ try {
     $manifest = [ordered]@{
         schemaVersion = 1
         runId = $RunId
-        expiresAt = $ExpiresAt.ToString('o')
-        createdAt = [DateTimeOffset]::UtcNow.ToString('o')
-        credentialFreeBuild = $true
-        credentialIsolation = $credentialIsolationEvidence
+        expiresAt = $ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        createdAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        buildCredentialIsolation = [ordered]@{
+            status = $credentialIsolation.status
+            commonAwsCredentialSourcesAbsent = $credentialIsolation.commonAwsCredentialSourcesAbsent
+            evidenceFile = $credentialIsolationPath
+            evidenceSha256 = (Get-FileHash -LiteralPath $credentialIsolationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            limitation = $credentialIsolation.limitation
+        }
         webApp = [ordered]@{
             sourceRevision = $webRevision
             archive = $webBundleArchive
@@ -342,7 +351,7 @@ try {
         rolloutRevision = $rolloutRevision
     }
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8) + [Environment]::NewLine)
-    Write-Host "Prepared nine scanned, non-root OCI artifacts and one deterministic WebApp bundle at $artifactRoot"
+    Write-Host "Prepared nine scanned OCI artifacts and one deterministic WebApp bundle at $artifactRoot"
 }
 finally {
     if ($webContainer -and (docker ps -a --format '{{.ID}}' | Select-String -SimpleMatch $webContainer -Quiet)) {
