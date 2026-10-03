@@ -40,9 +40,10 @@ function Remove-ReleaseArtifacts([string]$Bucket) {
             --region us-west-2 `
             --no-cli-pager | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'Could not inventory exact versioned release objects.' }
+        if ($listing.IsTruncated) { throw 'Release version listing was truncated.' }
         $objects = @(
-            @($listing.Versions) | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }
-            @($listing.DeleteMarkers) | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }
+            @($listing.Versions) | Where-Object { $null -ne $_ } | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }
+            @($listing.DeleteMarkers) | Where-Object { $null -ne $_ } | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }
         )
         if ($objects.Count -gt 0) {
             $batch = @{ Objects = @($objects | Select-Object -First 1000); Quiet = $true } | ConvertTo-Json -Depth 5 -Compress
@@ -58,6 +59,20 @@ function Remove-ReleaseArtifacts([string]$Bucket) {
             if ($LASTEXITCODE -ne 0) { throw 'Could not remove exact versioned release objects.' }
         }
     } while ($objects.Count -gt 0)
+
+    $tags = aws s3api get-bucket-tagging --bucket $Bucket --output json --profile default --region us-west-2 --no-cli-pager | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Could not verify release bucket ownership.' }
+    $tagMap = @{}
+    foreach ($tag in @($tags.TagSet)) { $tagMap[$tag.Key] = $tag.Value }
+    if ($tagMap.Project -ne 'OSC-IS' -or $tagMap.RunId -ne $RunId -or $tagMap.Purpose -ne 'USRSE26-Interactive-Demo') {
+        throw 'Refusing to delete a release bucket without the exact run tags.'
+    }
+    $remaining = aws s3api list-object-versions --bucket $Bucket --output json --profile default --region us-west-2 --no-cli-pager | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $remaining.IsTruncated -or @($remaining.Versions | Where-Object { $null -ne $_ }).Count -gt 0 -or @($remaining.DeleteMarkers | Where-Object { $null -ne $_ }).Count -gt 0) {
+        throw 'Release bucket still contains object versions outside the exact run prefix.'
+    }
+    aws s3api delete-bucket --bucket $Bucket --profile default --region us-west-2 --no-cli-pager
+    if ($LASTEXITCODE -ne 0) { throw 'Could not delete the empty run-scoped release bucket.' }
 }
 
 Push-Location $repoRoot
