@@ -1,0 +1,32 @@
+{
+  "testRun": "20260902180642",
+  "ledgerGatewayRecovery": {
+    "acceptedState": "PENDING",
+    "recoveredState": "SUCCESS",
+    "artifactId": "e83b4c79-c101-41a0-8c4e-2b3c0de47ae5",
+    "transactionId": "73a3c484e08b487bd416fc75375eb3c0c099deadeb681b12ac7c66512ba4f0a8",
+    "recoverySeconds": 45,
+    "ledgerRevisions": 1
+  },
+  "rabbitMqRecovery": {
+    "acceptedState": "PENDING",
+    "recoveredState": "SUCCESS",
+    "artifactId": "1a47f39e-ffd1-4a94-88ad-e923508b1f5b",
+    "transactionId": "efa71cb113608a205c4b84e6be43f9a321294b0b4d7eee6f392cea2d9ae3f904",
+    "outboxBeforeRecovery": "pending",
+    "outboxAfterRecovery": "published",
+    "recoverySeconds": 27,
+    "ledgerRevisions": 1,
+    "workerRestartedDuringOutage": false
+  },
+  "peerFailure": {
+    "alternatePeerAcceptedTransaction": true,
+    "artifactId": "9c1feb68-49fe-44ee-a1a3-e8da0cd937e8",
+    "transactionId": "611dfa019790e5cfebdb1c252b705282c4a390610d3debeac5c111b39423bf72",
+    "recoverySeconds": 7,
+    "ledgerRevisions": 1
+  },
+  "duplicateLedgerWritesObserved": false,
+  "credentialsRetained": false
+}
+Local dependency-failure recovery validation passed.

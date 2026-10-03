@@ -42,14 +42,14 @@ variable "runtime_mode" {
 
 variable "services" {
   type = map(object({
-    task_def_path               = optional(string)
-    task_def_template_path      = optional(string)
-    task_def_vars               = optional(map(string), {})
-    desired_count               = number
-    enable_exec                 = optional(bool, false)
-    alb_container_name          = optional(string)
-    alb_container_port          = optional(number)
-    cloud_map_service_arn       = optional(string)
+    task_def_path          = optional(string)
+    task_def_template_path = optional(string)
+    task_def_vars          = optional(map(string), {})
+    desired_count          = number
+    enable_exec            = optional(bool, false)
+    alb_container_name     = optional(string)
+    alb_container_port     = optional(number)
+    cloud_map_service_arn  = optional(string)
   }))
   description = "Map of service names to task definition JSON paths or templates."
 }

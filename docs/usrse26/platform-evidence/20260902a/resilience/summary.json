@@ -1,0 +1,31 @@
+{
+  "testRun": "20260902042114",
+  "ledgerGatewayRecovery": {
+    "acceptedState": "PENDING",
+    "recoveredState": "SUCCESS",
+    "artifactId": "939cf868-164c-4222-9d7d-d8ceb745d80f",
+    "transactionId": "3573bfcaccbd579c994493f6d49d07c6fd8d25618bb5d623093b9115ef8b00a0",
+    "recoverySeconds": 46,
+    "ledgerRevisions": 1
+  },
+  "rabbitMqRecovery": {
+    "acceptedState": "PENDING",
+    "recoveredState": "SUCCESS",
+    "artifactId": "6c38c099-914b-431e-b358-6899a7093489",
+    "transactionId": "83d719f70d4ef0519c763111e0576f33510d0ea1b97c618d505cf6ebb19b0ff8",
+    "outboxBeforeRecovery": "pending",
+    "outboxAfterRecovery": "published",
+    "recoverySeconds": 223,
+    "ledgerRevisions": 1,
+    "workerRestartedDuringOutage": true
+  },
+  "peerFailure": {
+    "alternatePeerAcceptedTransaction": true,
+    "artifactId": "53318d80-8eee-4145-bef3-4e66880515cd",
+    "transactionId": "9560450ee248610d6cf407ebdb35be6961b1046663e1cc3a218a1287f8954c65",
+    "recoverySeconds": 6,
+    "ledgerRevisions": 1
+  },
+  "duplicateLedgerWritesObserved": false,
+  "credentialsRetained": false
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "branch": "feature/usrse26-platform-evidence",
+  "pushed": false,
+  "validatedRepositories": {
+    "OSC-IS-Infra": "d82693ae962f089c0c1ede97312c1c81030a0e3a",
+    "OSC-APIGateway": "b66cf12430fb086a83957950aeed5aa435fab42e",
+    "OSC-Artifact-Submission": "fcfdb3e6df9137509df84e012ac17de40bf2a706",
+    "OSC-Chaincode": "743df2d41a1ac845dc4600317aedf21cc0b0024e"
+  },
+  "teardownVerification": {
+    "OSC-IS-Infra": "3425333"
+  },
+  "gitops": {
+    "knownGood": "a3944ca4b8b7214a511a71490fc4fb1a2451b888",
+    "rollout": "cc10673a5f254be2afe83757e0706615e520b875"
+  }
+}

@@ -1,0 +1,9 @@
+run_id                  = "usrse26demo"
+hosted_zone_id          = "ZREPLACE_WITH_EXISTING_ZONE"
+admin_cidr              = "203.0.113.10/32"
+lifecycle_runner_image  = "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-control/lifecycle@sha256:REPLACE_WITH_REVIEWED_DIGEST"
+artifact_manifest_s3_uri = "s3://REPLACE/releases/usrse26demo/manifest.json"
+artifact_manifest_sha256 = "REPLACE_WITH_64_LOWER_CASE_HEX_CHARACTERS"
+notification_email       = null
+cost_control_mode        = "TIME_BOUNDED"
+planning_estimate_usd    = 120

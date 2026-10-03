@@ -1,0 +1,19 @@
+{
+  "contractVersion": "3.0.0-experimental",
+  "assetType": "workflow",
+  "assetId": "22222222-2222-4222-8222-222222222222",
+  "organizationMsp": "CitizenScienceMSP",
+  "organizationId": "citizen-science",
+  "revision": 1,
+  "payload": {
+    "title": "Citizen Science curation workflow",
+    "visibility": "private"
+  },
+  "createdBy": "citizen-contributor-001",
+  "lastModifiedBy": "citizen-contributor-001",
+  "createdAt": "2026-09-02T18:05:41.318451577Z",
+  "updatedAt": "2026-09-02T18:05:41.318451577Z",
+  "lastCorrelationId": "local-citizen-create",
+  "lastRequestTime": "2026-09-01T23:00:00Z",
+  "lastTransactionId": "c47e3c02c407dfcbecf347527cad1a311ac917c34c848e18975fda9311bc5a5c"
+}

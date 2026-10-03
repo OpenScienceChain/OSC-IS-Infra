@@ -60,3 +60,19 @@ output "rabbitmq_private_fqdn" {
   description = "Private DNS name for the RabbitMQ NLB (rabbitmq.osc-infra.local)."
   value       = try(aws_route53_record.rabbitmq_private[0].fqdn, null)
 }
+
+output "rabbitmq_backend" {
+  description = "Selected RabbitMQ implementation."
+  value       = lower(var.messaging_backend)
+}
+
+output "amazon_mq_amqps_endpoint" {
+  description = "Private AMQPS endpoint when the Amazon MQ profile is active."
+  value       = try(aws_mq_broker.rabbitmq[0].instances[0].endpoints[0], null)
+  sensitive   = true
+}
+
+output "rabbitmq_credentials_secret_arn" {
+  description = "Secrets Manager ARN containing username and password for Amazon MQ."
+  value       = try(aws_secretsmanager_secret.rabbitmq[0].arn, null)
+}

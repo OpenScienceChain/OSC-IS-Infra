@@ -1,0 +1,10 @@
+.git
+.terraform
+**/.terraform
+.osc-tools
+docs/usrse26/platform-evidence
+platform/.generated/*
+!platform/.generated/fabric-network-eks
+!platform/.generated/fabric-network-eks/**
+!platform/.generated/lifecycle-context
+!platform/.generated/lifecycle-context/**

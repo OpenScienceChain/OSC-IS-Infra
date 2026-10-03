@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "kind": "operator-verification-summary",
+  "accountId": "269624229733",
+  "region": "us-west-2",
+  "runId": "usrse26r1",
+  "status": "DESTROYED_AND_VERIFIED",
+  "serviceInventoryStartedAt": "2026-09-15T15:47:17Z",
+  "checksumVerifiedAt": "2026-09-15T15:49:31Z",
+  "requiredTags": {
+    "Project": "OSC-IS",
+    "Purpose": "USRSE26-Interactive-Demo",
+    "Environment": "ephemeral",
+    "RunId": "usrse26r1",
+    "ExpiresAt": "2026-09-15T03:00:00Z"
+  },
+  "successfulBuilds": {
+    "destroyRuntime": "osc-usrse26-usrse26r1-cleanup:48d829ca-38ab-495c-92cc-718c97a291ef",
+    "sweep": "osc-usrse26-usrse26r1-cleanup:48a7647d-3c90-4f21-acda-c79c69a042d9"
+  },
+  "proof": {
+    "bucket": "osc-usrse26-usrse26r1-control-269624229733",
+    "key": "evidence/usrse26r1/runtime-teardown-proof.json",
+    "versionId": "08nB1s6Dx4TALosYhKlvrZT6BvDFck4W",
+    "lastModified": "2026-09-15T15:47:05Z",
+    "checkedAt": "2026-09-15T15:47:03Z",
+    "sha256": "dc9ab653c07d431c78c2a8e812cb6b524c78424623e70a7c850a537decd3eb09",
+    "verified": true,
+    "remainingTaggedResources": 0,
+    "residual": {
+      "brokers": [],
+      "cloudFrontRuntimeOrigins": [],
+      "clusters": [],
+      "repositories": [],
+      "taggedResources": [],
+      "volumes": []
+    }
+  },
+  "destroyEvidence": {
+    "versionId": "8uifKdzlV9o859XZVusN5bz25_3FD9xh",
+    "completedAt": "2026-09-15T15:46:00Z",
+    "sha256": "b2afa991f0bac0d08e12f567cf6e03230b57bf3775ddf6a438615064c85cbee3"
+  },
+  "independentServiceChecks": {
+    "eksClusters": 0,
+    "rabbitMqBrokers": 0,
+    "rabbitMqStack": "DELETE_COMPLETE",
+    "activeEc2Instances": 0,
+    "ebsVolumes": 0,
+    "elasticIps": 0,
+    "vpcs": 0,
+    "subnets": 0,
+    "securityGroups": 0,
+    "networkInterfaces": 0,
+    "untaggedInterfacesInExactVpc": 0,
+    "launchTemplates": 0,
+    "loadBalancers": 0,
+    "targetGroups": 0,
+    "runtimeEcrRepositories": 0,
+    "runtimeSecretsIncludingPlannedDeletion": 0,
+    "eksRuntimeLogGroup": "ABSENT",
+    "natGateway": {"id": "nat-0a3db594a1e76fd3e", "state": "deleted"},
+    "runtimeVpcOrigin": "ABSENT",
+    "managedTerraformStateResources": 0
+  },
+  "tagIndexReconciliation": {
+    "us-east-1": [],
+    "us-west-2ActiveResources": [],
+    "us-west-2DeletedTombstones": [
+      "arn:aws:ec2:us-west-2:269624229733:security-group/sg-05ab2a7e798b1bd78",
+      "arn:aws:ec2:us-west-2:269624229733:natgateway/nat-0a3db594a1e76fd3e"
+    ],
+    "method": "Exact five-tag query; EC2 direct inventory confirms the security group absent and NAT deleted. Tombstones are not counted as active resources."
+  },
+  "staticEdge": {
+    "url": "https://demo.osc-staging.org/",
+    "httpStatus": 200,
+    "statusJsonHttpStatus": 200,
+    "state": "READ_ONLY",
+    "applicationUrl": null,
+    "statusUpdatedAt": "2026-09-15T15:47:04Z",
+    "distributionId": "E26XTII1H57RTX",
+    "distributionStatus": "Deployed",
+    "origins": ["static-edge"],
+    "runtimeCacheBehaviors": 0,
+    "browserVerified": true,
+    "browserWarningsAndErrors": 0
+  },
+  "controls": {
+    "preserved": true,
+    "lifecycleState": "CLOSED",
+    "teardownVerifiedAt": "2026-09-15T15:47:03Z",
+    "activeCodeBuildJobs": 0,
+    "runningStateMachineExecutions": 0,
+    "codeBuildVpcConfigurations": 0,
+    "activeTerraformLocks": 0,
+    "terraformStateDigestRow": "cc048d8e1f406d758d31f90ddfd4677e",
+    "schedulerDlqMessages": 0,
+    "todayBackupSchedule": "SELF_DELETED_AFTER_DELIVERY",
+    "retainedFutureSchedules": ["start", "stop", "backup-stop", "monitor"],
+    "cleanupFailureAlarm": "ALARM_FROM_RECENT_FAILED_BUILD; not manually reset"
+  },
+  "export": {
+    "versionId": "ZL4M2MPK3oFNjOODh8i7zKpUCo3Ks.zD",
+    "lastModified": "2026-09-15T08:38:10Z",
+    "bytes": 605,
+    "sha256": "9907bdfa79bf8d347f51df38a8410a7cb062eb85ae5fe0b0961084feacb8e146",
+    "checksumVersionId": "2hSx344v4hEGHNOwULPbXBur.rjUwOml",
+    "supersededChecksumVersionId": "GgEtR5i8pJIH2PEwYqoOTSsQ74aMUF8u",
+    "checksumRepair": "Only the checksum object changed; original export version preserved."
+  },
+  "retainedCostEstimate": {
+    "method": "Inventory-based full-month public list-price estimate, rounded conservatively; not a bill",
+    "monthlyUsdApprox": 10.8,
+    "dailyUsdApprox30DayMonth": 0.36,
+    "wafWebAclCount": 1,
+    "wafRuleCount": 5,
+    "wafMonthlyUsd": 10,
+    "standardAlarmCount": 6,
+    "alarmsMonthlyUsd": 0.6,
+    "ecrImageSizeBytesSum": 1773469153,
+    "ecrCaveat": "Sum of three compressed image sizes is a conservative estimate; shared layers may reduce billed storage.",
+    "s3VersionBytesBeforeChecksumRepair": {"control": 7434470, "edge": 160419307, "release": 20700224},
+    "retainedLogBytesReported": 12255825,
+    "storageCaveat": "Log and DynamoDB size counters can lag. Requests, traffic and new ingestion excluded.",
+    "existingRoute53ZoneMonthlyUsdSeparate": 0.5,
+    "actualBilledCost": {"status": "NOT_RECONCILED", "amountUsd": null},
+    "pricingSources": [
+      "https://aws.amazon.com/waf/pricing/",
+      "https://aws.amazon.com/cloudwatch/pricing/",
+      "https://aws.amazon.com/ecr/pricing/",
+      "https://aws.amazon.com/s3/pricing/",
+      "https://aws.amazon.com/route53/pricing/"
+    ]
+  },
+  "validation": {"pytestPassed": 60, "pytestSkipped": 1, "pytestSubtestsPassed": 24, "terraformFmtCheck": "PASS"},
+  "limitations": [
+    "The scheduled STOP and its retry failed; final teardown required bounded operator recovery.",
+    "The frozen runner image was not rebuilt. Source fixes require release validation before another rehearsal.",
+    "The five-tag index retains confirmed deleted tombstones; zero means active residual resources after service reconciliation.",
+    "Runtime data was intentionally removed. Preserved aggregate evidence does not restore the live database or ledger."
+  ]
+}

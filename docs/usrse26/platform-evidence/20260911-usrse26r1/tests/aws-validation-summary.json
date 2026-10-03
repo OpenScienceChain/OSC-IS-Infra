@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse26r1",
+  "validatedAt": "2026-09-12T00:29:29.3734625+00:00",
+  "provenanceAndAuthorization": true,
+  "directFabricCrossOrganizationDenial": true,
+  "dependencyRecovery": true,
+  "workerRestartRecovery": true,
+  "peerFailover": true,
+  "gitOpsDriftRolloutRollback": true,
+  "postRollbackHappyPath": true,
+  "immutableImages": true,
+  "loadBalancerServices": 0,
+  "credentialsRetained": false
+}

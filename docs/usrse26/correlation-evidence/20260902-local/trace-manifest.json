@@ -1,0 +1,76 @@
+{
+  "traceVersion": "1.0",
+  "correlationId": "usrse26-e2e-20260902-local-003",
+  "artifactId": "44050742-a9b8-4c5e-9a82-b088f2d7c83a",
+  "fabricTransactionId": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25",
+  "revisionCount": 1,
+  "duplicateLedgerRevision": false,
+  "boundaries": [
+    {
+      "order": 1,
+      "name": "authenticated API request",
+      "evidence": "api-boundaries.json",
+      "link": "direct",
+      "id": "usrse26-e2e-20260902-local-003"
+    },
+    {
+      "order": 2,
+      "name": "PostgreSQL artifact and transactional outbox",
+      "evidence": "database-outbox.json",
+      "link": "direct",
+      "id": "58cd1997-37b2-4c38-91ad-2a4a909cf195"
+    },
+    {
+      "order": 3,
+      "name": "RabbitMQ artifact.submit command",
+      "evidence": "rabbitmq-boundaries.json",
+      "link": "direct",
+      "id": "usrse26-e2e-20260902-local-003"
+    },
+    {
+      "order": 4,
+      "name": "submission worker to organization ledger gateway",
+      "evidence": "rabbitmq-boundaries.json",
+      "link": "bounded inference: correlated completion event carries the Fabric transaction returned by the organization path",
+      "id": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25"
+    },
+    {
+      "order": 5,
+      "name": "Fabric commit and chaincode record",
+      "evidence": "fabric-history.json",
+      "link": "direct",
+      "id": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25"
+    },
+    {
+      "order": 6,
+      "name": "RabbitMQ artifact.submitted completion",
+      "evidence": "rabbitmq-boundaries.json",
+      "link": "direct",
+      "id": "usrse26-e2e-20260902-local-003"
+    },
+    {
+      "order": 7,
+      "name": "listener-applied final API state",
+      "evidence": "api-boundaries.json",
+      "link": "bounded inference: final API success/transaction state plus an empty completion queue",
+      "id": "da988e11e1ffd1bd5b724f876fee86ffe19b3dee995dddbd4e8580214608ca25"
+    }
+  ],
+  "authorization": {
+    "citizenScienceApiRead": {
+      "status": 403,
+      "denied": true
+    },
+    "citizenScienceFabricRead": {
+      "status": 403,
+      "denied": true
+    }
+  },
+  "assertions": {
+    "singleRevision": true,
+    "transactionConsistent": true,
+    "correlationConsistent": true,
+    "outboxPublishedWithoutRetry": true,
+    "credentialsRetained": false
+  }
+}

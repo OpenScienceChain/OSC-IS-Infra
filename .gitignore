@@ -10,6 +10,11 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+.osc-tools/
+platform/.generated/
+docs/usrse26/platform-evidence/*/raw-secrets/
+**/__pycache__/
+*.pyc
 
 # Editor/OS
 .DS_Store

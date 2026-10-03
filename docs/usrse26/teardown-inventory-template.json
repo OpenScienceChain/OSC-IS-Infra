@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runId": "REPLACE",
+  "expectedAccount": "269624229733",
+  "expectedRegion": "us-west-2",
+  "requiredTags": {"Project": "OSC-IS", "Purpose": "USRSE26-Interactive-Demo", "RunId": "REPLACE"},
+  "status": "NOT_RUN",
+  "inventoryBeforeDestroy": [],
+  "inventoryAfterDestroy": [],
+  "remainingTaggedResources": null,
+  "cloudFrontRuntimeOriginDetached": null,
+  "staticFallbackHealthy": null,
+  "checkedAt": null,
+  "checksums": {}
+}

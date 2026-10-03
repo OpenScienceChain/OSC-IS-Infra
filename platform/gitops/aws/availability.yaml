@@ -1,0 +1,48 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: api-gateway, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: api-gateway}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: submission-worker, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: submission-worker}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: submission-listener, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: submission-listener}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: ledger-gateway-nsg, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: ledger-gateway-nsg}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: ledger-gateway-citizen-science, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: ledger-gateway-citizen-science}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: history-worker-nsg, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: history-worker-nsg}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: history-worker-citizen-science, namespace: osc-apps}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: history-worker-citizen-science}}

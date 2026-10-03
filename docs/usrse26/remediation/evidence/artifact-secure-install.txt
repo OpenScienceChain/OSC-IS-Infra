@@ -1,0 +1,18 @@
+WARNING: https://raw.githubusercontent.com/wiz-sec-public/wiz-research-iocs/main/reports/keyv-packages.csv: ignored 3 validated Go module row(s) in the mixed-ecosystem IOC feed
+Supply-chain check passed: 462 locked packages, 443 blocked package names.
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+
+added 462 packages in 9s
+audited 462 packages in 8s
+
+462 packages have verified registry signatures
+
+41 packages have verified attestations
+
+WARNING: https://raw.githubusercontent.com/wiz-sec-public/wiz-research-iocs/main/reports/keyv-packages.csv: ignored 3 validated Go module row(s) in the mixed-ecosystem IOC feed
+Supply-chain check passed: 462 locked packages, 443 blocked package names.
+rebuilt dependencies successfully
+WARNING: https://raw.githubusercontent.com/wiz-sec-public/wiz-research-iocs/main/reports/keyv-packages.csv: ignored 3 validated Go module row(s) in the mixed-ecosystem IOC feed
+Supply-chain check passed: 462 locked packages, 443 blocked package names.

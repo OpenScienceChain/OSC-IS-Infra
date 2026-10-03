@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "runId": "usrse26r1",
+  "expiresAt": "2026-09-14T18:50:12.1969806+00:00",
+  "createdAt": "2026-09-11T20:58:37.4254164+00:00",
+  "buildCredentialIsolation": {
+    "status": "ENFORCED_COMMON_AWS_SOURCES_ABSENT",
+    "commonAwsCredentialSourcesAbsent": true,
+    "evidence": {
+      "s3Uri": "s3://osc-usrse26-usrse26r1-release-269624229733/releases/usrse26r1/build-credential-isolation.json",
+      "versionId": "t6ULjdANIECZYjrSZ0bHEwhRasA4yZHn",
+      "sha256": "ebc19dd694b5a8696f6e20d0575510b1c31bdaeefb39b4fd82b555c96088fc7b"
+    },
+    "limitation": "This fail-closed preflight checks common AWS, CI OIDC, cloud SDK, and service-account credential sources. It does not prove that an unknown credential source cannot exist. Artifact builds must also run in a job with no secrets and no id-token permission."
+  },
+  "webApp": {
+    "sourceRevision": "f05c02da0579a4fb82bd6433c382147d6973e00d",
+    "s3Uri": "s3://osc-usrse26-usrse26r1-release-269624229733/releases/usrse26r1/webapp-static.tar.gz",
+    "versionId": "usMst5E1I3KuIXnqB3sslDUoy5cobqjx",
+    "sha256": "87dae526ec9218e28876bcc08a451f19b170e877aede0b805c9ab5b4ccc030cb",
+    "objectKey": "releases/usrse26r1/webapp-static.tar.gz"
+  },
+  "images": {
+    "api-gateway": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/api-gateway@sha256:6a8cfe5c940ee9a248e76bbd6fa424ce2f58055bb0bd1a557fcd1ec8c9192929",
+      "digest": "sha256:6a8cfe5c940ee9a248e76bbd6fa424ce2f58055bb0bd1a557fcd1ec8c9192929",
+      "archiveSha256": "65c10435df55bd7af19fd16605b0ab695f29d66e4d2ff57bee84b6ee924de03f",
+      "sbomSha256": "5652ad9b159d345bd67670dede9661a9f708f0e287c7ab8c8859c99c27818213",
+      "scanSha256": "67d0e390c1551ceb84ffd9e5728797cd5047a1b68c24b28ab82f9a478f7a8f06",
+      "highCriticalFindings": 0,
+      "runtimeUser": "nestjs"
+    },
+    "ledger-gateway": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/ledger-gateway@sha256:546b6dd44cf070406007e40c045b4cd98629ed6efa14c3083484491409462f74",
+      "digest": "sha256:546b6dd44cf070406007e40c045b4cd98629ed6efa14c3083484491409462f74",
+      "archiveSha256": "ef19012bd65fb25f94628fbeefc4badd91514c275e7a9b9797e3ba53e640f0b2",
+      "sbomSha256": "fddc04166fdfe979a7f7fcd68ffaf7de24b04a36495c56342d7df8cb3cec4565",
+      "scanSha256": "df35511e0ad558a7be6ac13312a1c1ef729ce9e288debe1dc56c43936dbdcef1",
+      "highCriticalFindings": 0,
+      "runtimeUser": "10001:10001"
+    },
+    "submission-worker": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/submission-worker@sha256:1a0d093fd315f691191b08ed53d73c035d190a28eff166e0b8397c8ec1e71542",
+      "digest": "sha256:1a0d093fd315f691191b08ed53d73c035d190a28eff166e0b8397c8ec1e71542",
+      "archiveSha256": "128c34822a07e78ed93a7866c86af31e02a8c05762da74a7966d632084a1e4d2",
+      "sbomSha256": "313959d77c8f2b15c189527a1c87f4601764a9c2bca7e27205359463a4fb0c9f",
+      "scanSha256": "30284172c1cd5873c8195d6d95d2f5d5c93c668f46a623097b7452a480aa967a",
+      "highCriticalFindings": 0,
+      "runtimeUser": "10001:10001"
+    },
+    "submission-listener": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/submission-listener@sha256:6fc7f3423e8cbe4a8d210adea8ccba0bee8aa2766d48c4a079bfd4febdfd1286",
+      "digest": "sha256:6fc7f3423e8cbe4a8d210adea8ccba0bee8aa2766d48c4a079bfd4febdfd1286",
+      "archiveSha256": "4c857bcaab27365120e9aa935367ab89e211b9c7cbac6e8f48e27f4997f77cbc",
+      "sbomSha256": "6e3f383de450c9c9bff7efefb79875535945ac1d229026dde6568b5b6b9848b0",
+      "scanSha256": "db2404668471827c1ad6b361d53ba94862945b481dfdefd7105fbdc03f46a4f8",
+      "highCriticalFindings": 0,
+      "runtimeUser": "10001:10001"
+    },
+    "history-worker": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/history-worker@sha256:6b2d89eb0b8cdbcd661932463d45ba53bd91bf456e12b39e94959d054bf88c36",
+      "digest": "sha256:6b2d89eb0b8cdbcd661932463d45ba53bd91bf456e12b39e94959d054bf88c36",
+      "archiveSha256": "b376139c304265f18ad04147fe35af9a890fa21075adcd5b7dd9d5fab0a96936",
+      "sbomSha256": "bdb5ca68ac31903365c188f5e89010d5beb6030e58de7dcd94c13db3ccf8a650",
+      "scanSha256": "13d31827f69c3cb3557cf89b9022ccd86c6ac914bb2cc6d225bbf3b25137443c",
+      "highCriticalFindings": 0,
+      "runtimeUser": "10001:10001"
+    },
+    "chaincode": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/chaincode@sha256:e2d41304eaf8815096304b220f2d58d5c548f549aabed9e757679136a8d0f2cc",
+      "digest": "sha256:e2d41304eaf8815096304b220f2d58d5c548f549aabed9e757679136a8d0f2cc",
+      "archiveSha256": "f785360ee2cca00db72b4d46bdbee68a4e497c096a65914a0395cafa0b7da3e9",
+      "sbomSha256": "2c7f9a6217ad19e8ce9fcc5a09519e32c2cfeeeb786344ac2908e32bba44c424",
+      "scanSha256": "bd2e4304fd6ed13fed5a81997aa8fd3af38a8f4d6d3cff8b75bbbcf6a2d10fd6",
+      "highCriticalFindings": 0,
+      "runtimeUser": "65532:65532"
+    },
+    "webapp": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/webapp@sha256:be842c4a017b49a7068547f70d1d675cd3b22403574f9ee5442595458bf6bab4",
+      "digest": "sha256:be842c4a017b49a7068547f70d1d675cd3b22403574f9ee5442595458bf6bab4",
+      "archiveSha256": "99c1d37a9adcd1b552dbf6f3d2829f503e4a0fd06cda692f1f589cacd6903de5",
+      "sbomSha256": "83b3543e27ceb901349bb3f1c951a43c2d7a68274c7a255ac424382c17b2e68f",
+      "scanSha256": "20efae549da37fa1a507039af5be63fb581b11378851e55b44c124509a90cb11",
+      "highCriticalFindings": 0,
+      "runtimeUser": "nginx"
+    },
+    "lifecycle-runner": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/lifecycle-runner@sha256:b51f0a717dcf8474133c5a826b106c0e9d6e6150d54d7a6cb8f0256e58a18685",
+      "digest": "sha256:b51f0a717dcf8474133c5a826b106c0e9d6e6150d54d7a6cb8f0256e58a18685",
+      "archiveSha256": "d48a7e57515a2ae11b087c450bb682d0fccbcb5125a7521213dace4b55dd99ac",
+      "sbomSha256": "fce1e294b7c608d9ae800a3b23d9b3b9dfa56ddd68b657586d8ddab2d4f65bbf",
+      "scanSha256": "f8446e2da1dd2fea8b4ab0940dc909269d2e1b890b7ef3c6feef27c8d3f39054",
+      "highCriticalFindings": 0,
+      "runtimeUser": "10001:10001"
+    },
+    "gitops-repository": {
+      "ecrReference": "269624229733.dkr.ecr.us-west-2.amazonaws.com/osc-usrse26-usrse26r1/gitops-repository@sha256:3998a2cac8aa3fd32a62d9eda7d895fc80a8f1e8608722d3952d86bc55afab8a",
+      "digest": "sha256:3998a2cac8aa3fd32a62d9eda7d895fc80a8f1e8608722d3952d86bc55afab8a",
+      "archiveSha256": "f91ee60e344bb8ba59707242f4e4c38e2ca1e0400d50d8396c0c7d6ba18e0a3b",
+      "sbomSha256": "4a4281fbc8134816d64519b78dc155ba5531fd7c4b9fb3e03974346fd186e1fa",
+      "scanSha256": "add1f06e6e717ddd257c5b7b18beea25e6a80d28b3e14bf6502f08676a1aa6c8",
+      "highCriticalFindings": 0,
+      "runtimeUser": "65534:65534"
+    }
+  },
+  "externalImages": {
+    "aws-load-balancer-controller": "public.ecr.aws/eks/aws-load-balancer-controller@sha256:0efaddbfe2dda70d570fd262d26b434455cfb5e20d6947c4161fc73b08d6a550"
+  },
+  "sourceCommits": {
+    "infra": "ddc8cecff36347dc6d95ed915d4204bdfbd8b364",
+    "webApp": "f05c02da0579a4fb82bd6433c382147d6973e00d",
+    "apiGateway": "2351746fad480bbe376e02da376a0864c59c1ad7",
+    "artifactSubmission": "12c465381d7cd2f61fbedab3fa7f9e1ba44d7c81",
+    "chaincode": "1d7d710485e5731e9489dc3df4fd5b0b18baaa0c"
+  },
+  "gitops": {
+    "baselineRevision": "2fcbaf9b86c3df821422fe41c70951b96369866a",
+    "rolloutRevision": "0bf853599bec1ce8574ff758278f5f3500d26b01"
+  }
+}

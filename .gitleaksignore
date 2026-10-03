@@ -1,0 +1,11 @@
+# Immutable Git/image/SHA-256 evidence values and a Docker service URL misclassified as generic API keys.
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/source-revisions.json:generic-api-key:6
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:7
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:8
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:9
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:10
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:11
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:12
+a7437063fa59df9bac0235d0922d2c54c558bb94:docs/usrse26/correlation-evidence/20260902-local/secret-reconciliation-hashes.json:generic-api-key:13
+0e8c4f5c35d1ddbbb06d7daefe13475f4d0de934:docs/usrse26/platform-evidence/20260902a/source-revisions.json:generic-api-key:7
+523e2fbe1f738b8a54c82600a772227c7293cdd5:system-tests/docker-compose.yml:generic-api-key:35

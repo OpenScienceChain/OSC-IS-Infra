@@ -1,0 +1,87 @@
+name: Terraform staging plan or apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan is read-only; apply requires staging approval
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+      runtime_mode:
+        description: Runtime state
+        required: true
+        default: up
+        type: choice
+        options: [up, down]
+      infra_mode:
+        description: Infrastructure state
+        required: true
+        default: active
+        type: choice
+        options: [active, hibernated]
+      confirm_destroy:
+        description: Enter DESTROY only when applying hibernated mode
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.operation }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.operation == 'apply' && 'staging' || 'staging-plan' }}
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Guard destructive operation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.operation }}" == "apply" && "${{ inputs.infra_mode }}" == "hibernated" && "${{ inputs.confirm_destroy }}" != "DESTROY" ]]; then
+            echo "Hibernation destroys disposable infrastructure. Enter DESTROY to continue."
+            exit 1
+          fi
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: us-west-2
+          role-duration-seconds: 900
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.10.5"
+      - name: Restore encrypted staging variable file
+        shell: bash
+        env:
+          TFVARS_B64: ${{ secrets.TFVARS_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$TFVARS_B64"
+          printf '%s' "$TFVARS_B64" | base64 --decode > terraform.auto.tfvars
+      - run: terraform init -input=false -lockfile=readonly
+      - name: Plan
+        run: >-
+          terraform plan -input=false -out=tfplan
+          -var="runtime_mode=${{ inputs.runtime_mode }}"
+          -var="infra_mode=${{ inputs.infra_mode }}"
+          -var="allow_destroy=${{ inputs.infra_mode == 'hibernated' }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-${{ inputs.operation }}-${{ github.sha }}
+          path: terraform/tfplan
+          retention-days: 7
+      - name: Apply reviewed plan
+        if: inputs.operation == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan

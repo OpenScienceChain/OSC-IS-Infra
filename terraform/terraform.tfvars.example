@@ -6,8 +6,20 @@ security_group_ids = ["<ecs-tasks-sg-id>"]
 assign_public_ip = false
 runtime_mode     = "up" # up | down
 
-# Single RabbitMQ EC2 (MVP — one broker is sufficient)
-ec2_instance_ids         = ["<rabbitmq-ec2-instance-id>"]
+# RabbitMQ backend. Amazon MQ is private and uses AMQPS on port 5671.
+messaging_backend = "amazon_mq" # ec2 | amazon_mq
+amazon_mq = {
+  broker_name              = "osc-staging-rabbitmq"
+  subnet_ids               = ["<private-subnet-2a>"]
+  security_group_ids       = ["<amazon-mq-sg-id>"]
+  host_instance_type       = "mq.m7g.medium"
+  engine_version           = "3.13"
+  username                 = "osc_service"
+  credentials_secret_name = "osc/stg/rabbitmq/credentials"
+}
+
+# Existing VM fallback. Restore the instance ID when messaging_backend="ec2".
+ec2_instance_ids         = []
 manage_ec2_runtime_state = true
 
 # Safety guardrail: prevents accidental destroy of ECS services/task defs/log groups
