@@ -212,13 +212,20 @@ spec:
               command: [rabbitmq-diagnostics, -q, ping]
             initialDelaySeconds: 10
             periodSeconds: 5
-            timeoutSeconds: 5
+            timeoutSeconds: 10
+          startupProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, ping]
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 18
           livenessProbe:
             exec:
               command: [rabbitmq-diagnostics, -q, ping]
             initialDelaySeconds: 30
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 10
+            failureThreshold: 6
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
