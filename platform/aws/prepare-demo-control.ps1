@@ -17,10 +17,19 @@ $statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
 $tfvarsPath = Join-Path $runRoot 'control.tfvars'
+$artifactManifestPath = Join-Path $repoRoot "platform\.generated\aws\$RunId\artifacts\artifacts.json"
 
 if ($AdminCidr -in @('0.0.0.0/0', '0.0.0.0/32')) { throw 'AdminCidr must identify one trusted IPv4 address.' }
 if ($LifecycleRunnerImage -notmatch "^269624229733[.]dkr[.]ecr[.]us-west-2[.]amazonaws[.]com/osc-usrse26-$RunId/lifecycle-runner@sha256:[0-9a-f]{64}$") {
     throw 'LifecycleRunnerImage must be the immutable image in this exact run-scoped ECR repository.'
+}
+if (-not (Test-Path -LiteralPath $artifactManifestPath -PathType Leaf)) { throw 'The exact-run artifact manifest is absent.' }
+$artifactManifest = Get-Content -LiteralPath $artifactManifestPath -Raw | ConvertFrom-Json
+if ($artifactManifest.runId -ne $RunId) { throw 'Artifact manifest run ID mismatch.' }
+$manualExpiresAt = ([DateTimeOffset]$artifactManifest.expiresAt).ToUniversalTime()
+if ($RunId.StartsWith('manual') -and
+    ($manualExpiresAt -le [DateTimeOffset]::UtcNow.AddHours(3) -or $manualExpiresAt -gt [DateTimeOffset]::UtcNow.AddHours(72))) {
+    throw 'Manual control expiry must be more than three hours and no more than 72 hours away.'
 }
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 
@@ -50,6 +59,9 @@ try {
     )
     if (-not [string]::IsNullOrWhiteSpace($NotificationEmail)) {
         $tfvarsArguments += @('--notification-email', $NotificationEmail.Trim())
+    }
+    if ($RunId.StartsWith('manual')) {
+        $tfvarsArguments += @('--manual-expires-at', $manualExpiresAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))
     }
     python @tfvarsArguments
     if ($LASTEXITCODE -ne 0) { throw 'Control-plane variable generation failed.' }
@@ -82,7 +94,11 @@ try {
     }
     finally { Pop-Location }
 
-    python platform/aws/check_control_plan.py $planJsonPath --run-id $RunId
+    $guardArguments = @('platform/aws/check_control_plan.py', $planJsonPath, '--run-id', $RunId)
+    if ($RunId.StartsWith('manual')) {
+        $guardArguments += @('--manual-expires-at', $manualExpiresAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))
+    }
+    python @guardArguments
     if ($LASTEXITCODE -ne 0) { throw 'Control-plane policy check failed.' }
     Write-Host "Reviewed control-plane plan: $planPath"
 }

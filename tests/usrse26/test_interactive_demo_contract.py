@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta, timezone
 import json
 import subprocess
 import sys
@@ -296,9 +297,12 @@ class LifecycleContractTests(unittest.TestCase):
             self.assertIn('notification_email = "demo@example.org"\n', output.read_text(encoding="utf-8"))
 
             manual = ["manualrun1" if part == "autousrse26r1" else part for part in base]
-            result = subprocess.run([*manual, "--output", str(output)], capture_output=True, text=True)
+            result = subprocess.run([*manual, "--output", str(output), "--manual-expires-at", "2026-10-08T22:48:05Z"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('run_id = "manualrun1"', output.read_text(encoding="utf-8"))
+            self.assertIn('manual_expires_at = "2026-10-08T22:48:05Z"', output.read_text(encoding="utf-8"))
+            missing_expiry = subprocess.run([*manual, "--output", str(output)], capture_output=True, text=True)
+            self.assertNotEqual(missing_expiry.returncode, 0)
 
             legacy = ["usrse26r1" if part == "autousrse26r1" else part for part in base]
             result = subprocess.run([*legacy, "--output", str(output)], capture_output=True, text=True)
@@ -1287,6 +1291,42 @@ class RenderingAndPolicyTests(unittest.TestCase):
             command = [sys.executable, str(ROOT / "platform/aws/check_control_plan.py"), str(path), "--run-id", "usrse26demo"]
             accepted = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+            manual_plan = json.loads(json.dumps(plan).replace("usrse26demo", "manualtest1"))
+            deadline = (datetime.now(timezone.utc) + timedelta(hours=12)).replace(microsecond=0)
+            expiry = deadline.strftime("%Y-%m-%dT%H:%M:%SZ")
+            stop = (deadline - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+            backup = (deadline - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+            manual_plan["resource_changes"] = [
+                change for change in manual_plan["resource_changes"]
+                if change["address"] != 'aws_scheduler_schedule.one_time["start"]'
+            ]
+            for change in manual_plan["resource_changes"]:
+                values = change["change"]["after"]
+                if values.get("tags_all"):
+                    values["tags_all"]["ExpiresAt"] = expiry
+                if change["address"] == 'aws_scheduler_schedule.one_time["stop"]':
+                    values.update(schedule_expression=f"at({stop})", schedule_expression_timezone="UTC")
+                if change["address"] == 'aws_scheduler_schedule.one_time["backup-stop"]':
+                    values.update(schedule_expression=f"at({backup})", schedule_expression_timezone="UTC")
+                if change["address"] == "aws_ecr_repository.lifecycle_runner":
+                    change["change"]["before"]["tags_all"]["ExpiresAt"] = expiry
+            manual_plan["planned_values"]["outputs"]["lifecycle_schedule"]["value"] = {
+                "timezone": "UTC", "start": None, "stop": stop,
+                "backup_stop": backup, "hard_close": expiry,
+            }
+            manual_command = [
+                sys.executable, str(ROOT / "platform/aws/check_control_plan.py"), str(path),
+                "--run-id", "manualtest1", "--manual-expires-at", expiry,
+            ]
+            path.write_text(json.dumps(manual_plan), encoding="utf-8")
+            manual_accepted = subprocess.run(manual_command, capture_output=True, text=True)
+            self.assertEqual(manual_accepted.returncode, 0, manual_accepted.stdout + manual_accepted.stderr)
+            manual_plan["planned_values"]["outputs"]["lifecycle_schedule"]["value"]["backup_stop"] = stop
+            path.write_text(json.dumps(manual_plan), encoding="utf-8")
+            manual_rejected = subprocess.run(manual_command, capture_output=True, text=True)
+            self.assertNotEqual(manual_rejected.returncode, 0)
+            path.write_text(json.dumps(plan), encoding="utf-8")
 
             def change_after(candidate: dict, address: str) -> dict:
                 return next(

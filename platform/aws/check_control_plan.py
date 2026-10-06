@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 import fnmatch
 import json
 import re
@@ -374,7 +375,18 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("plan_json", type=Path)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--manual-expires-at")
     args = parser.parse_args()
+    manual_run = args.run_id.startswith("manual")
+    if manual_run:
+        try:
+            deadline = datetime.strptime(args.manual_expires_at or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            parser.error("manual runs require the exact UTC artifact-manifest expiry")
+        if not timedelta(hours=3) < deadline - datetime.now(timezone.utc) <= timedelta(hours=72):
+            parser.error("manual expiry must be more than three hours and no more than 72 hours away")
+        stop_at = (deadline - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+        backup_stop_at = (deadline - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
     plan = json.loads(args.plan_json.read_text(encoding="utf-8"))
     errors: list[str] = []
     creates = 0
@@ -429,6 +441,8 @@ def main() -> None:
                 expected = args.run_id if required is None else required
                 if tags.get(key) != expected:
                     errors.append(f"{address} is missing tag {key}={expected}")
+            if manual_run and tags.get("ExpiresAt") != args.manual_expires_at:
+                errors.append(f"{address} has the wrong manual expiry tag")
 
         if resource_type == "aws_s3_bucket_public_access_block":
             for key in ("block_public_acls", "block_public_policy", "ignore_public_acls", "restrict_public_buckets"):
@@ -494,12 +508,15 @@ def main() -> None:
         if resource_type == "aws_scheduler_schedule":
             name = after.get("name", "")
             expected_one_time_names = {
-                f"osc-usrse26-{args.run_id}-start",
-                f"osc-usrse26-{args.run_id}-stop",
-                f"osc-usrse26-{args.run_id}-backup-stop",
+                f"osc-usrse26-{args.run_id}-{suffix}"
+                for suffix in (("stop", "backup-stop") if manual_run else ("start", "stop", "backup-stop"))
             }
             if name in expected_one_time_names:
                 one_time_schedule_names.add(name)
+                if manual_run:
+                    scheduled_at = stop_at if name.endswith("-stop") and not name.endswith("backup-stop") else backup_stop_at
+                    if after.get("schedule_expression") != f"at({scheduled_at})" or after.get("schedule_expression_timezone") != "UTC":
+                        errors.append(f"{address} does not use the exact manual UTC stop deadline")
                 window = (after.get("flexible_time_window") or [{}])[0]
                 target = (after.get("target") or [{}])[0]
                 retry = (target.get("retry_policy") or [{}])[0]
@@ -574,9 +591,8 @@ def main() -> None:
     if not waf_logging_checked:
         errors.append("control plan is missing the exact reviewed WAF logging configuration")
     expected_one_time_schedule_names = {
-        f"osc-usrse26-{args.run_id}-start",
-        f"osc-usrse26-{args.run_id}-stop",
-        f"osc-usrse26-{args.run_id}-backup-stop",
+        f"osc-usrse26-{args.run_id}-{suffix}"
+        for suffix in (("stop", "backup-stop") if manual_run else ("start", "stop", "backup-stop"))
     }
     if one_time_schedule_names != expected_one_time_schedule_names:
         errors.append("control plan is missing an exact one-time start, stop, or backup-stop schedule")
@@ -600,13 +616,11 @@ def main() -> None:
         errors.append("pre-deployment planning estimate must be concrete and no greater than USD 200")
     if outputs.get("maximum_runtime_hours", {}).get("value") != 72:
         errors.append("maximum runtime must remain exactly 72 hours")
-    expected_schedule = {
-        "timezone": "America/Los_Angeles",
-        "start": "2026-10-20T08:00:00",
-        "stop": "2026-10-23T08:00:00",
-        "backup_stop": "2026-10-23T10:00:00",
-        "hard_close": "2026-10-23T15:00:00Z",
-    }
+    expected_schedule = (
+        {"timezone": "UTC", "start": None, "stop": stop_at, "backup_stop": backup_stop_at, "hard_close": args.manual_expires_at}
+        if manual_run else
+        {"timezone": "America/Los_Angeles", "start": "2026-10-20T08:00:00", "stop": "2026-10-23T08:00:00", "backup_stop": "2026-10-23T10:00:00", "hard_close": "2026-10-23T15:00:00Z"}
+    )
     if outputs.get("lifecycle_schedule", {}).get("value") != expected_schedule:
         errors.append("lifecycle schedule or hard-close deadline differs from the approved 72-hour window")
     if creates == 0 and import_reconciliations == 0 and boundary_updates == 0:

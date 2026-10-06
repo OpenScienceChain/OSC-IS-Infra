@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "state": "SCHEDULED",
-  "message": "The interactive demonstration is scheduled for October 20-23, 2026.",
+  "message": "${manual_run ? "The interactive demonstration is starting." : "The interactive demonstration is scheduled for October 20-23, 2026."}",
   "applicationUrl": null,
   "runId": "${run_id}",
   "updatedAt": "2026-09-11T00:00:00Z",
@@ -10,7 +10,7 @@
     "plannedEstimateUsd": ${jsonencode(planning_estimate_usd)},
     "planningEstimateCeilingUsd": 200,
     "maximumRuntimeHours": 72,
-    "hardCloseAt": "2026-10-23T15:00:00Z",
+    "hardCloseAt": "${hard_close_at}",
     "actualBilledCost": {"status": "NOT_RECONCILED", "amountUsd": null}
   }
 }

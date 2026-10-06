@@ -109,6 +109,17 @@ variable "admin_cidr" {
   }
 }
 
+variable "manual_expires_at" {
+  description = "UTC hard-close deadline for an immediately started manual run."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.manual_expires_at == null || can(formatdate("YYYY-MM-DD'T'hh:mm:ss'Z'", var.manual_expires_at))
+    error_message = "manual_expires_at must be a UTC RFC3339 timestamp."
+  }
+}
+
 variable "start_at" {
   type    = string
   default = "2026-10-20T08:00:00"

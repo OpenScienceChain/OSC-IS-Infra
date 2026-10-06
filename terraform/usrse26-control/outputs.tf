@@ -19,10 +19,10 @@ output "planning_estimate_ceiling_usd" { value = 200 }
 output "maximum_runtime_hours" { value = 72 }
 output "lifecycle_schedule" {
   value = {
-    timezone    = "America/Los_Angeles"
-    start       = var.start_at
-    stop        = var.stop_at
-    backup_stop = var.backup_stop_at
+    timezone    = local.manual_run ? "UTC" : "America/Los_Angeles"
+    start       = local.manual_run ? null : var.start_at
+    stop        = local.manual_run ? local.manual_stop_at : var.stop_at
+    backup_stop = local.manual_run ? local.manual_backup_stop_at : var.backup_stop_at
     hard_close  = local.lifecycle_environment.HARD_CLOSE_AT
   }
 }

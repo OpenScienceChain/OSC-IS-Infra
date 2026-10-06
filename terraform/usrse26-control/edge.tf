@@ -57,6 +57,8 @@ resource "aws_s3_object" "status" {
   content = templatefile("${path.module}/templates/status.json.tftpl", {
     run_id                = var.run_id
     planning_estimate_usd = var.planning_estimate_usd
+    hard_close_at         = local.hard_close_at
+    manual_run            = local.manual_run
   })
   content_type           = "application/json"
   cache_control          = "no-store, max-age=0"

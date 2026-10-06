@@ -35,7 +35,10 @@ locals {
     start       = { expression = "at(${var.start_at})", machine = aws_sfn_state_machine.start.arn, reason = "scheduled-start" }
     stop        = { expression = "at(${var.stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "scheduled-stop" }
     backup-stop = { expression = "at(${var.backup_stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "backup-stop" }
-  } : {}
+    } : {
+    stop        = { expression = "at(${local.manual_stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "scheduled-stop" }
+    backup-stop = { expression = "at(${local.manual_backup_stop_at})", machine = aws_sfn_state_machine.stop.arn, reason = "backup-stop" }
+  }
 }
 
 resource "aws_scheduler_schedule" "one_time" {
@@ -43,7 +46,7 @@ resource "aws_scheduler_schedule" "one_time" {
   for_each                     = local.one_time_schedules
   name                         = "${local.name_prefix}-${each.key}"
   schedule_expression          = each.value.expression
-  schedule_expression_timezone = "America/Los_Angeles"
+  schedule_expression_timezone = local.manual_run ? "UTC" : "America/Los_Angeles"
   action_after_completion      = "DELETE"
   flexible_time_window { mode = "OFF" }
   target {

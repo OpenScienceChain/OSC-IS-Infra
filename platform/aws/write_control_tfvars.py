@@ -37,6 +37,7 @@ def main() -> int:
     parser.add_argument("--artifact-manifest-s3-uri", required=True)
     parser.add_argument("--artifact-manifest-sha256", required=True)
     parser.add_argument("--planning-estimate-usd", required=True, type=bounded_planning_estimate)
+    parser.add_argument("--manual-expires-at")
     parser.add_argument("--notification-email")
     args = parser.parse_args()
 
@@ -44,6 +45,10 @@ def main() -> int:
         parser.error("new control runs require an auto- or manual-prefixed run ID")
 
     notification_email = (args.notification_email or "").strip() or None
+    if args.run_id.startswith("manual") and not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", args.manual_expires_at or ""
+    ):
+        parser.error("manual runs require a UTC artifact-manifest expiry")
     values: list[tuple[str, str | Decimal | None]] = [
         ("run_id", args.run_id),
         ("hosted_zone_id", args.hosted_zone_id),
@@ -53,6 +58,7 @@ def main() -> int:
         ("artifact_manifest_sha256", args.artifact_manifest_sha256),
         ("cost_control_mode", "TIME_BOUNDED"),
         ("planning_estimate_usd", args.planning_estimate_usd),
+        ("manual_expires_at", args.manual_expires_at),
         ("notification_email", notification_email),
     ]
 

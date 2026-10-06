@@ -4,6 +4,12 @@ locals {
   artifact_manifest_bucket = local.artifact_manifest_parts[0]
   artifact_manifest_key    = join("/", slice(local.artifact_manifest_parts, 1, length(local.artifact_manifest_parts)))
   artifact_manifest_prefix = replace(dirname(local.artifact_manifest_key), "\\", "/")
+  manual_run               = startswith(var.run_id, "manual")
+  manual_deadline          = coalesce(var.manual_expires_at, "1970-01-01T00:00:00Z")
+  hard_close_at            = local.manual_run ? local.manual_deadline : "2026-10-23T15:00:00Z"
+  tag_expires_at           = local.manual_run ? local.manual_deadline : "2026-11-22T15:00:00Z"
+  manual_stop_at           = formatdate("YYYY-MM-DD'T'hh:mm:ss", timeadd(local.manual_deadline, "-2h"))
+  manual_backup_stop_at    = formatdate("YYYY-MM-DD'T'hh:mm:ss", timeadd(local.manual_deadline, "-1h"))
 
   required_tags = {
     Project     = "OSC-IS"
@@ -12,7 +18,7 @@ locals {
     ManagedBy   = "Terraform"
     Owner       = "ofgarzon"
     RunId       = var.run_id
-    ExpiresAt   = "2026-11-22T15:00:00Z"
+    ExpiresAt   = local.tag_expires_at
   }
 
   lifecycle_environment = {
@@ -35,7 +41,7 @@ locals {
     API_ORIGIN_POLICY_ID          = aws_cloudfront_origin_request_policy.api.id
     WEB_ACL_NAME                  = aws_wafv2_web_acl.edge.name
     RUNTIME_ROLE_ARNS_JSON        = jsonencode(local.runtime_role_arn_map)
-    HARD_CLOSE_AT                 = "2026-10-23T15:00:00Z"
+    HARD_CLOSE_AT                 = local.hard_close_at
     MAX_RUNTIME_HOURS             = "72"
     COST_CONTROL_MODE             = var.cost_control_mode
     PLANNING_ESTIMATE_CEILING_USD = "200"
