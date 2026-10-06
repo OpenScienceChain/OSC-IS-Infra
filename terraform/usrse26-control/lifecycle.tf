@@ -124,7 +124,6 @@ resource "aws_ecr_repository" "lifecycle_runner" {
   name                 = "${local.name_prefix}/lifecycle-runner"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
-  tags                 = { ExpiresAt = local.tag_expires_at }
 
   encryption_configuration {
     encryption_type = "AES256"
