@@ -8,6 +8,7 @@ $runRoot = Join-Path $repoRoot "platform\.generated\control\$RunId"
 $statePath = Join-Path $runRoot 'terraform.tfstate'
 $planPath = Join-Path $runRoot 'reviewed.tfplan'
 $planJsonPath = Join-Path $runRoot 'reviewed-plan.json'
+$artifactManifestPath = Join-Path $repoRoot "platform\.generated\aws\$RunId\artifacts\artifacts.json"
 
 foreach ($path in @($planPath, $planJsonPath)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing reviewed control-plane artifact: $path" }
@@ -16,7 +17,15 @@ foreach ($path in @($planPath, $planJsonPath)) {
 Push-Location $repoRoot
 try {
     python platform/aws/aws_guard.py | Out-Null
-    python platform/aws/check_control_plan.py $planJsonPath --run-id $RunId
+    $guardArguments = @('platform/aws/check_control_plan.py', $planJsonPath, '--run-id', $RunId)
+    if ($RunId.StartsWith('manual')) {
+        if (-not (Test-Path -LiteralPath $artifactManifestPath -PathType Leaf)) { throw 'The exact-run artifact manifest is absent.' }
+        $artifactManifest = Get-Content -LiteralPath $artifactManifestPath -Raw | ConvertFrom-Json
+        if ($artifactManifest.runId -ne $RunId) { throw 'Artifact manifest run ID mismatch.' }
+        $deadline = ([DateTimeOffset]$artifactManifest.expiresAt).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        $guardArguments += @('--manual-expires-at', $deadline)
+    }
+    python @guardArguments
     if ($LASTEXITCODE -ne 0) { throw 'Control-plane policy recheck failed.' }
     Push-Location $terraformRoot
     try {
