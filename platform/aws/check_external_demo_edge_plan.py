@@ -38,7 +38,10 @@ def one_block(value: dict, name: str) -> dict:
     return blocks[0]
 
 
-def check_distribution(value: dict, *, attached: bool, distribution_id: str, api_origin: str) -> None:
+def check_distribution(
+    value: dict, *, attached: bool, distribution_id: str, api_origin: str,
+    api_cache_policy_id: str, api_origin_request_policy_id: str,
+) -> None:
     if value.get("id") != distribution_id:
         fail("distribution identity changed")
     if value.get("aliases") != ["demo.osc-staging.org"]:
@@ -76,9 +79,9 @@ def check_distribution(value: dict, *, attached: bool, distribution_id: str, api
             fail("API methods differ from the reviewed set")
         if set(api.get("cached_methods") or []) != {"GET", "HEAD"}:
             fail("API cached methods changed")
-        if api.get("cache_policy_id") != "a206f89f-c17e-4bde-942a-450290111560":
+        if api.get("cache_policy_id") != api_cache_policy_id:
             fail("API must use the zero-TTL cache policy")
-        if api.get("origin_request_policy_id") != "07026742-00b4-4965-934e-d89eb9d7893a":
+        if api.get("origin_request_policy_id") != api_origin_request_policy_id:
             fail("API must forward viewer cookies and headers")
         if api.get("response_headers_policy_id") != default.get("response_headers_policy_id"):
             fail("API must use the static security response headers policy")
@@ -249,6 +252,8 @@ def main() -> None:
     parser.add_argument("--run-id", default="usrse260930")
     parser.add_argument("--control-run-id", default="usrse26r1")
     parser.add_argument("--distribution-id", default="E26XTII1H57RTX")
+    parser.add_argument("--api-cache-policy-id", default="a206f89f-c17e-4bde-942a-450290111560")
+    parser.add_argument("--api-origin-request-policy-id", default="07026742-00b4-4965-934e-d89eb9d7893a")
     parser.add_argument(
         "--alb-arn",
         default=(
@@ -264,6 +269,10 @@ def main() -> None:
     ):
         fail("expected distribution and same-account ALB identities")
     api_origin = f"private-demo-api-{args.run_id}"
+    policy_ids = {
+        "api_cache_policy_id": args.api_cache_policy_id,
+        "api_origin_request_policy_id": args.api_origin_request_policy_id,
+    }
     plan = json.loads(args.plan_json.read_text(encoding="utf-8"))
     changes = {
         item["address"]: item
@@ -283,18 +292,18 @@ def main() -> None:
         if args.mode == "harden":
             if origin_ids(before) != {"static-edge"} or before.get("ordered_cache_behavior"):
                 fail("hardening must start from the static edge")
-            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
+            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin, **policy_ids)
             check_waf(changes[WAF]["change"]["after"])
             function = changes[FUNCTION]["change"]["after"]
             if function.get("name") != f"osc-usrse26-{args.control_run_id}-spa-rewrite":
                 fail("unexpected rewrite function")
         elif args.mode == "attach":
-            check_distribution(before, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
-            check_distribution(after, attached=True, distribution_id=args.distribution_id, api_origin=api_origin)
+            check_distribution(before, attached=False, distribution_id=args.distribution_id, api_origin=api_origin, **policy_ids)
+            check_distribution(after, attached=True, distribution_id=args.distribution_id, api_origin=api_origin, **policy_ids)
             check_unchanged_distribution(before, after)
         else:
-            check_distribution(before, attached=True, distribution_id=args.distribution_id, api_origin=api_origin)
-            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
+            check_distribution(before, attached=True, distribution_id=args.distribution_id, api_origin=api_origin, **policy_ids)
+            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin, **policy_ids)
             check_unchanged_distribution(before, after)
     if args.mode == "origin":
         endpoint = one_block(changes[VPC_ORIGIN]["change"]["after"], "vpc_origin_endpoint_config")
