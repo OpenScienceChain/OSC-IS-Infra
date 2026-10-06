@@ -11,11 +11,6 @@ DIST = "aws_cloudfront_distribution.edge"
 FUNCTION = "aws_cloudfront_function.spa_rewrite"
 VPC_ORIGIN = "aws_cloudfront_vpc_origin.external_demo_api[0]"
 WAF = "aws_wafv2_web_acl.edge"
-API_ORIGIN = "private-demo-api-usrse260930"
-API_ALB_ARN = (
-    "arn:aws:elasticloadbalancing:us-west-2:269624229733:"
-    "loadbalancer/app/k8s-oscapps-oscdemoa-5938afeb16/f59ddecd5a4a24ef"
-)
 
 ALLOWED = {
     "harden": {DIST: ["update"], FUNCTION: ["create"], WAF: ["update"]},
@@ -43,12 +38,12 @@ def one_block(value: dict, name: str) -> dict:
     return blocks[0]
 
 
-def check_distribution(value: dict, *, attached: bool) -> None:
-    if value.get("id") != "E26XTII1H57RTX":
+def check_distribution(value: dict, *, attached: bool, distribution_id: str, api_origin: str) -> None:
+    if value.get("id") != distribution_id:
         fail("distribution identity changed")
     if value.get("aliases") != ["demo.osc-staging.org"]:
         fail("public alias changed")
-    expected_origins = {"static-edge", API_ORIGIN} if attached else {"static-edge"}
+    expected_origins = {"static-edge", api_origin} if attached else {"static-edge"}
     if origin_ids(value) != expected_origins:
         fail("unexpected distribution origin set")
     static_origin = [origin for origin in value["origin"] if origin.get("origin_id") == "static-edge"][0]
@@ -71,7 +66,7 @@ def check_distribution(value: dict, *, attached: bool) -> None:
         if len(ordered) != 1:
             fail("expected exactly one ordered API behavior")
         api = ordered[0]
-        if api.get("path_pattern") != "/api/*" or api.get("target_origin_id") != API_ORIGIN:
+        if api.get("path_pattern") != "/api/*" or api.get("target_origin_id") != api_origin:
             fail("API path or target changed")
         if api.get("viewer_protocol_policy") != "https-only":
             fail("API viewer protocol must be HTTPS only")
@@ -89,7 +84,7 @@ def check_distribution(value: dict, *, attached: bool) -> None:
             fail("API must use the static security response headers policy")
         if api.get("function_association") or api.get("lambda_function_association"):
             fail("API behavior must not run edge functions")
-        private_origin = [origin for origin in value["origin"] if origin.get("origin_id") == API_ORIGIN][0]
+        private_origin = [origin for origin in value["origin"] if origin.get("origin_id") == api_origin][0]
         if len(private_origin.get("vpc_origin_config") or []) != 1:
             fail("API origin must be a CloudFront VPC origin")
     elif ordered:
@@ -251,7 +246,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=ALLOWED)
     parser.add_argument("plan_json", type=Path)
+    parser.add_argument("--run-id", default="usrse260930")
+    parser.add_argument("--control-run-id", default="usrse26r1")
+    parser.add_argument("--distribution-id", default="E26XTII1H57RTX")
+    parser.add_argument(
+        "--alb-arn",
+        default=(
+            "arn:aws:elasticloadbalancing:us-west-2:269624229733:"
+            "loadbalancer/app/k8s-oscapps-oscdemoa-5938afeb16/f59ddecd5a4a24ef"
+        ),
+    )
     args = parser.parse_args()
+    if not args.run_id.isalnum() or not args.control_run_id.isalnum():
+        fail("run IDs must be alphanumeric")
+    if not args.distribution_id or not args.alb_arn.startswith(
+        "arn:aws:elasticloadbalancing:us-west-2:269624229733:loadbalancer/app/"
+    ):
+        fail("expected distribution and same-account ALB identities")
+    api_origin = f"private-demo-api-{args.run_id}"
     plan = json.loads(args.plan_json.read_text(encoding="utf-8"))
     changes = {
         item["address"]: item
@@ -271,24 +283,24 @@ def main() -> None:
         if args.mode == "harden":
             if origin_ids(before) != {"static-edge"} or before.get("ordered_cache_behavior"):
                 fail("hardening must start from the static edge")
-            check_distribution(after, attached=False)
+            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
             check_waf(changes[WAF]["change"]["after"])
             function = changes[FUNCTION]["change"]["after"]
-            if function.get("name") != "osc-usrse26-usrse26r1-spa-rewrite":
+            if function.get("name") != f"osc-usrse26-{args.control_run_id}-spa-rewrite":
                 fail("unexpected rewrite function")
         elif args.mode == "attach":
-            check_distribution(before, attached=False)
-            check_distribution(after, attached=True)
+            check_distribution(before, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
+            check_distribution(after, attached=True, distribution_id=args.distribution_id, api_origin=api_origin)
             check_unchanged_distribution(before, after)
         else:
-            check_distribution(before, attached=True)
-            check_distribution(after, attached=False)
+            check_distribution(before, attached=True, distribution_id=args.distribution_id, api_origin=api_origin)
+            check_distribution(after, attached=False, distribution_id=args.distribution_id, api_origin=api_origin)
             check_unchanged_distribution(before, after)
     if args.mode == "origin":
         endpoint = one_block(changes[VPC_ORIGIN]["change"]["after"], "vpc_origin_endpoint_config")
-        if endpoint.get("arn") != API_ALB_ARN or endpoint.get("origin_protocol_policy") != "http-only":
+        if endpoint.get("arn") != args.alb_arn or endpoint.get("origin_protocol_policy") != "http-only":
             fail("VPC origin does not target the reviewed private ALB on HTTP")
-        if endpoint.get("name") != "osc-usrse26-usrse26r1-usrse260930-api":
+        if endpoint.get("name") != f"osc-usrse26-{args.control_run_id}-{args.run_id}-api":
             fail("VPC origin name changed")
     if args.mode == "manifest-body":
         check_manifest_body_waf(changes[WAF]["change"]["before"], changes[WAF]["change"]["after"])

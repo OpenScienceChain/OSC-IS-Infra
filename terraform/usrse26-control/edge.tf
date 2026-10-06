@@ -98,7 +98,7 @@ data "aws_lb" "external_demo_api" {
 resource "aws_cloudfront_vpc_origin" "external_demo_api" {
   count = var.external_demo_api_alb_arn == null ? 0 : 1
   vpc_origin_endpoint_config {
-    name                   = "${local.name_prefix}-usrse260930-api"
+    name                   = "${local.name_prefix}-${var.run_id}-api"
     arn                    = data.aws_lb.external_demo_api[0].arn
     http_port              = 80
     https_port             = 443
@@ -112,6 +112,15 @@ resource "aws_cloudfront_vpc_origin" "external_demo_api" {
     precondition {
       condition     = data.aws_lb.external_demo_api[0].internal
       error_message = "The interactive demo API must use an internal ALB."
+    }
+    precondition {
+      condition = (
+        lookup(data.aws_lb.external_demo_api[0].tags, "RunId", "") == var.run_id &&
+        lookup(data.aws_lb.external_demo_api[0].tags, "Project", "") == "OSC-IS" &&
+        lookup(data.aws_lb.external_demo_api[0].tags, "Purpose", "") == "USRSE26-Interactive-Demo" &&
+        lookup(data.aws_lb.external_demo_api[0].tags, "ManagedBy", "") == "Kubernetes"
+      )
+      error_message = "The private ALB must be tagged for this exact OSC demo run."
     }
   }
 }
@@ -831,7 +840,7 @@ resource "aws_cloudfront_distribution" "edge" {
     for_each = var.external_demo_api_alb_arn != null && var.external_demo_api_attached ? [1] : []
     content {
       domain_name = data.aws_lb.external_demo_api[0].dns_name
-      origin_id   = "private-demo-api-usrse260930"
+      origin_id   = "private-demo-api-${var.run_id}"
       vpc_origin_config {
         vpc_origin_id = aws_cloudfront_vpc_origin.external_demo_api[0].id
       }
@@ -856,7 +865,7 @@ resource "aws_cloudfront_distribution" "edge" {
     for_each = var.external_demo_api_alb_arn != null && var.external_demo_api_attached ? [1] : []
     content {
       path_pattern               = "/api/*"
-      target_origin_id           = "private-demo-api-usrse260930"
+      target_origin_id           = "private-demo-api-${var.run_id}"
       viewer_protocol_policy     = "https-only"
       allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
       cached_methods             = ["GET", "HEAD"]

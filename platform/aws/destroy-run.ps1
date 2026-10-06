@@ -28,22 +28,19 @@ if (-not (Get-Content -LiteralPath (Join-Path $terraformRoot 'versions.tf') -Raw
     throw 'Reviewed Terraform copy is not configured for local state.'
 }
 
-if ($RunId -eq 'usrse260930') {
-    $edge = aws cloudfront get-distribution-config --id E26XTII1H57RTX --output json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the persistent demo edge before teardown.' }
-    $attached = @($edge.DistributionConfig.Origins.Items | Where-Object { $_.Id -eq 'private-demo-api-usrse260930' })
-    if ($attached.Count -ne 0) {
-        throw 'Detach the usrse260930 API from the persistent demo edge and verify the static fallback before destroying EKS.'
+python platform/aws/aws_guard.py
+if ($LASTEXITCODE -ne 0) { throw 'AWS account guard failed before teardown.' }
+$distributions = aws cloudfront list-distributions --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Cannot verify CloudFront distributions before teardown.' }
+foreach ($distribution in @($distributions.DistributionList.Items)) {
+    if (@($distribution.Origins.Items | Where-Object { $_.Id -eq "private-demo-api-$RunId" }).Count -ne 0) {
+        throw "Detach the $RunId API from CloudFront before destroying EKS."
     }
-    $vpcOrigins = aws cloudfront list-vpc-origins --output json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify CloudFront VPC origins before teardown.' }
-    $staged = @($vpcOrigins.VpcOriginList.Items | Where-Object {
-        $_.Name -eq 'osc-usrse26-usrse26r1-usrse260930-api' -or
-        $_.OriginEndpointArn -eq 'arn:aws:elasticloadbalancing:us-west-2:269624229733:loadbalancer/app/k8s-oscapps-oscdemoa-5938afeb16/f59ddecd5a4a24ef'
-    })
-    if ($staged.Count -ne 0) {
-        throw 'Remove the usrse260930 CloudFront VPC origin before destroying EKS.'
-    }
+}
+$vpcOrigins = aws cloudfront list-vpc-origins --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Cannot verify CloudFront VPC origins before teardown.' }
+if (@($vpcOrigins.VpcOriginList.Items | Where-Object { $_.Name -like "*-$RunId-api" }).Count -ne 0) {
+    throw "Remove the $RunId CloudFront VPC origin before destroying EKS."
 }
 
 Push-Location $repoRoot
