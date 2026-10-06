@@ -170,6 +170,9 @@ try {
     if ($sync -ne 'Synced' -or $health -ne 'Healthy') { throw 'Argo CD did not reach Synced and Healthy.' }
 
     kubectl -n osc-apps rollout status statefulset/postgres --timeout=10m | Out-Null
+    Get-Content -LiteralPath (Join-Path $infraRoot 'platform/scripts/seed-aws-demo-orgs.sql') -Raw |
+        kubectl -n osc-apps exec -i postgres-0 -- sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    if ($LASTEXITCODE -ne 0) { throw 'AWS demo organization seed failed.' }
     foreach ($deployment in @('api-gateway', 'ledger-gateway-nsg', 'ledger-gateway-citizen-science', 'submission-worker', 'submission-listener', 'history-worker-nsg', 'history-worker-citizen-science')) {
         kubectl -n osc-apps rollout status "deployment/$deployment" --timeout=10m | Out-Null
     }
